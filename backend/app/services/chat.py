@@ -6,7 +6,7 @@ import time
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
-from app.models import Conversation, IdempotencyKey, MemoryItem, Message, new_id
+from app.models import Conversation, IdempotencyKey, MemoryItem, Message, new_id, utcnow
 from app.security.errors import APIError
 from app.security.validation import require_object, string_field
 from app.services.providers import adapter_call, default_provider
@@ -69,6 +69,7 @@ def handle_message(user, data):
     if not isinstance(assistant_text, str) or not assistant_text.strip():
         raise APIError("provider_empty_response", "Provider returned an empty response.", 502, True)
     assistant_text = assistant_text.strip()[:24000]
+    conv.updated_at = utcnow()
     db.session.add(conv)
     if history_enabled:
         user_msg = Message(user_id=user.id, conversation=conv, role="user", content=message, request_id=request_id)

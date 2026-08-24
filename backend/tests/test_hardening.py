@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -222,6 +223,21 @@ def test_current_message_survives_large_memory_context(user_client, monkeypatch)
     rv = post_json(user_client, "/api/v1/chat/messages", {"message": prompt, "requestId": "budget-current"})
     assert rv.status_code == 201
     assert captured["messages"][-1] == {"role": "user", "content": prompt}
+
+
+def test_message_refreshes_conversation_order_timestamp(user_client, app):
+    create_mock_provider(user_client)
+    conversation = post_json(user_client, "/api/v1/chat/conversations", {"title": "Old thread"}).get_json()["conversation"]
+    old = datetime(2000, 1, 1)
+    with app.app_context():
+        row = db.session.get(Conversation, conversation["id"])
+        row.updated_at = old
+        db.session.commit()
+
+    sent = post_json(user_client, "/api/v1/chat/messages", {"conversationId": conversation["id"], "message": "refresh", "requestId": "refresh-thread"})
+    assert sent.status_code == 201
+    with app.app_context():
+        assert db.session.get(Conversation, conversation["id"]).updated_at > old
 
 
 def test_stream_endpoint_over_live_http(user_client, app, monkeypatch):
