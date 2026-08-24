@@ -61,10 +61,9 @@ class OpenAICompatibleAdapter:
     def _safe_raise(self, exc, code="provider_request_failed"):
         raise ProviderFailure(code, "Provider request failed safely.", 502, retryable=True)
 
-    def _check_response(self, response):
+    def _check_response(self, response, max_bytes):
         if 300 <= response.status_code < 400:
             raise ProviderFailure("provider_redirect_blocked", "Provider redirect was blocked.", 502, True)
-        max_bytes = current_app.config.get("MAX_PROVIDER_RESPONSE_BYTES", 1048576)
         content_length = response.headers.get("Content-Length")
         if content_length:
             try:
@@ -72,8 +71,30 @@ class OpenAICompatibleAdapter:
                     raise ProviderFailure("provider_response_too_large", "Provider response is too large.", 502)
             except ValueError:
                 pass
-        if len(response.content or b"") > max_bytes:
-            raise ProviderFailure("provider_response_too_large", "Provider response is too large.", 502)
+
+    def _read_bounded(self, response, max_bytes=None):
+        if max_bytes is None:
+            max_bytes = current_app.config.get("MAX_PROVIDER_RESPONSE_BYTES", 1048576)
+        try:
+            self._check_response(response, max_bytes)
+            content = bytearray()
+            iterator = getattr(response, "iter_content", None)
+            chunks = iterator(chunk_size=65536) if callable(iterator) else [getattr(response, "content", b"") or b""]
+            for chunk in chunks:
+                if not chunk:
+                    continue
+                content.extend(chunk)
+                if len(content) > max_bytes:
+                    raise ProviderFailure("provider_response_too_large", "Provider response is too large.", 502)
+            return bytes(content)
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "Provider request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc)
+        finally:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
 
     def _bound_text(self, value, empty_code="provider_empty_response"):
         if not isinstance(value, str):
@@ -86,12 +107,12 @@ class OpenAICompatibleAdapter:
     def test(self):
         start = time.monotonic()
         try:
-            r = requests.get(f"{self.base}/models", headers=self.headers(), timeout=self.timeout, allow_redirects=False)
+            r = requests.get(f"{self.base}/models", headers=self.headers(), timeout=self.timeout, allow_redirects=False, stream=True)
         except requests.Timeout:
             raise ProviderFailure("provider_timeout", "Provider request timed out.", 504, True)
         except requests.RequestException as exc:
             self._safe_raise(exc)
-        self._check_response(r)
+        self._read_bounded(r)
         if r.status_code in {401, 403}:
             raise ProviderFailure("provider_authentication_failed", "Authentication was rejected by the provider.", 502)
         if r.status_code >= 400:
@@ -100,14 +121,22 @@ class OpenAICompatibleAdapter:
 
     def models(self):
         try:
-            r = requests.get(f"{self.base}/models", headers=self.headers(), timeout=self.timeout, allow_redirects=False)
-            self._check_response(r)
-            r.raise_for_status()
-            data = r.json()
+            r = requests.get(f"{self.base}/models", headers=self.headers(), timeout=self.timeout, allow_redirects=False, stream=True)
         except requests.Timeout:
             raise ProviderFailure("provider_timeout", "Provider request timed out.", 504, True)
-        except Exception as exc:
+        except requests.RequestException as exc:
             self._safe_raise(exc, "provider_model_discovery_failed")
+        body = self._read_bounded(r)
+        if r.status_code in {401, 403}:
+            raise ProviderFailure("provider_authentication_failed", "Authentication was rejected by the provider.", 502)
+        if r.status_code == 429:
+            raise ProviderFailure("provider_rate_limited", "Provider rate limit reached.", 502, True)
+        if r.status_code >= 400:
+            raise ProviderFailure("provider_model_discovery_failed", f"Provider returned HTTP {r.status_code}.", 502, r.status_code >= 500)
+        try:
+            data = json.loads(body.decode(getattr(r, "encoding", None) or "utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, LookupError):
+            raise ProviderFailure("provider_malformed_response", "Provider returned malformed response.", 502, True)
         raw = data.get("data", data.get("models", [])) if isinstance(data, dict) else []
         if not isinstance(raw, list):
             raise ProviderFailure("provider_malformed_response", "Provider returned malformed response.", 502, True)
@@ -131,12 +160,12 @@ class OpenAICompatibleAdapter:
             "stream": False,
         }
         try:
-            r = requests.post(f"{self.base}/chat/completions", headers=self.headers(), json=payload, timeout=self.timeout, allow_redirects=False)
+            r = requests.post(f"{self.base}/chat/completions", headers=self.headers(), json=payload, timeout=self.timeout, allow_redirects=False, stream=True)
         except requests.Timeout:
             raise ProviderFailure("provider_timeout", "Provider request timed out.", 504, True)
         except requests.RequestException as exc:
             self._safe_raise(exc)
-        self._check_response(r)
+        body = self._read_bounded(r)
         if r.status_code in {401, 403}:
             raise ProviderFailure("provider_authentication_failed", "Authentication was rejected by the provider.", 502)
         if r.status_code == 429:
@@ -144,7 +173,7 @@ class OpenAICompatibleAdapter:
         if r.status_code >= 400:
             raise ProviderFailure("provider_request_failed", f"Provider returned HTTP {r.status_code}.", 502, r.status_code >= 500)
         try:
-            data = r.json()
+            data = json.loads(body.decode(getattr(r, "encoding", None) or "utf-8"))
             choices = data.get("choices") if isinstance(data, dict) else None
             first = choices[0] if isinstance(choices, list) and choices else None
             message = first.get("message") if isinstance(first, dict) else None
@@ -164,17 +193,17 @@ class OpenAICompatibleAdapter:
         if language:
             files["language"] = (None, language)
         try:
-            r = requests.post(f"{self.base}/audio/transcriptions", headers={k: v for k, v in self.headers().items() if k != "Content-Type"}, files=files, timeout=self.timeout, allow_redirects=False)
+            r = requests.post(f"{self.base}/audio/transcriptions", headers={k: v for k, v in self.headers().items() if k != "Content-Type"}, files=files, timeout=self.timeout, allow_redirects=False, stream=True)
         except requests.Timeout:
             raise ProviderFailure("provider_timeout", "Provider request timed out.", 504, True)
         except requests.RequestException as exc:
             self._safe_raise(exc)
-        self._check_response(r)
+        body = self._read_bounded(r)
         if r.status_code >= 400:
             raise ProviderFailure("provider_request_failed", f"Provider returned HTTP {r.status_code}.", 502, r.status_code >= 500)
         try:
-            data = r.json()
-        except Exception:
+            data = json.loads(body.decode(getattr(r, "encoding", None) or "utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, LookupError):
             raise ProviderFailure("provider_malformed_response", "Provider returned malformed response.", 502)
         if not isinstance(data, dict):
             raise ProviderFailure("provider_malformed_response", "Provider returned malformed response.", 502)
@@ -189,38 +218,35 @@ class OpenAICompatibleAdapter:
         if self.cfg.config.get("speed") is not None:
             payload["speed"] = self.cfg.config["speed"]
         try:
-            r = requests.post(f"{self.base}/audio/speech", headers=self.headers(), json=payload, timeout=self.timeout, allow_redirects=False)
+            r = requests.post(f"{self.base}/audio/speech", headers=self.headers(), json=payload, timeout=self.timeout, allow_redirects=False, stream=True)
         except requests.Timeout:
             raise ProviderFailure("provider_timeout", "Provider request timed out.", 504, True)
         except requests.RequestException as exc:
             self._safe_raise(exc)
-        self._check_response(r)
+        audio = self._read_bounded(r, current_app.config.get("MAX_AUDIO_BYTES", 5242880))
         if r.status_code >= 400:
             raise ProviderFailure("provider_request_failed", f"Provider returned HTTP {r.status_code}.", 502, r.status_code >= 500)
-        if not r.content:
+        if not audio:
             raise ProviderFailure("provider_empty_response", "Provider returned an empty response.", 502, True)
-        max_bytes = current_app.config.get("MAX_AUDIO_BYTES", 5242880)
-        if len(r.content) > max_bytes:
-            raise ProviderFailure("provider_response_too_large", "Provider audio response is too large.", 502)
         media_type = (r.headers.get("Content-Type") or "audio/mpeg").split(";", 1)[0]
         if not media_type.startswith("audio/"):
             media_type = "audio/mpeg"
-        return r.content, media_type
+        return audio, media_type
 
 
 class CustomHTTPAdapter(OpenAICompatibleAdapter):
     def complete(self, messages):
         payload = {"messages": messages, "model": self.cfg.model, "config": self.cfg.config or {}}
         try:
-            r = requests.post(self.base, headers=self.headers(), json=payload, timeout=self.timeout, allow_redirects=False)
-            self._check_response(r)
+            r = requests.post(self.base, headers=self.headers(), json=payload, timeout=self.timeout, allow_redirects=False, stream=True)
+            body = self._read_bounded(r)
             if r.status_code in {401, 403}:
                 raise ProviderFailure("provider_authentication_failed", "Authentication was rejected by the provider.", 502)
             if r.status_code == 429:
                 raise ProviderFailure("provider_rate_limited", "Provider rate limit reached.", 502, True)
             if r.status_code >= 400:
                 raise ProviderFailure("provider_request_failed", f"Provider returned HTTP {r.status_code}.", 502, r.status_code >= 500)
-            data = r.json()
+            data = json.loads(body.decode(getattr(r, "encoding", None) or "utf-8"))
         except requests.Timeout:
             raise ProviderFailure("provider_timeout", "Provider request timed out.", 504, True)
         except ProviderFailure:

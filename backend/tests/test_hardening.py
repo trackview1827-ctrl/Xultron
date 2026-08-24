@@ -144,6 +144,31 @@ def test_provider_redirect_and_response_size_are_blocked(user_client, monkeypatc
     assert too_large.status_code == 502
     assert "too large" in too_large.get_data(as_text=True)
 
+    streamed = {"closed": False, "requested": False}
+
+    class StreamingLargeResponse:
+        status_code = 200
+        headers = {}
+        encoding = "utf-8"
+
+        def iter_content(self, chunk_size):
+            yield b"123456"
+            yield b"789012"
+
+        def close(self):
+            streamed["closed"] = True
+
+    def streaming_response(*args, **kwargs):
+        assert kwargs["stream"] is True
+        streamed["requested"] = True
+        return StreamingLargeResponse()
+
+    monkeypatch.setattr("app.providers.adapters.requests.post", streaming_response)
+    progressively_too_large = post_json(user_client, "/api/v1/chat/messages", {"message": "hello", "requestId": "streaming-large-provider"})
+    assert progressively_too_large.status_code == 502
+    assert "too large" in progressively_too_large.get_data(as_text=True)
+    assert streamed == {"closed": True, "requested": True}
+
 
 def test_conversation_history_false_does_not_persist_message_content(user_client, app):
     create_mock_provider(user_client, config={"reply": "assistant private sentinel"})
@@ -181,7 +206,7 @@ def test_current_message_survives_large_memory_context(user_client, monkeypatch)
     assert captured["messages"][-1] == {"role": "user", "content": prompt}
 
 
-def test_stream_endpoint_over_live_http(user_client, app):
+def test_stream_endpoint_over_live_http(user_client, app, monkeypatch):
     # Copy authenticated cookies from the Flask client into a real HTTP request.
     token = csrf(user_client)
     cookie_header = "; ".join(f"{cookie.key}={cookie.value}" for cookie in user_client._cookies.values())
@@ -194,6 +219,20 @@ def test_stream_endpoint_over_live_http(user_client, app):
         response = requests.post(url, json={"message": "live", "requestId": "live-stream-1"}, headers={"X-CSRF-Token": token, "Cookie": cookie_header}, timeout=5)
         assert response.status_code == 200
         assert "event: done" in response.text
+        assert response.headers["Cache-Control"] == "no-cache, no-transform"
+        assert response.headers["X-Accel-Buffering"] == "no"
+
+        def fail_safely(*args, **kwargs):
+            raise RuntimeError(SENTINEL)
+
+        monkeypatch.setattr("app.api.routes.handle_message", fail_safely)
+        failed = requests.post(url, json={"message": "fail", "requestId": "live-stream-2"}, headers={"X-CSRF-Token": token, "Cookie": cookie_header}, timeout=5)
+        assert failed.status_code == 200
+        assert "event: error" in failed.text
+        assert '"code": "internal_error"' in failed.text
+        assert "event: done" in failed.text
+        assert SENTINEL not in failed.text
+        assert "/data/" not in failed.text
     finally:
         server.shutdown()
         thread.join(timeout=5)

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from flask import Blueprint, Response, current_app, g, jsonify, request, session, stream_with_context
 
 from app.extensions import db
-from app.models import Conversation, Device, DeviceCommand, DeviceEvent, MemoryItem, Message, Provider, Session, utcnow
+from app.models import Conversation, Device, DeviceCommand, DeviceEvent, MemoryItem, Message, Provider, Session, User, utcnow
 from app.security.errors import APIError
 from app.security.guards import require_json, require_user
 from app.security.validation import enum_field, string_field
@@ -147,12 +147,18 @@ def post_message():
 def stream_message():
     user = require_user()
     data = require_json()
+    user_id = user.id
+    request_id = request.request_id
 
     def events():
-        started = False
         try:
-            yield _sse("state", {"state": "THINKING"}); started = True
-            response = handle_message(user, data)
+            # The original request teardown can detach ORM objects before a streamed
+            # generator runs. Reload the identity inside the active stream context.
+            stream_user = db.session.get(User, user_id)
+            if not stream_user:
+                raise APIError("authentication_required", "Authentication is required.", 401)
+            yield _sse("state", {"state": "THINKING"})
+            response = handle_message(stream_user, data)
             yield _sse("conversation", response["conversation"])
             text = response["messages"][-1]["content"]
             for token in text.split(" "):
@@ -160,10 +166,17 @@ def stream_message():
             yield _sse("done", response)
         except APIError as exc:
             yield _sse("error", {"code": exc.code, "message": exc.message, "retryable": exc.retryable})
-            if started:
-                yield _sse("done", {"ok": False})
+            yield _sse("done", {"ok": False})
+        except Exception as exc:
+            db.session.rollback()
+            current_app.logger.error("Unhandled SSE error type=%s request_id=%s", type(exc).__name__, request_id)
+            yield _sse("error", {"code": "internal_error", "message": "An internal error occurred.", "retryable": False})
+            yield _sse("done", {"ok": False})
 
-    return Response(stream_with_context(events()), mimetype="text/event-stream")
+    response = Response(stream_with_context(events()), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache, no-transform"
+    response.headers["X-Accel-Buffering"] = "no"
+    return response
 
 
 def _sse(event, data):
