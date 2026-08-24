@@ -1,4 +1,7 @@
 import hashlib
+import hmac
+import re
+import threading
 import time
 import uuid
 from datetime import UTC, datetime
@@ -11,6 +14,8 @@ from app.models import Session
 from app.security.errors import APIError
 
 _hits = {}
+_hits_lock = threading.Lock()
+REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,100}$")
 
 
 def utcnow():
@@ -20,14 +25,17 @@ def utcnow():
 def install_guards(app):
     @app.before_request
     def assign_request_id_and_session():
-        request.request_id = request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex}"
+        supplied_request_id = request.headers.get("X-Request-ID")
+        if supplied_request_id and not REQUEST_ID_RE.fullmatch(supplied_request_id):
+            raise APIError("validation_failed", "X-Request-ID is invalid.", 422)
+        request.request_id = supplied_request_id or f"req_{uuid.uuid4().hex}"
         g.current_user = None
         g.current_session = None
         sid = session.get("sid")
         if sid:
             rec = db.session.get(Session, sid)
             csrf_token = session.get("csrf_token")
-            valid_csrf = bool(rec and csrf_token and hashlib.sha256(csrf_token.encode()).hexdigest() == rec.csrf_token_hash)
+            valid_csrf = bool(rec and csrf_token and hmac.compare_digest(hashlib.sha256(csrf_token.encode()).hexdigest(), rec.csrf_token_hash))
             if rec and not rec.revoked_at and rec.expires_at > utcnow() and valid_csrf:
                 g.current_session = rec
                 g.current_user = rec.user
@@ -44,7 +52,7 @@ def install_guards(app):
             _enforce_same_origin()
             expected = session.get("csrf_token")
             supplied = request.headers.get("X-CSRF-Token")
-            if not expected or not supplied or supplied != expected:
+            if not expected or not supplied or not hmac.compare_digest(supplied, expected):
                 raise APIError("csrf_failed", "CSRF validation failed.", 403)
         return None
 
@@ -73,14 +81,16 @@ def _rate_limit():
     now = time.time()
     bucket = int(now // 60)
     key = (request.remote_addr or "local", getattr(g.current_user, "id", "anon"), request.endpoint or request.path, bucket)
-    _hits[key] = _hits.get(key, 0) + 1
-    if _hits[key] > limit:
+    with _hits_lock:
+        _hits[key] = _hits.get(key, 0) + 1
+        exceeded = _hits[key] > limit
+        if len(_hits) > 20000:
+            old = bucket - 2
+            for k in list(_hits):
+                if k[-1] < old:
+                    _hits.pop(k, None)
+    if exceeded:
         raise APIError("rate_limited", "Too many requests. Please slow down.", 429, retryable=True)
-    if len(_hits) > 20000:
-        old = bucket - 2
-        for k in list(_hits):
-            if k[-1] < old:
-                _hits.pop(k, None)
 
 
 def _enforce_same_origin():

@@ -97,30 +97,36 @@ def handle_message(user, data):
 
 
 def _provider_context(user_id: str, conversation_id: str | None, message: str, settings: dict, low_data: bool) -> list[dict]:
-    context: list[dict] = []
-    remaining = 3000 if low_data else 12000
+    prefix: list[dict] = []
+    history_context: list[dict] = []
+    total_budget = 3000 if low_data else 12000
+    remaining = max(total_budget - len(message), 0)
 
-    def add(role: str, content: str):
+    def add(target: list[dict], role: str, content: str):
         nonlocal remaining
         if remaining <= 0:
             return
         bounded = content[:remaining]
         if bounded:
-            context.append({"role": role, "content": bounded})
+            target.append({"role": role, "content": bounded})
             remaining -= len(bounded)
 
     if settings.get("memoryEnabled", True):
         memory_limit = 5 if low_data else 20
         memories = MemoryItem.query.filter_by(user_id=user_id).order_by(MemoryItem.updated_at.desc()).limit(memory_limit).all()
         if memories:
-            add("system", "User memory:\n" + "\n".join(m.content[:500] for m in memories))
+            add(prefix, "system", "User memory:\n" + "\n".join(m.content[:500] for m in memories))
     if conversation_id and settings.get("conversationHistory", True):
         history_limit = 4 if low_data else 12
+        selected = []
         rows = Message.query.filter_by(user_id=user_id, conversation_id=conversation_id).order_by(Message.created_at.desc()).limit(history_limit).all()
-        for row in reversed(rows):
-            add(row.role, row.content)
-    add("user", message)
-    return context
+        for row in rows:
+            before = remaining
+            add(selected, row.role, row.content)
+            if remaining == before and remaining <= 0:
+                break
+        history_context.extend(reversed(selected))
+    return prefix + history_context + [{"role": "user", "content": message}]
 
 
 def _fingerprint(message: str, conversation_id: str | None) -> str:

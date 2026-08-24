@@ -133,8 +133,8 @@ def get_messages(conversation_id):
     user = require_user()
     owned_conversation(conversation_id, user.id)
     limit = query_limit(50, 200)
-    rows = Message.query.filter_by(user_id=user.id, conversation_id=conversation_id).order_by(Message.created_at.asc()).limit(limit).all()
-    return ok({"messages": [m.to_public() for m in rows]})
+    rows = Message.query.filter_by(user_id=user.id, conversation_id=conversation_id).order_by(Message.created_at.desc()).limit(limit).all()
+    return ok({"messages": [m.to_public() for m in reversed(rows)]})
 
 
 @api_bp.post("/chat/messages")
@@ -236,10 +236,16 @@ def transcribe():
         raise APIError("invalid_audio", "Audio is empty.", 422)
     if len(audio) > current_app.config["MAX_AUDIO_BYTES"]:
         raise APIError("request_entity_too_large", "Audio is too large.", 413)
-    provider = owned_provider(request.form["providerId"], user.id) if request.form.get("providerId") else default_provider(user.id, "stt")
+    provider_id = request.form.get("providerId")
+    language = request.form.get("language")
+    if provider_id is not None and (not isinstance(provider_id, str) or len(provider_id.strip()) > 40):
+        raise APIError("validation_failed", "providerId is invalid.", 422)
+    if language is not None and (not isinstance(language, str) or len(language.strip()) > 40):
+        raise APIError("validation_failed", "language is invalid.", 422)
+    provider = owned_provider(provider_id.strip(), user.id) if provider_id and provider_id.strip() else default_provider(user.id, "stt")
     if not provider:
         raise APIError("provider_not_configured", "No STT provider is configured.", 503)
-    return ok(adapter_call(provider, "transcribe", audio, f.filename, request.form.get("language")))
+    return ok(adapter_call(provider, "transcribe", audio, (f.filename or "audio.webm")[:120], language.strip() if language else None))
 
 
 @api_bp.post("/voice/synthesize")

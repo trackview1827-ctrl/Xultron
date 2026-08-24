@@ -8,7 +8,6 @@ from app.security.errors import APIError
 
 USERNAME_RE = re.compile(r"^[a-z0-9_.-]{3,40}$")
 SECRET_KEY_RE = re.compile(r"(?i)(api[_-]?key|authorization|password|secret|token|credential)")
-SECRET_VALUE_RE = re.compile(r"(?i)(bearer\s+|sk-[A-Za-z0-9_\-]{8,}|xox[baprs]-|ghp_[A-Za-z0-9_]{8,})")
 
 
 def require_object(data, name: str = "body") -> dict:
@@ -135,8 +134,6 @@ def ensure_no_secret_like_keys(config, *, depth: int = 0):
     if isinstance(config, str):
         if len(config) > 2000:
             raise APIError("validation_failed", "Provider config string is too long.", 422)
-        if SECRET_VALUE_RE.search(config):
-            raise APIError("validation_failed", "Provider config cannot contain secret-like values. Use apiKey.", 422)
         return
     if config is not None and not isinstance(config, (bool, int, float)):
         raise APIError("validation_failed", "Provider config values must be JSON primitives, arrays or objects.", 422)

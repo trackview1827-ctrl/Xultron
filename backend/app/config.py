@@ -69,15 +69,17 @@ class Config:
     SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", XULTRON_ENV == "production")
     PERMANENT_SESSION_LIFETIME_SECONDS = int(os.getenv("SESSION_LIFETIME_SECONDS", "2592000"))
     GUEST_LIFETIME_SECONDS = int(os.getenv("GUEST_LIFETIME_SECONDS", "86400"))
-    MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", "1048576"))
     MAX_AUDIO_BYTES = int(os.getenv("MAX_AUDIO_BYTES", "5242880"))
+    MAX_CONTENT_LENGTH = max(int(os.getenv("MAX_CONTENT_LENGTH", "6291456")), MAX_AUDIO_BYTES + 1048576)
     RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "120"))
     PROVIDER_TIMEOUT_SECONDS = int(os.getenv("PROVIDER_TIMEOUT_SECONDS", "20"))
+    MAX_PROVIDER_RESPONSE_BYTES = int(os.getenv("MAX_PROVIDER_RESPONSE_BYTES", "1048576"))
     MAX_PROVIDER_TEXT_CHARS = int(os.getenv("MAX_PROVIDER_TEXT_CHARS", "24000"))
     WTF_CSRF_ENABLED = False
     JSON_SORT_KEYS = False
     ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
     ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY") or _INSTANCE.get("ENCRYPTION_KEY")
+    FRONTEND_DIST_DIR = os.getenv("FRONTEND_DIST_DIR") or str(BASE_DIR.parent / "frontend" / "dist")
 
     @classmethod
     def validate(cls):

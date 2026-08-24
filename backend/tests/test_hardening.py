@@ -1,3 +1,4 @@
+import io
 import logging
 import os
 import subprocess
@@ -7,7 +8,8 @@ from pathlib import Path
 
 import pytest
 import requests
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 from werkzeug.serving import make_server
 
 from app import create_app
@@ -58,13 +60,15 @@ def test_provider_config_secret_bypass_and_api_key_type_rejected(user_client):
     base = {"name": "Bad", "kind": "ai", "adapter": "mock", "model": "m", "enabled": True, "isDefault": True}
     for config in [
         {"headers": {"X-Foo": "SENTINEL"}},
-        {"reply": SENTINEL},
         {"reply": ["ok", {"token": "SENTINEL"}]},
         {"reply": [[[[[{"ok": True}]]]]]},
     ]:
         rv = post_json(user_client, "/api/v1/providers", {**base, "config": config})
         assert rv.status_code == 422
         assert "SENTINEL" not in rv.get_data(as_text=True)
+    typed_reply = post_json(user_client, "/api/v1/providers", {**base, "name": "Typed reply", "config": {"reply": SENTINEL}})
+    assert typed_reply.status_code == 201
+    assert typed_reply.get_json()["provider"]["config"]["reply"] == SENTINEL
     rv = post_json(user_client, "/api/v1/providers", {**base, "apiKey": {"value": SENTINEL}, "config": {"reply": "ok"}})
     assert rv.status_code == 422
     good_tts = post_json(user_client, "/api/v1/providers", {"name": "TTS", "kind": "tts", "adapter": "mock", "model": "m", "enabled": True, "isDefault": True, "config": {"speed": 1.25, "voice": "alloy"}})
@@ -112,6 +116,35 @@ def test_provider_malformed_responses_are_safe(user_client, monkeypatch):
     assert SENTINEL not in body
 
 
+def test_provider_redirect_and_response_size_are_blocked(user_client, monkeypatch, app):
+    post_json(user_client, "/api/v1/providers", {"name": "HTTP", "kind": "ai", "adapter": "openai_compatible", "baseUrl": "https://provider.example/v1", "model": "m", "enabled": True, "isDefault": True, "config": {}})
+
+    class RedirectResponse:
+        status_code = 302
+        content = b""
+        headers = {"Location": "https://elsewhere.example"}
+        def json(self):
+            return {}
+
+    monkeypatch.setattr("app.providers.adapters.requests.post", lambda *args, **kwargs: RedirectResponse())
+    redirect = post_json(user_client, "/api/v1/chat/messages", {"message": "hello", "requestId": "redirect-provider"})
+    assert redirect.status_code == 502
+    assert "redirect" in redirect.get_data(as_text=True)
+
+    class LargeResponse:
+        status_code = 200
+        content = b"x" * 20
+        headers = {"Content-Length": "20"}
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    app.config["MAX_PROVIDER_RESPONSE_BYTES"] = 10
+    monkeypatch.setattr("app.providers.adapters.requests.post", lambda *args, **kwargs: LargeResponse())
+    too_large = post_json(user_client, "/api/v1/chat/messages", {"message": "hello", "requestId": "large-provider"})
+    assert too_large.status_code == 502
+    assert "too large" in too_large.get_data(as_text=True)
+
+
 def test_conversation_history_false_does_not_persist_message_content(user_client, app):
     create_mock_provider(user_client, config={"reply": "assistant private sentinel"})
     settings = user_client.patch("/api/v1/settings", json={"conversationHistory": False}, headers={"X-CSRF-Token": csrf(user_client)})
@@ -128,6 +161,24 @@ def test_conversation_history_false_does_not_persist_message_content(user_client
         assert IdempotencyKey.query.count() == 0
         stored = " ".join(c.title for c in Conversation.query.all())
         assert "private sentinel" not in stored
+
+
+def test_current_message_survives_large_memory_context(user_client, monkeypatch):
+    captured = {}
+
+    def capture_complete(self, messages):
+        captured["messages"] = messages
+        return "ok"
+
+    monkeypatch.setattr("app.providers.adapters.MockAdapter.complete", capture_complete)
+    create_mock_provider(user_client)
+    big = "memory filler " * 1000
+    for i in range(20):
+        post_json(user_client, "/api/v1/memory", {"title": f"m{i}", "content": big, "category": "personal"})
+    prompt = "CURRENT PROMPT MUST ARRIVE " + ("z" * 2000)
+    rv = post_json(user_client, "/api/v1/chat/messages", {"message": prompt, "requestId": "budget-current"})
+    assert rv.status_code == 201
+    assert captured["messages"][-1] == {"role": "user", "content": prompt}
 
 
 def test_stream_endpoint_over_live_http(user_client, app):
@@ -149,31 +200,34 @@ def test_stream_endpoint_over_live_http(user_client, app):
 
 
 def test_static_spa_headers_and_production_fail_closed(tmp_path):
-    dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    dist = tmp_path / "frontend-dist"
     assets = dist / "assets"
     assets.mkdir(parents=True, exist_ok=True)
     (dist / "index.html").write_text("<div id='root'>Xultron</div>")
     (assets / "app.js").write_text("console.log('x')")
-    try:
-        app = create_app(TestingConfig)
-        client = app.test_client()
-        index = client.get("/settings")
-        assert index.status_code == 200
-        assert b"Xultron" in index.data
-        assert index.headers["Cache-Control"].startswith("no-cache")
-        assert index.headers["X-Frame-Options"] == "DENY"
-        assert "frame-ancestors 'none'" in index.headers["Content-Security-Policy"]
-        asset = client.get("/assets/app.js")
-        assert asset.status_code == 200
-        assert "immutable" in asset.headers["Cache-Control"]
-    finally:
-        try:
-            (assets / "app.js").unlink()
-            assets.rmdir()
-            (dist / "index.html").unlink()
-            dist.rmdir()
-        except OSError:
-            pass
+    (dist / "sw.js").write_text("self.addEventListener('install', () => {})")
+
+    class StaticTestingConfig(TestingConfig):
+        FRONTEND_DIST_DIR = str(dist)
+
+    app = create_app(StaticTestingConfig)
+    client = app.test_client()
+    index = client.get("/settings")
+    assert index.status_code == 200
+    assert b"Xultron" in index.data
+    assert index.headers["Cache-Control"].startswith("no-cache")
+    assert index.headers["X-Frame-Options"] == "DENY"
+    assert "frame-ancestors 'none'" in index.headers["Content-Security-Policy"]
+    asset = client.get("/assets/app.js")
+    assert asset.status_code == 200
+    assert "immutable" in asset.headers["Cache-Control"]
+    service_worker = client.get("/sw.js")
+    assert service_worker.status_code == 200
+    assert service_worker.headers["Cache-Control"].startswith("no-cache")
+    api_missing = client.get("/api/no-such-route")
+    assert api_missing.status_code == 404
+    assert api_missing.is_json
+    assert b"Xultron" not in api_missing.data
 
     class BadProduction(Config):
         XULTRON_ENV = "production"
@@ -217,3 +271,29 @@ def test_real_flask_db_upgrade_empty_and_existing_0001(tmp_path):
     assert "request_fingerprint" in {col["name"] for col in upgraded.get_columns("idempotency_keys")}
     assert "device_commands" in upgraded.get_table_names()
     assert "device_events" in upgraded.get_table_names()
+
+
+def test_request_id_sqlite_pragmas_last_n_and_voice_form_validation(user_client, app):
+    bad_request_id = user_client.get("/api/v1/settings", headers={"X-Request-ID": "bad request id with spaces"})
+    assert bad_request_id.status_code == 422
+    assert app.config["MAX_CONTENT_LENGTH"] > app.config["MAX_AUDIO_BYTES"]
+    with app.app_context():
+        assert db.session.execute(text("PRAGMA foreign_keys")).scalar() == 1
+        assert db.session.execute(text("PRAGMA busy_timeout")).scalar() >= 5000
+        db.session.add(Message(user_id="missing", conversation_id="missing", role="user", content="x"))
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+        else:
+            raise AssertionError("SQLite foreign keys were not enforced")
+
+    conv = post_json(user_client, "/api/v1/chat/conversations", {"title": "Last N"}).get_json()["conversation"]
+    for i in range(3):
+        post_json(user_client, "/api/v1/chat/messages", {"conversationId": conv["id"], "message": f"msg-{i}", "requestId": f"last-n-{i}"})
+    latest = user_client.get(f"/api/v1/chat/conversations/{conv['id']}/messages?limit=2")
+    contents = [m["content"] for m in latest.get_json()["messages"]]
+    assert contents == ["msg-2", "No AI provider is configured yet. Add a provider in Settings to enable model-backed responses."]
+    token = csrf(user_client)
+    voice = user_client.post("/api/v1/voice/transcribe", data={"audio": (io.BytesIO(b"abc"), "a.webm"), "providerId": "x" * 41}, content_type="multipart/form-data", headers={"X-CSRF-Token": token})
+    assert voice.status_code == 422
