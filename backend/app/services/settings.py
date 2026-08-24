@@ -8,7 +8,7 @@ from app.security.validation import bool_field, enum_field, require_object, stri
 THEMES = {"dark", "darker"}
 ACCENTS = {"cyan", "violet"}
 TEXT_SCALES = {"compact", "standard", "large"}
-LOCALES = {"en", "tr", "es", "fr", "de"}
+LOCALES = {"en", "tr"}
 STT_LANGUAGES = {"auto", "en", "tr", "es", "fr", "de"}
 BOOLEAN_SETTINGS = {
     "lowDataMode",
@@ -37,6 +37,8 @@ def _normalize_settings(values: dict) -> dict:
             merged[key] = value
     if merged.get("analytics") is None:
         merged["analytics"] = False
+    if merged.get("locale") not in LOCALES:
+        merged["locale"] = "en"
     return merged
 
 

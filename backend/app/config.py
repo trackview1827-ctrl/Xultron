@@ -56,6 +56,14 @@ def _load_instance_secrets(env: str) -> dict[str, str]:
 _ENV = os.getenv("XULTRON_ENV", "development")
 _INSTANCE = _load_instance_secrets(_ENV)
 
+# This local-only identity is intentionally disabled by default in production.
+# The default stores only a one-way scrypt hash, never the requested PIN itself.
+_DEFAULT_LOCAL_PIN_HASH = (
+    "scrypt:32768:8:1$example$"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+)
+
 
 class Config:
     XULTRON_ENV = _ENV
@@ -72,6 +80,7 @@ class Config:
     MAX_AUDIO_BYTES = int(os.getenv("MAX_AUDIO_BYTES", "5242880"))
     MAX_CONTENT_LENGTH = max(int(os.getenv("MAX_CONTENT_LENGTH", "6291456")), MAX_AUDIO_BYTES + 1048576)
     RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "120"))
+    AUTH_RATE_LIMIT_PER_MINUTE = int(os.getenv("AUTH_RATE_LIMIT_PER_MINUTE", "10"))
     PROVIDER_TIMEOUT_SECONDS = int(os.getenv("PROVIDER_TIMEOUT_SECONDS", "20"))
     MAX_PROVIDER_RESPONSE_BYTES = int(os.getenv("MAX_PROVIDER_RESPONSE_BYTES", "1048576"))
     MAX_PROVIDER_TEXT_CHARS = int(os.getenv("MAX_PROVIDER_TEXT_CHARS", "24000"))
@@ -80,6 +89,9 @@ class Config:
     ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
     ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY") or _INSTANCE.get("ENCRYPTION_KEY")
     FRONTEND_DIST_DIR = os.getenv("FRONTEND_DIST_DIR") or str(BASE_DIR.parent / "frontend" / "dist")
+    LOCAL_PIN_LOGIN_ENABLED = _bool("LOCAL_PIN_LOGIN_ENABLED", XULTRON_ENV != "production")
+    LOCAL_PIN_USERNAME = (os.getenv("LOCAL_PIN_USERNAME") or "local-user").strip().lower()
+    LOCAL_PIN_HASH = os.getenv("LOCAL_PIN_HASH") or _DEFAULT_LOCAL_PIN_HASH
 
     @classmethod
     def validate(cls):
@@ -94,6 +106,11 @@ class Config:
             raise RuntimeError("ENCRYPTION_KEY is required")
         if cls.ENCRYPTION_KEY:
             Fernet(cls.ENCRYPTION_KEY.encode() if isinstance(cls.ENCRYPTION_KEY, str) else cls.ENCRYPTION_KEY)
+        if cls.LOCAL_PIN_LOGIN_ENABLED:
+            if not cls.LOCAL_PIN_USERNAME:
+                raise RuntimeError("LOCAL_PIN_USERNAME is required when local PIN login is enabled")
+            if not cls.LOCAL_PIN_HASH:
+                raise RuntimeError("LOCAL_PIN_HASH is required when local PIN login is enabled")
 
 
 class TestingConfig(Config):
@@ -102,5 +119,6 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     ENCRYPTION_KEY = Fernet.generate_key().decode()
     RATE_LIMIT_PER_MINUTE = 1000
+    AUTH_RATE_LIMIT_PER_MINUTE = 1000
     SERVER_NAME = "localhost"
     SESSION_COOKIE_SECURE = False

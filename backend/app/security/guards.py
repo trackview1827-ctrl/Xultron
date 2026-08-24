@@ -75,7 +75,10 @@ def install_guards(app):
 
 
 def _rate_limit():
-    limit = int(current_app.config.get("RATE_LIMIT_PER_MINUTE", 120))
+    if request.endpoint == "api_v1.auth_login":
+        limit = int(current_app.config.get("AUTH_RATE_LIMIT_PER_MINUTE", 10))
+    else:
+        limit = int(current_app.config.get("RATE_LIMIT_PER_MINUTE", 120))
     if limit <= 0:
         return
     now = time.time()

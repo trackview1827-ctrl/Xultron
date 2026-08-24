@@ -30,14 +30,14 @@ Alembic migration tests.
 
 ## Passed evidence
 
-- Backend: **28 tests passed**.
-- Frontend: **50 tests passed across 14 files**.
+- Backend: **34 tests passed**.
+- Frontend: **53 tests passed across 14 files**.
 - Strict TypeScript: passed.
 - Python compile check: passed.
-- Vite build: passed with **454 transformed modules**.
+- Vite build: passed with **455 transformed modules**.
 - Production bundles:
-  - CSS: 37.60 kB, 9.16 kB gzip.
-  - JavaScript: 387.78 kB, 123.23 kB gzip.
+  - CSS: 38.65 kB, 9.42 kB gzip.
+  - JavaScript: 394.65 kB, 126.71 kB gzip.
   - No production sourcemaps were emitted.
 - PWA build: valid manifest, service worker and 192/512 icons.
 - Service worker: build-time hashed CSS and JavaScript assets are precached under a
@@ -72,6 +72,13 @@ Alembic migration tests.
   conventional `/usr/bin/env` path. Make targets now invoke the scripts through
   `bash` and the complete gate passes on Termux.
 - Uploaded STT filenames are sanitized before being sent to a provider.
+- The local development identity now uses an animated four-cell numeric PIN screen.
+  Its requested PIN is represented by a one-way scrypt hash, login has a dedicated
+  brute-force limit, and production keeps local PIN access disabled by default.
+- Google Gemini now has a native adapter with header-based API-key authentication,
+  bounded responses, model discovery, safe message conversion and AI-only validation.
+- English and Turkish locale changes now update the document language and visible
+  navigation, chat, memory, provider and settings surfaces immediately.
 
 ## Environment-limited checks
 

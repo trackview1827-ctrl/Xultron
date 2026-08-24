@@ -4,11 +4,12 @@ import { providersApi } from '../../services/providersApi'
 import { Icon } from '../../components/Icon'
 import { Button, EmptyState, Field, Input, Spinner, Switch } from '../../components/ui'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { useLocale } from '../../hooks/useLocale'
 
-const labels: Record<ProviderKind, { title: string; copy: string }> = {
-  ai: { title: 'AI Providers', copy: 'Intelligence engines for reasoning and conversation.' },
-  stt: { title: 'STT Providers', copy: 'Speech recognition links for voice input.' },
-  tts: { title: 'TTS Providers', copy: 'Voice synthesis engines for spoken output.' },
+const labels: Record<ProviderKind, { title: string; titleTr: string; copy: string; copyTr: string }> = {
+  ai: { title: 'AI Providers', titleTr: 'AI Sağlayıcıları', copy: 'Intelligence engines for reasoning and conversation.', copyTr: 'Akıl yürütme ve sohbet için yapay zeka motorları.' },
+  stt: { title: 'STT Providers', titleTr: 'STT Sağlayıcıları', copy: 'Speech recognition links for voice input.', copyTr: 'Sesli giriş için konuşma tanıma bağlantıları.' },
+  tts: { title: 'TTS Providers', titleTr: 'TTS Sağlayıcıları', copy: 'Voice synthesis engines for spoken output.', copyTr: 'Sesli yanıt için konuşma sentezi motorları.' },
 }
 
 function blank(kind: ProviderKind): ProviderInput {
@@ -32,6 +33,7 @@ function providerToInput(provider: Provider): ProviderInput {
 }
 
 export function ProviderManager({ kind, online }: { kind: ProviderKind; online: boolean }) {
+  const { t } = useLocale()
   const [providers, setProviders] = useState<Provider[]>([])
   const [editing, setEditing] = useState<Provider | 'new' | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Provider | null>(null)
@@ -78,8 +80,8 @@ export function ProviderManager({ kind, online }: { kind: ProviderKind; online: 
 
   return <div className="provider-manager">
     <div className="settings-section-head">
-      <div><h2>{labels[kind].title}</h2><p>{labels[kind].copy}</p></div>
-      <Button ref={addButtonRef} onClick={() => setEditing('new')} disabled={!online}><Icon name="plus" /> ADD PROVIDER</Button>
+      <div><h2>{t(labels[kind].title, labels[kind].titleTr)}</h2><p>{t(labels[kind].copy, labels[kind].copyTr)}</p></div>
+      <Button ref={addButtonRef} onClick={() => setEditing('new')} disabled={!online}><Icon name="plus" /> {t('ADD PROVIDER', 'SAĞLAYICI EKLE')}</Button>
     </div>
     {error && <div className="command-error" role="alert">{error}</div>}
     {loading ? <div className="center-loader"><Spinner /></div> : !providers.length
@@ -104,6 +106,7 @@ export function ProviderManager({ kind, online }: { kind: ProviderKind; online: 
 }
 
 function ProviderEditor({ kind, online, provider, confirmationOpen, deleteButtonRef, onClose, onSaved, onDelete }: { kind: ProviderKind; online: boolean; provider?: Provider; confirmationOpen: boolean; deleteButtonRef: RefObject<HTMLButtonElement | null>; onClose: () => void; onSaved: (provider: Provider) => void; onDelete: (provider: Provider) => void }) {
+  const { t } = useLocale()
   const [form, setForm] = useState<ProviderInput>(() => provider ? providerToInput(provider) : blank(kind))
   const [models, setModels] = useState<ModelOption[]>([])
   const [busy, setBusy] = useState('')
@@ -111,6 +114,13 @@ function ProviderEditor({ kind, online, provider, confirmationOpen, deleteButton
   const [error, setError] = useState('')
   const panelRef = useRef<HTMLDivElement>(null); const returnFocusRef = useRef<HTMLElement | null>(null); const onCloseRef = useRef(onClose); const confirmationOpenRef = useRef(confirmationOpen); onCloseRef.current = onClose; confirmationOpenRef.current = confirmationOpen
   const update = <K extends keyof ProviderInput>(key: K, value: ProviderInput[K]) => setForm(current => ({ ...current, [key]: value }))
+  const selectAdapter = (adapter: string) => setForm(current => adapter === 'gemini' ? {
+    ...current,
+    adapter,
+    name: current.name || 'Google Gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    model: current.model || 'gemini-2.5-flash',
+  } : { ...current, adapter })
 
   useEffect(() => {
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -178,7 +188,7 @@ function ProviderEditor({ kind, online, provider, confirmationOpen, deleteButton
     <form onSubmit={event => void save(event)} autoComplete="off"><fieldset className="provider-editor-fields" disabled={!online}>
       <div className="form-grid">
         <Field label="Provider name"><Input value={form.name} onChange={event => update('name', event.target.value)} required autoFocus /></Field>
-        <Field label="Adapter"><select className="field" value={form.adapter} onChange={event => update('adapter', event.target.value)}><option value="openai_compatible">OpenAI compatible</option><option value="custom_http">Custom HTTP</option><option value="local_http">Local endpoint</option></select></Field>
+        <Field label={t('Adapter', 'Adaptör')}><select className="field" value={form.adapter} onChange={event => selectAdapter(event.target.value)}><option value="openai_compatible">OpenAI compatible</option>{kind === 'ai' && <option value="gemini">Google Gemini</option>}<option value="custom_http">Custom HTTP</option><option value="local_http">Local endpoint</option></select></Field>
         <Field label="Base URL" hint="Credentials are sent only to Xultron's backend."><Input value={form.baseUrl} onChange={event => update('baseUrl', event.target.value)} type="url" placeholder="https://api.example.com/v1" required /></Field>
         <Field label="API key" hint={provider?.credential.configured ? `Stored securely: ${provider.credential.masked || 'masked credential'}. Leave blank to keep it.` : 'Never saved in browser storage.'}><Input value={form.apiKey ?? ''} onChange={event => update('apiKey', event.target.value)} type="password" placeholder={provider?.credential.configured ? 'Leave blank to keep existing key' : 'Enter secret once'} autoComplete="new-password" /></Field>
         <Field label="Model ID" hint="Enter manually or use model discovery."><div className="compound-field"><Input value={form.model} onChange={event => update('model', event.target.value)} list="provider-models" /><button type="button" onClick={() => void refreshModels()} disabled={!!busy} aria-label="Refresh models"><Icon name="refresh" /></button></div><datalist id="provider-models">{models.map(model => <option value={model.id} key={model.id}>{model.label}</option>)}</datalist></Field>

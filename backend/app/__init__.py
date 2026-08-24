@@ -61,4 +61,11 @@ def create_app(config_object=None):
         from app.services.auth import cleanup_expired
         print(cleanup_expired())
 
+    @app.cli.command("provision-local-pin")
+    def provision_local_pin_root():
+        """Create or reset the configured local PIN identity from its stored hash."""
+        from app.services.auth import provision_local_pin_user
+        user = provision_local_pin_user(force=True)
+        print(f"Local PIN identity ready: {user.username}")
+
     return app

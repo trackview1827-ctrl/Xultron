@@ -41,6 +41,15 @@ describe('settings behavior', () => {
     expect(app.updateSettings).toHaveBeenCalledWith({ preferredVoice: 'nova' })
   })
 
+  it('renders translated navigation and content for Turkish locale', () => {
+    app.value = { ...app.value, settings: { ...DEFAULT_SETTINGS, locale: 'tr' } }
+    render(<SettingsPage />)
+    expect(screen.getByRole('heading', { name: 'Sistemler' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Genel' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Arayüz dili')).toHaveValue('tr')
+    expect(screen.getByRole('navigation', { name: 'Ayar kategorileri' })).toBeInTheDocument()
+  })
+
   it('renders the backend deviceType field visibly', async () => {
     settings.devices.mockResolvedValue({ devices: [{ id: 'd1', name: 'Workshop Pi', deviceType: 'raspberry_pi', status: 'offline', metadata: {}, createdAt: '2026-08-24T00:00:00Z', updatedAt: '2026-08-24T00:00:00Z' }] })
     render(<DevicesPanel online />)

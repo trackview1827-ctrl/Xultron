@@ -15,7 +15,7 @@ from app.security.validation import (
     validate_base_url,
 )
 
-ADAPTERS = {"openai_compatible", "custom_http", "local_http", "mock"}
+ADAPTERS = {"openai_compatible", "gemini", "custom_http", "local_http", "mock"}
 PUBLIC_CONFIG_KEYS = {
     "reply",
     "transcript",
@@ -51,6 +51,9 @@ def validate_payload(data, partial=False):
         out["kind"] = enum_field(data, "kind", KINDS, required=not partial)
     if "adapter" in data:
         out["adapter"] = enum_field(data, "adapter", ADAPTERS, required=not partial)
+        effective_kind = data.get("kind")
+        if out["adapter"] == "gemini" and effective_kind not in {None, "ai"}:
+            raise APIError("validation_failed", "Gemini adapter is available only for AI providers.", 422)
     if "baseUrl" in data:
         out["base_url"] = validate_base_url(data.get("baseUrl"))
     if "model" in data:
@@ -97,6 +100,8 @@ def _validate_public_config(config: dict):
 
 def create_provider(user_id, data):
     attrs = validate_payload(data)
+    if attrs.get("adapter") == "gemini" and attrs.get("kind") != "ai":
+        raise APIError("validation_failed", "Gemini adapter is available only for AI providers.", 422)
     provider = Provider(user_id=user_id, **attrs)
     db.session.add(provider)
     db.session.flush()
@@ -111,6 +116,10 @@ def create_provider(user_id, data):
 def update_provider(provider_id, user_id, data):
     provider = _owned(provider_id, user_id)
     attrs = validate_payload(data, partial=True)
+    next_adapter = attrs.get("adapter", provider.adapter)
+    next_kind = attrs.get("kind", provider.kind)
+    if next_adapter == "gemini" and next_kind != "ai":
+        raise APIError("validation_failed", "Gemini adapter is available only for AI providers.", 422)
     for key, value in attrs.items():
         setattr(provider, key, value)
     if "apiKey" in data:

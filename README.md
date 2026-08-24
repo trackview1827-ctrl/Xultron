@@ -138,6 +138,24 @@ açıklayıcı bir sistem durumu olarak gösterilir.
 Aynı akış STT ve TTS sağlayıcıları için de geçerlidir. Saklanan anahtar hiçbir
 listeleme veya ayar yanıtında tarayıcıya geri gönderilmez.
 
+Google Gemini doğrudan desteklenir. AI sağlayıcısı eklerken **Google Gemini**
+adaptörünü seçmek güvenli Google API taban adresini ve `gemini-2.5-flash` modelini
+otomatik doldurur. API anahtarı URL'ye eklenmez, backend tarafından `x-goog-api-key`
+başlığında gönderilir.
+
+## Yerel PIN girişi
+
+Geliştirme kurulumu tek kullanıcı için dört haneli PIN ekranı sunar:
+
+- Kullanıcı: `local-user`
+- PIN: `2468`
+
+PIN kaynakta düz metin tutulmaz. Yalnızca tek yönlü scrypt hash'i kullanılır ve
+yerel hesap ilk başarılı girişte oluşturulur. Mevcut yerel hesabı yeniden hazırlamak
+için `cd backend && .venv/bin/flask --app run.py provision-local-pin` komutunu çalıştır.
+Bu kolaylık üretim ortamında varsayılan olarak kapalıdır. Arayüz dili Sistemler →
+Genel bölümünden İngilizce ve Türkçe arasında anında değiştirilebilir.
+
 ## Test ve kalite komutları
 
 ```bash

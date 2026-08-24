@@ -66,6 +66,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     document.documentElement.dataset.accent = settings.accent
     document.documentElement.dataset.theme = settings.theme
     document.documentElement.dataset.textScale = settings.textScale
+    document.documentElement.dataset.locale = settings.locale
+    document.documentElement.lang = settings.locale
   }, [settings])
   const value = useMemo(() => ({ user, sessionReady, sessionReachable, setUser, refreshSession, retryConnection, settings, updateSettings, coreState, dispatchCore, online, networkOnline: browserOnline, page, setPage }), [user, sessionReady, sessionReachable, refreshSession, retryConnection, settings, updateSettings, coreState, online, browserOnline, page])
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

@@ -6,13 +6,22 @@ const auth = vi.hoisted(() => ({ session: vi.fn() }))
 const settingsApiMock = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), devices: vi.fn() }))
 vi.mock('../services/authApi', () => ({ authApi: auth }))
 vi.mock('../services/settingsApi', async original => { const actual = await original<typeof import('../services/settingsApi')>(); return { ...actual, settingsApi: settingsApiMock } })
-function Probe() { const { coreState, settings, sessionReachable, updateSettings, setUser } = useApp(); return <div><span data-testid="core">{coreState}</span><span data-testid="reachable">{String(sessionReachable)}</span><span data-testid="low">{String(settings.lowDataMode)}</span><span data-testid="locale">{settings.locale}</span><button onClick={() => void updateSettings({ lowDataMode: true, reducedMotion: true })}>conserve</button><button onClick={() => setUser({ id: 'u2', username: 'orbit', email: null, isGuest: false, createdAt: '' })}>switch user</button><button onClick={() => setUser(null)}>logout</button></div> }
+function Probe() { const { coreState, settings, sessionReachable, updateSettings, setUser } = useApp(); return <div><span data-testid="core">{coreState}</span><span data-testid="reachable">{String(sessionReachable)}</span><span data-testid="low">{String(settings.lowDataMode)}</span><span data-testid="locale">{settings.locale}</span><button onClick={() => void updateSettings({ lowDataMode: true, reducedMotion: true })}>conserve</button><button onClick={() => void updateSettings({ locale: 'tr' })}>turkish</button><button onClick={() => setUser({ id: 'u2', username: 'orbit', email: null, isGuest: false, createdAt: '' })}>switch user</button><button onClick={() => setUser(null)}>logout</button></div> }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(next => { resolve = next }); return { promise, resolve } }
 describe('offline recovery and conservation behavior', () => {
   beforeEach(() => { Object.defineProperty(navigator, 'onLine', { configurable: true, value: true }); auth.session.mockResolvedValue({ user: { id: 'u1', username: 'nova', email: 'n@x.test', isGuest: false, createdAt: '' }, csrfToken: 'c', expiresAt: null }); settingsApiMock.get.mockResolvedValue({ settings: {} }); settingsApiMock.update.mockResolvedValue({ settings: { lowDataMode: true, reducedMotion: true } }) })
   it('completes the initial boot handshake', async () => { render(<AppProvider><Probe /></AppProvider>); await waitFor(() => expect(screen.getByTestId('core')).toHaveTextContent('ONLINE'), { timeout: 1800 }) })
   it('moves offline immediately and reconnects to online', async () => { render(<AppProvider><Probe /></AppProvider>); await waitFor(() => expect(screen.getByTestId('core')).toHaveTextContent(/CONNECTING|ONLINE/)); fireEvent(window, new Event('offline')); expect(screen.getByTestId('core')).toHaveTextContent('OFFLINE'); fireEvent(window, new Event('online')); await waitFor(() => expect(screen.getByTestId('core')).toHaveTextContent('ONLINE'), { timeout: 1200 }) })
   it('applies low-data and reduced-motion modes at the document boundary', async () => { render(<AppProvider><Probe /></AppProvider>); await waitFor(() => expect(screen.getByTestId('core')).toHaveTextContent('ONLINE'), { timeout: 1800 }); fireEvent.click(screen.getByText('conserve')); await waitFor(() => expect(document.documentElement.dataset.lowData).toBe('true')); expect(document.documentElement.dataset.reduceMotion).toBe('true'); expect(screen.getByTestId('low')).toHaveTextContent('true') })
+  it('applies a language change immediately to state and the document', async () => {
+    settingsApiMock.update.mockResolvedValueOnce({ settings: { locale: 'tr' } })
+    render(<AppProvider><Probe /></AppProvider>)
+    await waitFor(() => expect(screen.getByTestId('core')).toHaveTextContent('ONLINE'), { timeout: 1800 })
+    fireEvent.click(screen.getByText('turkish'))
+    await waitFor(() => expect(screen.getByTestId('locale')).toHaveTextContent('tr'))
+    expect(document.documentElement.lang).toBe('tr')
+    expect(document.documentElement.dataset.locale).toBe('tr')
+  })
   it('keeps the Core out of ONLINE when the backend probe fails', async () => {
     auth.session.mockRejectedValue(new Error('backend unavailable'))
     render(<AppProvider><Probe /></AppProvider>)

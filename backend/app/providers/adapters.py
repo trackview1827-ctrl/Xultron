@@ -1,7 +1,7 @@
 import json
 import time
 from typing import Iterable
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import requests
 from flask import current_app
@@ -232,6 +232,109 @@ class OpenAICompatibleAdapter:
         if not media_type.startswith("audio/"):
             media_type = "audio/mpeg"
         return audio, media_type
+
+
+class GeminiAdapter(OpenAICompatibleAdapter):
+    """Google Gemini Generative Language REST adapter for AI completion."""
+
+    @property
+    def base(self):
+        configured = self.cfg.base_url or "https://generativelanguage.googleapis.com/v1beta"
+        parsed = urlparse(configured)
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+            raise ProviderFailure("provider_invalid", "Gemini base URL must be a valid HTTPS URL.", 422)
+        return configured.rstrip("/")
+
+    def headers(self):
+        if not self.cfg.api_key:
+            raise ProviderFailure("provider_authentication_failed", "Gemini API key is required.", 422)
+        return {"Content-Type": "application/json", "x-goog-api-key": self.cfg.api_key}
+
+    def _json_response(self, response, failure_code="provider_request_failed"):
+        body = self._read_bounded(response)
+        if response.status_code in {401, 403}:
+            raise ProviderFailure("provider_authentication_failed", "Authentication was rejected by Gemini.", 502)
+        if response.status_code == 429:
+            raise ProviderFailure("provider_rate_limited", "Gemini rate limit reached.", 502, True)
+        if response.status_code >= 400:
+            raise ProviderFailure(failure_code, f"Gemini returned HTTP {response.status_code}.", 502, response.status_code >= 500)
+        try:
+            data = json.loads(body.decode(getattr(response, "encoding", None) or "utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, LookupError):
+            raise ProviderFailure("provider_malformed_response", "Gemini returned malformed response.", 502, True)
+        if not isinstance(data, dict):
+            raise ProviderFailure("provider_malformed_response", "Gemini returned malformed response.", 502, True)
+        return data
+
+    def models(self):
+        try:
+            response = requests.get(f"{self.base}/models", headers=self.headers(), timeout=self.timeout, allow_redirects=False, stream=True)
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "Gemini request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc, "provider_model_discovery_failed")
+        data = self._json_response(response, "provider_model_discovery_failed")
+        raw = data.get("models", [])
+        if not isinstance(raw, list):
+            raise ProviderFailure("provider_malformed_response", "Gemini returned malformed model data.", 502, True)
+        models = []
+        for item in raw[:500]:
+            if not isinstance(item, dict):
+                continue
+            methods = item.get("supportedGenerationMethods", [])
+            if isinstance(methods, list) and "generateContent" not in methods:
+                continue
+            model_id = item.get("name")
+            if not isinstance(model_id, str) or not model_id.strip():
+                continue
+            model_id = model_id.strip().removeprefix("models/")[:160]
+            label = item.get("displayName") if isinstance(item.get("displayName"), str) else model_id
+            models.append({"id": model_id, "label": label[:160]})
+        return models
+
+    def test(self):
+        start = time.monotonic()
+        self.models()
+        return {"ok": True, "latencyMs": int((time.monotonic() - start) * 1000), "message": "Gemini bağlantısı başarılı."}
+
+    def complete(self, messages):
+        model = (self.cfg.model or "gemini-2.5-flash").removeprefix("models/")
+        safe_model = quote(model, safe="-._")
+        system_parts = []
+        contents = []
+        for message in messages:
+            content = message.get("content") if isinstance(message, dict) else None
+            role = message.get("role") if isinstance(message, dict) else None
+            if not isinstance(content, str) or not content.strip():
+                continue
+            if role == "system":
+                system_parts.append({"text": content})
+            else:
+                contents.append({"role": "model" if role == "assistant" else "user", "parts": [{"text": content}]})
+        if not contents:
+            raise ProviderFailure("provider_invalid", "Gemini requires at least one message.", 422)
+        payload = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": self.cfg.temperature if self.cfg.temperature is not None else 0.3,
+                "maxOutputTokens": self.cfg.max_tokens or 800,
+            },
+        }
+        if system_parts:
+            payload["systemInstruction"] = {"parts": system_parts}
+        try:
+            response = requests.post(f"{self.base}/models/{safe_model}:generateContent", headers=self.headers(), json=payload, timeout=self.timeout, allow_redirects=False, stream=True)
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "Gemini request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc)
+        data = self._json_response(response)
+        candidates = data.get("candidates")
+        first = candidates[0] if isinstance(candidates, list) and candidates else None
+        content = first.get("content") if isinstance(first, dict) else None
+        parts = content.get("parts") if isinstance(content, dict) else None
+        text = "".join(part.get("text", "") for part in parts if isinstance(part, dict)) if isinstance(parts, list) else ""
+        return self._bound_text(text)
 
 
 class CustomHTTPAdapter(OpenAICompatibleAdapter):

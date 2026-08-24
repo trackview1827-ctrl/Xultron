@@ -1,12 +1,14 @@
 import hashlib
+import re
 import secrets
 from datetime import timedelta
 
 from flask import current_app, request, session
 from sqlalchemy.exc import IntegrityError
+from werkzeug.security import check_password_hash
 
 from app.extensions import db
-from app.models import Session, User, UserSettings, utcnow
+from app.models import DEFAULT_SETTINGS, Session, User, UserSettings, utcnow
 from app.security.errors import APIError
 from app.security.validation import normalize_email, normalize_username, require_object
 
@@ -78,6 +80,33 @@ def validate_registration(data):
     return username, email, password
 
 
+def provision_local_pin_user(force: bool = False) -> User:
+    """Create or refresh the configured local PIN identity using only its hash."""
+    if not current_app.config.get("LOCAL_PIN_LOGIN_ENABLED"):
+        raise APIError("local_pin_disabled", "Yerel PIN girişi devre dışı.", 409)
+    username = current_app.config["LOCAL_PIN_USERNAME"]
+    user = User.query.filter_by(username=username).first()
+    if user is None:
+        user = User(username=username, email=None, is_guest=False)
+        local_settings = dict(DEFAULT_SETTINGS)
+        local_settings.update({"locale": "tr", "sttLanguage": "tr"})
+        user.settings = UserSettings(values=local_settings)
+        user.password_hash = current_app.config["LOCAL_PIN_HASH"]
+        db.session.add(user)
+    elif user.is_guest:
+        raise APIError("identity_conflict", "PIN kullanıcısı bir misafir hesabıyla çakışıyor.", 409)
+    elif force:
+        user.password_hash = current_app.config["LOCAL_PIN_HASH"]
+        values = user.settings.to_public() if user.settings else dict(DEFAULT_SETTINGS)
+        values.update({"locale": "tr", "sttLanguage": "tr"})
+        if user.settings:
+            user.settings.values = values
+        else:
+            user.settings = UserSettings(values=values)
+    db.session.commit()
+    return user
+
+
 def register(data):
     from flask import g
     username, email, password = validate_registration(data)
@@ -121,9 +150,20 @@ def login(data):
         raise APIError("invalid_credentials", "Identifier and password are required.", 401)
     if len(identifier) > 255 or len(password) > 1024:
         raise APIError("validation_failed", "Identifier or password is too long.", 422)
+    local_pin_login = (
+        current_app.config.get("LOCAL_PIN_LOGIN_ENABLED")
+        and identifier == current_app.config.get("LOCAL_PIN_USERNAME")
+    )
+    if local_pin_login and not re.fullmatch(r"\d{4}", password):
+        raise APIError("validation_failed", "PIN tam olarak 4 rakam olmalıdır.", 422)
     user = User.query.filter((User.email == identifier) | (User.username == identifier)).first()
+    if local_pin_login and user is None:
+        if not check_password_hash(current_app.config["LOCAL_PIN_HASH"], password):
+            raise APIError("invalid_credentials", "Kullanıcı adı veya PIN hatalı.", 401)
+        user = provision_local_pin_user()
     if not user or user.is_guest or not user.check_password(password):
-        raise APIError("invalid_credentials", "Invalid identifier or password.", 401)
+        message = "Kullanıcı adı veya PIN hatalı." if local_pin_login else "Invalid identifier or password."
+        raise APIError("invalid_credentials", message, 401)
     from flask import g
     if g.get("current_session"):
         g.current_session.revoked_at = utcnow()
