@@ -1,0 +1,1 @@
+Alembic migrations for Xultron backend. Use `flask --app run.py db upgrade`.

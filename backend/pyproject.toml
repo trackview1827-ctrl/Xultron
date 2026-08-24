@@ -1,0 +1,23 @@
+[project]
+name = "xultron-backend"
+version = "0.1.0"
+description = "Xultron Flask backend"
+requires-python = ">=3.10"
+dependencies = [
+  "Flask>=3.0,<4",
+  "Flask-SQLAlchemy>=3.1,<4",
+  "Flask-Migrate>=4.0,<5",
+  "cryptography>=42",
+  "requests>=2.31,<3",
+  "python-dotenv>=1.0,<2",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
