@@ -1,0 +1,18 @@
+import { apiRequest } from './apiClient'
+import type { ModelOption, Provider, ProviderInput, ProviderKind, ProviderTest } from '../types'
+
+export function sanitizeProviderInput(input: ProviderInput): ProviderInput {
+  const clean = { ...input, config: { ...input.config } }
+  if (!clean.apiKey?.trim()) delete clean.apiKey
+  return clean
+}
+
+export const providersApi = {
+  list: (kind?: ProviderKind) => apiRequest<{ providers: Provider[] }>(`/providers${kind ? `?kind=${kind}` : ''}`),
+  get: (id: string) => apiRequest<{ provider: Provider }>(`/providers/${encodeURIComponent(id)}`),
+  create: (input: ProviderInput) => apiRequest<{ provider: Provider }>('/providers', { method: 'POST', body: JSON.stringify(sanitizeProviderInput(input)) }),
+  update: (id: string, input: ProviderInput) => apiRequest<{ provider: Provider }>(`/providers/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(sanitizeProviderInput(input)) }),
+  remove: (id: string) => apiRequest<void>(`/providers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  test: (id: string) => apiRequest<ProviderTest>(`/providers/${encodeURIComponent(id)}/test`, { method: 'POST', body: '{}' }),
+  models: (id: string) => apiRequest<{ models: ModelOption[] }>(`/providers/${encodeURIComponent(id)}/models`, { method: 'POST', body: '{}' }),
+}

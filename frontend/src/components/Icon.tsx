@@ -1,0 +1,9 @@
+import type { SVGProps } from 'react'
+
+export type IconName = 'core' | 'memory' | 'settings' | 'mic' | 'send' | 'plus' | 'search' | 'close' | 'edit' | 'trash' | 'back' | 'user' | 'signal' | 'download' | 'upload' | 'check' | 'refresh' | 'stop' | 'logout' | 'devices' | 'shield' | 'voice'
+const paths: Record<IconName, string> = {
+  core: 'M12 3a9 9 0 1 0 9 9M12 7a5 5 0 1 0 5 5M12 10a2 2 0 1 0 2 2', memory: 'M5 5h14v14H5zM9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m12 0h4M2 15h4m12 0h4', settings: 'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7m0-6v3m0 13v3m9.5-9.5h-3m-13 0h-3m16.2-6.2-2.1 2.1m-9.2 9.2-2.1 2.1m13.4 0-2.1-2.1M7.4 7.4 5.3 5.3',
+  mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Zm-7 9a7 7 0 0 0 14 0m-7 7v3m-4 0h8', send: 'm4 12 16-8-5 16-3-7-8-1Zm8 1 8-9', plus: 'M12 5v14M5 12h14', search: 'm21 21-4.4-4.4m2.4-5.1a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0', close: 'M6 6l12 12M18 6 6 18', edit: 'm4 20 4.5-1 10-10-3.5-3.5-10 10L4 20Zm9-12 3.5 3.5', trash: 'M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7m4 4v6m4-6v6', back: 'm15 18-6-6 6-6', user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 9a7 7 0 0 0-14 0',
+  signal: 'M5 15a10 10 0 0 1 14 0M8 18a6 6 0 0 1 8 0m-4 3h.01', download: 'M12 3v12m-5-5 5 5 5-5M5 21h14', upload: 'M12 21V9m-5 5 5-5 5 5M5 3h14', check: 'm5 12 4 4L19 6', refresh: 'M20 6v6h-6M4 18v-6h6m9-3a8 8 0 0 0-13-3l-2 2m1 7a8 8 0 0 0 13 3l2-2', stop: 'M7 7h10v10H7z', logout: 'M10 5H5v14h5m4-4 3-3-3-3m-7 3h10', devices: 'M7 3h10v14H7zM9 21h6m-3-4v4', shield: 'M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6l-7-3Z', voice: 'M4 10v4m4-7v10m4-14v18m4-14v10m4-7v4'
+}
+export function Icon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}><path d={paths[name]} /></svg> }
