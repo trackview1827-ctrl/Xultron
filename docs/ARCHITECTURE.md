@@ -10,7 +10,6 @@ frontend/                 React, TypeScript, Vite, Tailwind, Framer Motion
   src/components/         Reusable visual and accessibility primitives
   src/features/           Auth, chat, core, memory, providers, settings, voice
   src/layouts/            Application shell and route layouts
-  src/pages/              Route-level composition
   src/services/           Typed API and browser service boundaries
   src/stores/             Context and reducer based application state
   src/theme/              Tokens and global visual language
@@ -79,4 +78,3 @@ network-only and never imply offline AI. Low-data mode reduces motion, limits ch
 context and history fetch sizes, avoids polling, and records approximate transfer
 statistics locally without analytics. The shell opens offline and clearly reports
 that provider-backed actions need a connection.
-

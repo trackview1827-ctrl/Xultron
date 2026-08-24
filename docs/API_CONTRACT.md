@@ -48,12 +48,12 @@ or credential material.
 
 ## Conversations and chat
 
-- `GET /chat/conversations?limit=20&cursor=...`
+- `GET /chat/conversations?limit=20`
 - `POST /chat/conversations`
   - Body: `{ "title": "optional" }`
 - `GET /chat/conversations/{id}`
 - `DELETE /chat/conversations/{id}`
-- `GET /chat/conversations/{id}/messages?limit=50&before=...`
+- `GET /chat/conversations/{id}/messages?limit=50`
 - `POST /chat/messages`
   - Body: `{ "conversationId": "optional", "message": "...", "requestId": "uuid" }`
   - Idempotent per user and request ID.
@@ -110,7 +110,8 @@ or the common safe error envelope.
   - Body: `{ "text": "...", "providerId": "optional", "voice": "optional" }`
   - Returns bounded audio bytes with a provider media type.
 
-Audio is never persisted unless the user's explicit `saveAudio` setting is true.
+This release never persists raw audio. `saveAudio` is an explicit consent
+preference reserved for a future persistence implementation and defaults off.
 
 ## Memory
 
@@ -138,4 +139,3 @@ Supported settings include `locale`, `lowDataMode`, `memoryEnabled`,
 
 The first release returns registered device metadata or an empty list. Command and
 event service boundaries exist for future Raspberry Pi, ESP32 and Bluetooth work.
-

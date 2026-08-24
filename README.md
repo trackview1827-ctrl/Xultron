@@ -39,6 +39,7 @@ Ayrıntılı belgeler:
 - [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md)
 - [`docs/UI_SYSTEM.md`](docs/UI_SYSTEM.md)
 - [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md)
+- [`docs/VALIDATION_REPORT.md`](docs/VALIDATION_REPORT.md)
 - [`SECURITY.md`](SECURITY.md)
 
 ## Gereksinimler
