@@ -370,3 +370,22 @@ def test_request_id_sqlite_pragmas_last_n_and_voice_form_validation(user_client,
     token = csrf(user_client)
     voice = user_client.post("/api/v1/voice/transcribe", data={"audio": (io.BytesIO(b"abc"), "a.webm"), "providerId": "x" * 41}, content_type="multipart/form-data", headers={"X-CSRF-Token": token})
     assert voice.status_code == 422
+
+
+def test_voice_upload_filename_is_sanitized(user_client, monkeypatch):
+    provider = create_mock_provider(user_client, kind="stt", config={"transcript": "safe"})
+    captured = {}
+
+    def transcribe(self, audio, filename, language):
+        captured["filename"] = filename
+        return {"text": "safe", "language": language}
+
+    monkeypatch.setattr("app.providers.adapters.MockAdapter.transcribe", transcribe)
+    response = user_client.post(
+        "/api/v1/voice/transcribe",
+        data={"audio": (io.BytesIO(b"abc"), "../../private key.webm"), "providerId": provider["id"]},
+        content_type="multipart/form-data",
+        headers={"X-CSRF-Token": csrf(user_client)},
+    )
+    assert response.status_code == 200
+    assert captured["filename"] == "private_key.webm"

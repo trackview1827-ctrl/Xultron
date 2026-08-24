@@ -2,6 +2,7 @@ import json
 from datetime import UTC, datetime
 
 from flask import Blueprint, Response, current_app, g, jsonify, request, session, stream_with_context
+from werkzeug.utils import secure_filename
 
 from app.extensions import db
 from app.models import Conversation, Device, DeviceCommand, DeviceEvent, MemoryItem, Message, Provider, Session, User, utcnow
@@ -258,7 +259,8 @@ def transcribe():
     provider = owned_provider(provider_id.strip(), user.id) if provider_id and provider_id.strip() else default_provider(user.id, "stt")
     if not provider:
         raise APIError("provider_not_configured", "No STT provider is configured.", 503)
-    return ok(adapter_call(provider, "transcribe", audio, (f.filename or "audio.webm")[:120], language.strip() if language else None))
+    filename = secure_filename(f.filename or "")[:120] or "audio.webm"
+    return ok(adapter_call(provider, "transcribe", audio, filename, language.strip() if language else None))
 
 
 @api_bp.post("/voice/synthesize")

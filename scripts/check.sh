@@ -31,6 +31,6 @@ test -s "$ROOT/frontend/dist/icons/xultron-192.png"
 test -s "$ROOT/frontend/dist/icons/xultron-512.png"
 
 echo "[7/7] Isolated production HTTP smoke"
-"$ROOT/scripts/release-smoke.sh"
+bash "$ROOT/scripts/release-smoke.sh"
 
 echo "All automated Xultron checks passed."

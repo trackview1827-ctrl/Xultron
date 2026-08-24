@@ -13,15 +13,25 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const browserOnline = useOnline(); const [user, setUser] = useState<User | null>(null); const [sessionReady, setSessionReady] = useState(false)
+  const browserOnline = useOnline(); const [user, setUserState] = useState<User | null>(null); const [sessionReady, setSessionReady] = useState(false)
   const [sessionReachable, setSessionReachable] = useState(true); const [settings, setSettings] = useState(DEFAULT_SETTINGS)
   const settingsGenerationRef = useRef(0)
+  const identityRef = useRef<string | null>(null)
+  const setUser = useCallback((next: User | null) => {
+    const nextId = next?.id ?? null
+    if (identityRef.current !== nextId) {
+      identityRef.current = nextId
+      settingsGenerationRef.current += 1
+      setSettings(DEFAULT_SETTINGS)
+    }
+    setUserState(next)
+  }, [])
   const [coreState, dispatchCore] = useReducer(coreReducer, 'BOOTING'); const [page, setPage] = useState<PageId>('home')
   const refreshSession = useCallback(async () => {
     try { const session = await authApi.session(); setUser(session.user); setSessionReachable(true); return true }
     catch { setSessionReachable(false); setUser(null); return false }
     finally { setSessionReady(true) }
-  }, [])
+  }, [setUser])
   const online = browserOnline && sessionReachable
   const retryConnection = useCallback(() => dispatchCore({ type: 'RETRY' }), [])
   useEffect(() => { void refreshSession() }, [refreshSession])
@@ -40,9 +50,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => { settingsGenerationRef.current += 1; controller.abort() }
   }, [user?.id, sessionReachable])
   const updateSettings = useCallback(async (patch: Partial<AppSettings>) => {
-    const previous = settings; const next = { ...settings, ...patch }; setSettings(next)
-    try { if (user && sessionReachable) { const result = await settingsApi.update(patch); setSettings({ ...DEFAULT_SETTINGS, ...result.settings }) } }
-    catch (error) { setSettings(previous); throw error }
+    if (!user || !sessionReachable) throw new Error('Reconnect before changing settings.')
+    const ownerId = user.id; const generation = settingsGenerationRef.current; const previous = settings; const next = { ...settings, ...patch }; setSettings(next)
+    try {
+      const result = await settingsApi.update(patch)
+      if (generation === settingsGenerationRef.current && identityRef.current === ownerId) setSettings({ ...DEFAULT_SETTINGS, ...result.settings })
+    } catch (error) {
+      if (generation === settingsGenerationRef.current && identityRef.current === ownerId) setSettings(previous)
+      throw error
+    }
   }, [sessionReachable, settings, user])
   useEffect(() => {
     document.documentElement.dataset.lowData = String(settings.lowDataMode)

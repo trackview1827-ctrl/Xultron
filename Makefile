@@ -1,10 +1,10 @@
 .PHONY: setup dev migrate test typecheck build smoke check serve clean
 
 setup:
-	./scripts/bootstrap.sh
+	bash ./scripts/bootstrap.sh
 
 dev:
-	./scripts/dev.sh
+	bash ./scripts/dev.sh
 
 migrate:
 	cd backend && .venv/bin/flask --app run.py db upgrade
@@ -20,10 +20,10 @@ build:
 	npm --prefix frontend run build
 
 smoke: build
-	./scripts/release-smoke.sh
+	bash ./scripts/release-smoke.sh
 
 check:
-	./scripts/check.sh
+	bash ./scripts/check.sh
 
 serve: build migrate
 	cd backend && .venv/bin/python run.py

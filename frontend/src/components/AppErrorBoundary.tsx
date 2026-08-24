@@ -24,7 +24,7 @@ export class AppErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundar
       <div className="fatal-mark" aria-hidden="true">X</div>
       <span className="section-index">SYSTEM RECOVERY / 01</span>
       <h1>Xultron paused safely.</h1>
-      <p>The interface encountered an unexpected condition. Your server-side conversations, providers, and memory were not changed.</p>
+      <p>The interface encountered an unexpected condition. Recover the interface, then verify any action that was in progress.</p>
       <div className="fatal-actions"><Button onClick={this.retry}>TRY INTERFACE AGAIN</Button><Button variant="secondary" onClick={this.reload}>RELOAD XULTRON</Button></div>
     </main>
   }
