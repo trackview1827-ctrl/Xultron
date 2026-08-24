@@ -8,7 +8,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 }
 
 export const settingsApi = {
-  get: () => apiRequest<{ settings: AppSettings }>('/settings'),
+  get: (signal?: AbortSignal) => apiRequest<{ settings: AppSettings }>('/settings', { signal }),
   update: (settings: Partial<AppSettings>) => apiRequest<{ settings: AppSettings }>('/settings', { method: 'PATCH', body: JSON.stringify(settings) }),
   devices: () => apiRequest<{ devices: Device[] }>('/devices'),
 }

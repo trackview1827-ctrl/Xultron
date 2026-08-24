@@ -1,6 +1,7 @@
-const CACHE = 'xultron-shell-v1'
-// The production Vite build replaces this fallback worker with an exact hashed BUILD_ASSETS manifest.
-const BUILD_ASSETS = []
+export function serviceWorkerSource(buildAssets: string[]): string {
+  const cacheVersion = buildAssets.map(path => path.split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '')).join('-') || 'dev'
+  return `const CACHE = 'xultron-shell-${cacheVersion}'
+const BUILD_ASSETS = ${JSON.stringify(buildAssets.map(path => `/${path}`))}
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/xultron.svg', '/icons/xultron-192.png', '/icons/xultron-512.png', ...BUILD_ASSETS]
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting())))
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())))
@@ -13,3 +14,5 @@ self.addEventListener('fetch', event => {
   }
   event.respondWith(caches.match(request).then(cached => cached || fetch(request).then(response => { if (response.ok) { const copy = response.clone(); caches.open(CACHE).then(cache => cache.put(request, copy)) } return response })))
 })
+`
+}

@@ -23,6 +23,9 @@ function count(direction: keyof DataUsage, value: string | Blob): void {
   const bytes = typeof value === 'string' ? new Blob([value]).size : value.size
   usage = { ...usage, [direction]: usage[direction] + bytes }; subscribers.forEach(fn => fn(getDataUsage()))
 }
+function countFormData(form: FormData): void {
+  for (const value of form.values()) count('uploaded', value)
+}
 
 async function safeError(response: Response): Promise<ApiError> {
   try {
@@ -38,9 +41,10 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   if (csrfToken && init.method && init.method !== 'GET') headers.set('X-CSRF-Token', csrfToken)
   if (typeof init.body === 'string') count('uploaded', init.body)
   else if (init.body instanceof Blob) count('uploaded', init.body)
+  else if (init.body instanceof FormData) countFormData(init.body)
   let response: Response
   try { response = await fetch(`${API_ROOT}${path}`, { ...init, headers, credentials: 'same-origin' }) }
-  catch { throw new ApiError('The Xultron link is unavailable. Check your connection.', 0, 'network_error', true) }
+  catch (error) { if (error instanceof DOMException && error.name === 'AbortError') throw error; throw new ApiError('The Xultron link is unavailable. Check your connection.', 0, 'network_error', true) }
   const text = await response.text(); count('downloaded', text)
   if (!response.ok) {
     const reconstructed = new Response(text, { status: response.status, headers: response.headers })
@@ -50,12 +54,12 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   try { return JSON.parse(text) as T } catch { throw new ApiError('Xultron received unreadable data.', response.status, 'invalid_response', false) }
 }
 
-export async function apiBlob(path: string, body: unknown): Promise<Blob> {
+export async function apiBlob(path: string, body: unknown, signal?: AbortSignal): Promise<Blob> {
   const payload = JSON.stringify(body); count('uploaded', payload)
   const headers = new Headers({ 'Content-Type': 'application/json' }); if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
   let response: Response
-  try { response = await fetch(`${API_ROOT}${path}`, { method: 'POST', body: payload, headers, credentials: 'same-origin' }) }
-  catch { throw new ApiError('Speech service is unreachable.', 0, 'network_error', true) }
+  try { response = await fetch(`${API_ROOT}${path}`, { method: 'POST', body: payload, headers, credentials: 'same-origin', signal }) }
+  catch (error) { if (error instanceof DOMException && error.name === 'AbortError') throw error; throw new ApiError('Speech service is unreachable.', 0, 'network_error', true) }
   if (!response.ok) throw await safeError(response)
   const blob = await response.blob(); count('downloaded', blob); return blob
 }
@@ -68,16 +72,23 @@ export async function apiStream(path: string, body: unknown, onEvent: (event: st
   catch (error) { if (error instanceof DOMException && error.name === 'AbortError') throw error; throw new ApiError('Streaming link interrupted. Your message is safe to retry.', 0, 'network_error', true) }
   if (!response.ok) throw await safeError(response)
   if (!response.body) throw new ApiError('Streaming is not supported by this browser.', 0, 'stream_unavailable', false)
-  const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ''
+  const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ''; let terminal = false
+  const processBlock = (block: string) => {
+    let event = 'message'; const data: string[] = []
+    for (const line of block.split(/\r?\n/)) { if (line.startsWith('event:')) event = line.slice(6).trim(); if (line.startsWith('data:')) data.push(line.slice(5).trim()) }
+    const serialized = data.join('\n'); if (!serialized) return
+    let parsed: unknown
+    try { parsed = JSON.parse(serialized) as unknown } catch { parsed = serialized }
+    if (event === 'done' || event === 'error') terminal = true
+    onEvent(event, parsed)
+  }
   while (true) {
     const { value, done } = await reader.read(); if (done) break
     const chunk = decoder.decode(value, { stream: true }); count('downloaded', chunk); buffer += chunk
     const blocks = buffer.split(/\r?\n\r?\n/); buffer = blocks.pop() ?? ''
-    for (const block of blocks) {
-      let event = 'message'; const data: string[] = []
-      for (const line of block.split(/\r?\n/)) { if (line.startsWith('event:')) event = line.slice(6).trim(); if (line.startsWith('data:')) data.push(line.slice(5).trim()) }
-      const raw = data.join('\n'); if (!raw) continue
-      try { onEvent(event, JSON.parse(raw) as unknown) } catch { onEvent(event, raw) }
-    }
+    for (const block of blocks) processBlock(block)
   }
+  buffer += decoder.decode()
+  if (buffer.trim()) processBlock(buffer)
+  if (!terminal) throw new ApiError('Streaming ended before Xultron completed the response. Your message is safe to retry.', 0, 'stream_interrupted', true)
 }

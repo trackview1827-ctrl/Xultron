@@ -21,4 +21,15 @@ describe('API and secret handling', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new ReadableStream({ start(controller) { chunks.forEach(chunk => controller.enqueue(encoder.encode(chunk))); controller.close() } }), { status: 200, headers: { 'Content-Type': 'text/event-stream' } }))
     const events: string[] = []; await apiStream('/chat/stream', { message: 'Hi' }, event => events.push(event)); expect(events).toEqual(['state', 'delta', 'done'])
   })
+  it('rejects an SSE response that ends without a terminal event', async () => {
+    const encoder = new TextEncoder()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new ReadableStream({ start(controller) { controller.enqueue(encoder.encode('event: delta\ndata: {"delta":"Partial"}\n\n')); controller.close() } }), { status: 200 }))
+    await expect(apiStream('/chat/stream', { message: 'Hi' }, () => undefined)).rejects.toMatchObject({ code: 'stream_interrupted', retryable: true })
+  })
+  it('does not redeliver an event when the consumer callback throws', async () => {
+    const encoder = new TextEncoder(); const callback = vi.fn(() => { throw new Error('consumer failed') })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new ReadableStream({ start(controller) { controller.enqueue(encoder.encode('event: done\ndata: {"message":{"content":"Hello"}}\n\n')); controller.close() } }), { status: 200 }))
+    await expect(apiStream('/chat/stream', { message: 'Hi' }, callback)).rejects.toThrow('consumer failed')
+    expect(callback).toHaveBeenCalledTimes(1)
+  })
 })

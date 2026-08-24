@@ -20,4 +20,16 @@ describe('Xultron Core state machine', () => {
     expect(coreReducer('OFFLINE', { type: 'NETWORK_FOUND' })).toBe('CONNECTING')
     expect(coreReducer('ERROR', { type: 'RETRY' })).toBe('CONNECTING')
   })
+  it('keeps ERROR observable until an explicit recovery action', () => {
+    const failed = coreReducer('THINKING', { type: 'FAIL' })
+    expect(failed).toBe('ERROR')
+    expect(coreReducer(failed, { type: 'COMPLETE' })).toBe('ERROR')
+    expect(coreReducer(failed, { type: 'LISTEN' })).toBe('ERROR')
+    expect(coreReducer(failed, { type: 'RECOVER' })).toBe('ONLINE')
+  })
+  it('cancels active work without entering ERROR', () => {
+    expect(coreReducer('THINKING', { type: 'CANCEL' })).toBe('ONLINE')
+    expect(coreReducer('LISTENING', { type: 'CANCEL' })).toBe('ONLINE')
+    expect(coreReducer('SPEAKING', { type: 'CANCEL' })).toBe('ONLINE')
+  })
 })

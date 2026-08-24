@@ -1,8 +1,8 @@
 import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react'
 
-export function Button({ variant = 'primary', className = '', children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost' }) {
-  return <button className={`btn btn-${variant} ${className}`} {...props}>{children}</button>
-}
+export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost' }>(function Button({ variant = 'primary', className = '', children, ...props }, ref) {
+  return <button ref={ref} className={`btn btn-${variant} ${className}`} {...props}>{children}</button>
+})
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className = '', ...props }, ref) { return <input ref={ref} className={`field ${className}`} {...props} /> })
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea({ className = '', ...props }, ref) { return <textarea ref={ref} className={`field resize-none ${className}`} {...props} /> })
 export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) { return <label className="field-wrap"><span className="field-label">{label}</span>{children}{error && <span className="field-error" role="alert">{error}</span>}{hint && !error && <span className="field-hint">{hint}</span>}</label> }

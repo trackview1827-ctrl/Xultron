@@ -7,7 +7,7 @@ const stateColors: Record<CoreState, { main: string; soft: string }> = {
   LISTENING: { main: '#58f0bc', soft: '#16483b' }, THINKING: { main: '#987dff', soft: '#352a66' }, SPEAKING: { main: '#bcefff', soft: '#17445b' }, ERROR: { main: '#ff627d', soft: '#4b1b29' },
 }
 export function XultronCore({ state, reducedMotion = false, compact = false, level = 0.4 }: { state: CoreState; reducedMotion?: boolean; compact?: boolean; level?: number }) {
-  const color = stateColors[state]; const activeMotion = !reducedMotion && state !== 'OFFLINE'
+  const color = stateColors[state]; const activeMotion = !reducedMotion && state !== 'OFFLINE' && state !== 'ERROR'
   const spinDuration = state === 'THINKING' ? 2.6 : state === 'CONNECTING' ? 5 : 18
   const pulseScale = state === 'LISTENING' ? 1 + level * .12 : state === 'SPEAKING' ? 1.055 : state === 'ERROR' ? 1.025 : 1.018
   return <figure className={`x-core ${compact ? 'x-core-compact' : ''}`} data-state={state} aria-label={`Xultron Core: ${coreLabel(state)}`}>
@@ -23,7 +23,7 @@ export function XultronCore({ state, reducedMotion = false, compact = false, lev
         <path d="M86 82a108 108 0 0 1 148 0M234 238a108 108 0 0 1-148 0" className="core-arc inner-arc" />
         <circle cx="160" cy="52" r="3" className="core-node" /><circle cx="160" cy="268" r="3" className="core-node" />
       </motion.svg>
-      <motion.div className="core-energy" animate={activeMotion ? { scale: [1, pulseScale, 1], opacity: state === 'ERROR' ? [1, .55, 1] : [0.72, 1, 0.72] } : { scale: 1, opacity: .45 }} transition={{ duration: state === 'LISTENING' ? .48 : state === 'SPEAKING' ? .75 : state === 'ERROR' ? .8 : 3.4, repeat: Infinity, ease: 'easeInOut' }}>
+      <motion.div className="core-energy" animate={activeMotion ? { scale: [1, pulseScale, 1], opacity: [0.72, 1, 0.72] } : { scale: 1, opacity: state === 'ERROR' ? .9 : .45 }} transition={{ duration: state === 'LISTENING' ? .48 : state === 'SPEAKING' ? .75 : 3.4, repeat: activeMotion ? Infinity : 0, ease: 'easeInOut' }}>
         <svg viewBox="0 0 160 160" aria-hidden="true"><path d="M80 15 132 45 145 102 104 145 46 138 15 89 35 36Z" className="energy-shell" /><path d="m80 38 31 18 8 34-25 27-35-4-19-29 12-31Z" className="energy-inner" /><circle cx="80" cy="80" r="17" className="energy-center" /><circle cx="80" cy="80" r="6" className="energy-seed" /></svg>
       </motion.div>
       {(state === 'LISTENING' || state === 'SPEAKING') && <div className="audio-ring" style={{ transform: `scale(${.92 + level * .12})` }} />}

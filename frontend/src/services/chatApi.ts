@@ -8,7 +8,7 @@ export const chatApi = {
   createConversation: (title?: string) => apiRequest<{ conversation: Conversation }>('/chat/conversations', { method: 'POST', body: JSON.stringify({ title }) }),
   conversation: (id: string) => apiRequest<{ conversation: Conversation }>(`/chat/conversations/${encodeURIComponent(id)}`),
   removeConversation: (id: string) => apiRequest<void>(`/chat/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  messages: (id: string, limit = 50, before?: string) => apiRequest<{ messages: Message[] }>(`/chat/conversations/${encodeURIComponent(id)}/messages?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ''}`),
+  messages: (id: string, limit = 50, before?: string, signal?: AbortSignal) => apiRequest<{ messages: Message[] }>(`/chat/conversations/${encodeURIComponent(id)}/messages?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ''}`, { signal }),
   async stream(input: { conversationId?: string; message: string; requestId: string }, handlers: StreamHandlers, signal?: AbortSignal): Promise<void> {
     await apiStream('/chat/stream', input, (event, raw) => {
       const data = raw as Record<string, unknown>
