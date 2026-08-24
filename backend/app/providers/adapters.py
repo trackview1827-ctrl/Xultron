@@ -1,6 +1,7 @@
 import json
 import time
 from typing import Iterable
+from urllib.parse import urlparse
 
 import requests
 from flask import current_app
@@ -47,6 +48,9 @@ class OpenAICompatibleAdapter:
     def base(self):
         if not self.cfg.base_url:
             raise ProviderFailure("provider_invalid", "Provider base URL is required.", 422)
+        parsed = urlparse(self.cfg.base_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+            raise ProviderFailure("provider_invalid", "Provider base URL is invalid.", 422)
         return self.cfg.base_url.rstrip("/")
 
     def headers(self):
@@ -56,8 +60,15 @@ class OpenAICompatibleAdapter:
         return headers
 
     def _safe_raise(self, exc, code="provider_request_failed"):
-        msg = redact(str(exc))
-        raise ProviderFailure(code, f"Provider request failed: {msg}", 502, retryable=True)
+        raise ProviderFailure(code, "Provider request failed safely.", 502, retryable=True)
+
+    def _bound_text(self, value, empty_code="provider_empty_response"):
+        if not isinstance(value, str):
+            raise ProviderFailure("provider_malformed_response", "Provider returned malformed response.", 502, True)
+        value = value.strip()
+        if not value:
+            raise ProviderFailure(empty_code, "Provider returned an empty response.", 502, True)
+        return value[: current_app.config.get("MAX_PROVIDER_TEXT_CHARS", 24000)]
 
     def test(self):
         start = time.monotonic()
@@ -83,7 +94,18 @@ class OpenAICompatibleAdapter:
         except Exception as exc:
             self._safe_raise(exc, "provider_model_discovery_failed")
         raw = data.get("data", data.get("models", [])) if isinstance(data, dict) else []
-        return [{"id": str(m.get("id", m)), "label": str(m.get("id", m))} for m in raw]
+        if not isinstance(raw, list):
+            raise ProviderFailure("provider_malformed_response", "Provider returned malformed response.", 502, True)
+        models = []
+        for item in raw[:500]:
+            if isinstance(item, dict):
+                model_id = item.get("id") or item.get("name") or item.get("model")
+            else:
+                model_id = item
+            if isinstance(model_id, str) and model_id.strip():
+                safe_id = model_id.strip()[:160]
+                models.append({"id": safe_id, "label": safe_id})
+        return models
 
     def complete(self, messages):
         payload = {
@@ -107,12 +129,13 @@ class OpenAICompatibleAdapter:
             raise ProviderFailure("provider_request_failed", f"Provider returned HTTP {r.status_code}.", 502, r.status_code >= 500)
         try:
             data = r.json()
-            content = data["choices"][0]["message"]["content"]
+            choices = data.get("choices") if isinstance(data, dict) else None
+            first = choices[0] if isinstance(choices, list) and choices else None
+            message = first.get("message") if isinstance(first, dict) else None
+            content = message.get("content") if isinstance(message, dict) else None
         except Exception:
             raise ProviderFailure("provider_malformed_response", "Provider returned malformed response.", 502, True)
-        if not content:
-            raise ProviderFailure("provider_empty_response", "Provider returned an empty response.", 502, True)
-        return content
+        return self._bound_text(content)
 
     def stream(self, messages) -> Iterable[str]:
         # Non-stream fallback keeps SSE contract stable even when provider streaming is absent.
@@ -136,10 +159,18 @@ class OpenAICompatibleAdapter:
             data = r.json()
         except Exception:
             raise ProviderFailure("provider_malformed_response", "Provider returned malformed response.", 502)
-        return {"text": data.get("text", ""), "language": data.get("language", language)}
+        if not isinstance(data, dict):
+            raise ProviderFailure("provider_malformed_response", "Provider returned malformed response.", 502)
+        text = self._bound_text(data.get("text"))
+        lang = data.get("language", language)
+        if lang is not None and not isinstance(lang, str):
+            lang = language
+        return {"text": text, "language": lang}
 
     def synthesize(self, text: str, voice: str | None):
         payload = {"model": self.cfg.model or "tts-1", "input": text, "voice": voice or self.cfg.config.get("voice") or "alloy"}
+        if self.cfg.config.get("speed") is not None:
+            payload["speed"] = self.cfg.config["speed"]
         try:
             r = requests.post(f"{self.base}/audio/speech", headers=self.headers(), json=payload, timeout=self.timeout)
         except requests.Timeout:
@@ -148,7 +179,15 @@ class OpenAICompatibleAdapter:
             self._safe_raise(exc)
         if r.status_code >= 400:
             raise ProviderFailure("provider_request_failed", f"Provider returned HTTP {r.status_code}.", 502, r.status_code >= 500)
-        return r.content, r.headers.get("Content-Type", "audio/mpeg")
+        if not r.content:
+            raise ProviderFailure("provider_empty_response", "Provider returned an empty response.", 502, True)
+        max_bytes = current_app.config.get("MAX_AUDIO_BYTES", 5242880)
+        if len(r.content) > max_bytes:
+            raise ProviderFailure("provider_response_too_large", "Provider audio response is too large.", 502)
+        media_type = (r.headers.get("Content-Type") or "audio/mpeg").split(";", 1)[0]
+        if not media_type.startswith("audio/"):
+            media_type = "audio/mpeg"
+        return r.content, media_type
 
 
 class CustomHTTPAdapter(OpenAICompatibleAdapter):
@@ -156,13 +195,20 @@ class CustomHTTPAdapter(OpenAICompatibleAdapter):
         payload = {"messages": messages, "model": self.cfg.model, "config": self.cfg.config or {}}
         try:
             r = requests.post(self.base, headers=self.headers(), json=payload, timeout=self.timeout)
-            r.raise_for_status()
+            if r.status_code in {401, 403}:
+                raise ProviderFailure("provider_authentication_failed", "Authentication was rejected by the provider.", 502)
+            if r.status_code == 429:
+                raise ProviderFailure("provider_rate_limited", "Provider rate limit reached.", 502, True)
+            if r.status_code >= 400:
+                raise ProviderFailure("provider_request_failed", f"Provider returned HTTP {r.status_code}.", 502, r.status_code >= 500)
             data = r.json()
         except requests.Timeout:
             raise ProviderFailure("provider_timeout", "Provider request timed out.", 504, True)
+        except ProviderFailure:
+            raise
         except Exception as exc:
             self._safe_raise(exc)
+        if not isinstance(data, dict):
+            raise ProviderFailure("provider_malformed_response", "Provider returned malformed response.", 502, True)
         text = data.get("text") or data.get("content") or data.get("response")
-        if not text:
-            raise ProviderFailure("provider_empty_response", "Provider returned an empty response.", 502, True)
-        return text
+        return self._bound_text(text)

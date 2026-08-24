@@ -1,12 +1,13 @@
 import json
 from datetime import UTC, datetime
 
-from flask import Blueprint, Response, current_app, g, jsonify, request, session
+from flask import Blueprint, Response, current_app, g, jsonify, request, session, stream_with_context
 
 from app.extensions import db
-from app.models import Conversation, Device, MemoryItem, Message, Provider, Session, utcnow
+from app.models import Conversation, Device, DeviceCommand, DeviceEvent, MemoryItem, Message, Provider, Session, utcnow
 from app.security.errors import APIError
 from app.security.guards import require_json, require_user
+from app.security.validation import enum_field, string_field
 from app.services.auth import cleanup_expired, create_guest, ensure_csrf, login, logout, register
 from app.services.chat import create_conversation, handle_message, owned_conversation
 from app.services.providers import adapter_call, create_provider, default_provider, update_provider, _owned as owned_provider
@@ -14,10 +15,25 @@ from app.services.settings import get_settings, patch_settings
 
 api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 MEMORY_CATEGORIES = {"personal", "preferences", "important", "temporary"}
+PROVIDER_KINDS = {"ai", "stt", "tts"}
+DEVICE_STATUSES = {"offline", "online", "paired", "error"}
 
 
 def ok(payload=None, status=200):
     return jsonify(payload or {}), status
+
+
+def query_limit(default: int, max_value: int) -> int:
+    raw = request.args.get("limit")
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise APIError("validation_failed", "limit must be an integer.", 422)
+    if value < 1 or value > max_value:
+        raise APIError("validation_failed", "limit is out of range.", 422)
+    return value
 
 
 @api_bp.get("/system/health")
@@ -36,7 +52,7 @@ def auth_session():
 @api_bp.post("/auth/guest")
 def auth_guest():
     user, rec = create_guest()
-    return ok({"user": user.to_public(), "expiresAt": rec.expires_at.isoformat() + "Z"}, 201)
+    return ok({"user": user.to_public(), "csrfToken": session.get("csrf_token"), "expiresAt": rec.expires_at.isoformat() + "Z"}, 201)
 
 
 @api_bp.post("/auth/register")
@@ -54,7 +70,8 @@ def auth_login():
 @api_bp.post("/auth/logout")
 def auth_logout():
     logout()
-    return ok({"ok": True})
+    token = ensure_csrf()
+    return ok({"ok": True, "csrfToken": token})
 
 
 @api_bp.get("/auth/sessions")
@@ -82,7 +99,7 @@ def auth_revoke_session(session_id):
 @api_bp.get("/chat/conversations")
 def list_conversations():
     user = require_user()
-    limit = min(int(request.args.get("limit", 20)), 100)
+    limit = query_limit(20, 100)
     rows = Conversation.query.filter_by(user_id=user.id, deleted_at=None).order_by(Conversation.updated_at.desc()).limit(limit).all()
     return ok({"conversations": [c.to_public() for c in rows]})
 
@@ -115,7 +132,7 @@ def delete_conversation(conversation_id):
 def get_messages(conversation_id):
     user = require_user()
     owned_conversation(conversation_id, user.id)
-    limit = min(int(request.args.get("limit", 50)), 200)
+    limit = query_limit(50, 200)
     rows = Message.query.filter_by(user_id=user.id, conversation_id=conversation_id).order_by(Message.created_at.asc()).limit(limit).all()
     return ok({"messages": [m.to_public() for m in rows]})
 
@@ -146,7 +163,7 @@ def stream_message():
             if started:
                 yield _sse("done", {"ok": False})
 
-    return Response(events(), mimetype="text/event-stream")
+    return Response(stream_with_context(events()), mimetype="text/event-stream")
 
 
 def _sse(event, data):
@@ -158,6 +175,8 @@ def list_providers():
     user = require_user()
     q = Provider.query.filter_by(user_id=user.id)
     if request.args.get("kind"):
+        if request.args["kind"] not in PROVIDER_KINDS:
+            raise APIError("validation_failed", "kind is invalid.", 422)
         q = q.filter_by(kind=request.args["kind"])
     return ok({"providers": [p.to_public() for p in q.order_by(Provider.created_at.desc()).all()]})
 
@@ -210,7 +229,11 @@ def transcribe():
     f = request.files.get("audio")
     if not f:
         raise APIError("validation_failed", "audio file is required.", 422)
+    if f.mimetype and not (f.mimetype.startswith("audio/") or f.mimetype in {"application/octet-stream", "video/webm"}):
+        raise APIError("unsupported_audio_type", "Audio type is not supported.", 422)
     audio = f.read(current_app.config["MAX_AUDIO_BYTES"] + 1)
+    if not audio:
+        raise APIError("invalid_audio", "Audio is empty.", 422)
     if len(audio) > current_app.config["MAX_AUDIO_BYTES"]:
         raise APIError("request_entity_too_large", "Audio is too large.", 413)
     provider = owned_provider(request.form["providerId"], user.id) if request.form.get("providerId") else default_provider(user.id, "stt")
@@ -223,15 +246,15 @@ def transcribe():
 def synthesize():
     user = require_user()
     data = require_json()
-    text = (data.get("text") or "").strip()
-    if not text:
-        raise APIError("validation_failed", "text is required.", 422)
+    text = string_field(data, "text", required=True, min_len=1, max_len=4000)
     if len(text) > 4000:
         raise APIError("validation_failed", "Text is too large.", 422)
-    provider = owned_provider(data["providerId"], user.id) if data.get("providerId") else default_provider(user.id, "tts")
+    provider_id = string_field(data, "providerId", max_len=40, default=None)
+    voice = string_field(data, "voice", max_len=120, default=None)
+    provider = owned_provider(provider_id, user.id) if provider_id else default_provider(user.id, "tts")
     if not provider:
         raise APIError("provider_not_configured", "No TTS provider is configured.", 503)
-    audio, media_type = adapter_call(provider, "synthesize", text, data.get("voice"))
+    audio, media_type = adapter_call(provider, "synthesize", text, voice)
     if len(audio) > current_app.config["MAX_AUDIO_BYTES"]:
         raise APIError("request_entity_too_large", "Audio response is too large.", 413)
     return Response(audio, mimetype=media_type)
@@ -242,9 +265,13 @@ def memory_list():
     user = require_user()
     q = MemoryItem.query.filter_by(user_id=user.id)
     if request.args.get("category"):
+        if request.args["category"] not in MEMORY_CATEGORIES:
+            raise APIError("validation_failed", "category is invalid.", 422)
         q = q.filter_by(category=request.args["category"])
     if request.args.get("query"):
-        term = f"%{request.args['query']}%"
+        if len(request.args["query"]) > 120:
+            raise APIError("validation_failed", "query is too long.", 422)
+        term = f"%{request.args['query'].strip()}%"
         q = q.filter((MemoryItem.title.ilike(term)) | (MemoryItem.content.ilike(term)))
     return ok({"memories": [m.to_public() for m in q.order_by(MemoryItem.updated_at.desc()).all()]})
 
@@ -253,12 +280,10 @@ def memory_list():
 def memory_create():
     user = require_user()
     data = require_json()
-    title = (data.get("title") or "").strip()
-    content = (data.get("content") or "").strip()
-    category = data.get("category") or "personal"
-    if not title or not content or category not in MEMORY_CATEGORIES:
-        raise APIError("validation_failed", "Valid title, content and category are required.", 422)
-    item = MemoryItem(user_id=user.id, title=title[:160], content=content, category=category)
+    title = string_field(data, "title", required=True, min_len=1, max_len=160)
+    content = string_field(data, "content", required=True, min_len=1, max_len=8000)
+    category = enum_field(data, "category", MEMORY_CATEGORIES, default="personal") or "personal"
+    item = MemoryItem(user_id=user.id, title=title, content=content, category=category)
     db.session.add(item)
     db.session.commit()
     return ok({"memory": item.to_public()}, 201)
@@ -285,13 +310,11 @@ def memory_patch(memory_id):
     item = owned_memory(memory_id, user.id)
     data = require_json()
     if "title" in data:
-        item.title = (data["title"] or "").strip()[:160]
+        item.title = string_field(data, "title", required=True, min_len=1, max_len=160)
     if "content" in data:
-        item.content = (data["content"] or "").strip()
+        item.content = string_field(data, "content", required=True, min_len=1, max_len=8000)
     if "category" in data:
-        if data["category"] not in MEMORY_CATEGORIES:
-            raise APIError("validation_failed", "Invalid memory category.", 422)
-        item.category = data["category"]
+        item.category = enum_field(data, "category", MEMORY_CATEGORIES, required=True)
     db.session.commit()
     return ok({"memory": item.to_public()})
 
@@ -330,6 +353,57 @@ def devices_get():
     user = require_user()
     devices = Device.query.filter_by(user_id=user.id).order_by(Device.created_at.desc()).all()
     return ok({"devices": [d.to_public() for d in devices]})
+
+
+def owned_device(device_id, user_id):
+    device = db.session.get(Device, device_id)
+    if not device:
+        raise APIError("not_found", "Device was not found.", 404)
+    if device.user_id != user_id:
+        raise APIError("forbidden", "You do not have access to this device.", 403)
+    return device
+
+
+@api_bp.post("/devices")
+def devices_create():
+    user = require_user()
+    data = require_json()
+    metadata = data.get("metadata", {})
+    if not isinstance(metadata, dict):
+        raise APIError("validation_failed", "metadata must be an object.", 422)
+    device = Device(
+        user_id=user.id,
+        name=string_field(data, "name", required=True, min_len=1, max_len=120),
+        device_type=string_field(data, "type", required=True, min_len=1, max_len=60),
+        status=enum_field(data, "status", DEVICE_STATUSES, default="offline") or "offline",
+        device_metadata=metadata,
+    )
+    db.session.add(device)
+    db.session.commit()
+    return ok({"device": device.to_public()}, 201)
+
+
+@api_bp.post("/devices/<device_id>/commands")
+def device_command_create(device_id):
+    user = require_user()
+    device = owned_device(device_id, user.id)
+    data = require_json()
+    payload = data.get("payload", {})
+    if not isinstance(payload, dict):
+        raise APIError("validation_failed", "payload must be an object.", 422)
+    cmd = DeviceCommand(user_id=user.id, device_id=device.id, command=string_field(data, "command", required=True, min_len=1, max_len=120), payload=payload)
+    db.session.add(cmd)
+    db.session.commit()
+    return ok({"command": cmd.to_public()}, 201)
+
+
+@api_bp.get("/devices/<device_id>/events")
+def device_events(device_id):
+    user = require_user()
+    device = owned_device(device_id, user.id)
+    limit = query_limit(50, 200)
+    events = DeviceEvent.query.filter_by(user_id=user.id, device_id=device.id).order_by(DeviceEvent.created_at.desc()).limit(limit).all()
+    return ok({"events": [event.to_public() for event in events]})
 
 
 @api_bp.cli.command("cleanup-expired")

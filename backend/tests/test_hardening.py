@@ -1,0 +1,219 @@
+import logging
+import os
+import subprocess
+import sys
+import threading
+from pathlib import Path
+
+import pytest
+import requests
+from sqlalchemy import create_engine, inspect
+from werkzeug.serving import make_server
+
+from app import create_app
+from app.config import Config, TestingConfig
+from app.extensions import db
+from app.models import Conversation, IdempotencyKey, Message, Session, User
+from tests.conftest import csrf, post_json, register
+from tests.test_providers_voice_isolation import create_mock_provider
+
+
+SENTINEL = "sk-SENTINELSECRET123456"
+
+
+def test_auth_normalization_password_rotation_and_guest_rules(client, app):
+    created = register(client, "  MiXeD.User  ", "UPPER@example.com", "  password123  ")
+    assert created["username"] == "mixed.user"
+    assert created["email"] == "upper@example.com"
+    with app.app_context():
+        old_session = Session.query.first()
+        old_sid = old_session.id
+        assert User.query.filter_by(username="mixed.user").first().check_password("  password123  ")
+        assert not User.query.filter_by(username="mixed.user").first().check_password("password123")
+
+    second_register = post_json(client, "/api/v1/auth/register", {"username": "other", "email": "other@example.com", "password": "password1234"})
+    assert second_register.status_code == 409
+    guest_while_authenticated = post_json(client, "/api/v1/auth/guest", {})
+    assert guest_while_authenticated.status_code == 409
+    out = post_json(client, "/api/v1/auth/logout", {})
+    assert out.status_code == 200
+    with app.app_context():
+        assert db.session.get(Session, old_sid).revoked_at is not None
+    assert client.get("/api/v1/settings").status_code == 401
+
+    token = csrf(client)
+    login = client.post("/api/v1/auth/login", json={"identifier": "MIXED.USER", "password": "  password123  "}, headers={"X-CSRF-Token": token})
+    assert login.status_code == 200
+    assert login.get_json()["csrfToken"] != token
+    out2 = post_json(client, "/api/v1/auth/logout", {})
+    logout_token = out2.get_json()["csrfToken"]
+    guest_rv = client.post("/api/v1/auth/guest", json={}, headers={"X-CSRF-Token": logout_token})
+    assert guest_rv.status_code == 201
+    guest_token = guest_rv.get_json()["csrfToken"]
+    upgrade = client.post("/api/v1/auth/register", json={"username": "after.logout", "email": "after@example.com", "password": "password1234"}, headers={"X-CSRF-Token": guest_token})
+    assert upgrade.status_code == 201
+
+
+def test_provider_config_secret_bypass_and_api_key_type_rejected(user_client):
+    base = {"name": "Bad", "kind": "ai", "adapter": "mock", "model": "m", "enabled": True, "isDefault": True}
+    for config in [
+        {"headers": {"X-Foo": "SENTINEL"}},
+        {"reply": SENTINEL},
+        {"reply": ["ok", {"token": "SENTINEL"}]},
+        {"reply": [[[[[{"ok": True}]]]]]},
+    ]:
+        rv = post_json(user_client, "/api/v1/providers", {**base, "config": config})
+        assert rv.status_code == 422
+        assert "SENTINEL" not in rv.get_data(as_text=True)
+    rv = post_json(user_client, "/api/v1/providers", {**base, "apiKey": {"value": SENTINEL}, "config": {"reply": "ok"}})
+    assert rv.status_code == 422
+    good_tts = post_json(user_client, "/api/v1/providers", {"name": "TTS", "kind": "tts", "adapter": "mock", "model": "m", "enabled": True, "isDefault": True, "config": {"speed": 1.25, "voice": "alloy"}})
+    assert good_tts.status_code == 201
+    bad_speed = post_json(user_client, "/api/v1/providers", {"name": "TTS2", "kind": "tts", "adapter": "mock", "model": "m", "enabled": True, "isDefault": True, "config": {"speed": 9}})
+    assert bad_speed.status_code == 422
+
+
+def test_provider_url_and_settings_validation(user_client):
+    invalid = post_json(user_client, "/api/v1/providers", {"name": "Bad URL", "kind": "ai", "adapter": "openai_compatible", "baseUrl": "https://user:pass@example.com/v1"})
+    assert invalid.status_code == 422
+    bad_settings = user_client.patch("/api/v1/settings", json={"theme": "neon", "lowDataMode": "yes"}, headers={"X-CSRF-Token": csrf(user_client)})
+    assert bad_settings.status_code == 422
+    good_settings = user_client.patch("/api/v1/settings", json={"theme": "darker", "accent": "violet", "textScale": "large"}, headers={"X-CSRF-Token": csrf(user_client)})
+    assert good_settings.status_code == 200
+    assert good_settings.get_json()["settings"]["theme"] == "darker"
+
+
+def test_safe_log_validation(client, app, caplog):
+    @app.get("/boom-secret-test")
+    def boom_secret_test():
+        raise RuntimeError(f"boom {SENTINEL}")
+    caplog.set_level(logging.ERROR)
+    rv = client.get("/boom-secret-test")
+    assert rv.status_code == 500
+    assert SENTINEL not in caplog.text
+    assert "Traceback" not in caplog.text
+
+
+def test_provider_malformed_responses_are_safe(user_client, monkeypatch):
+    provider = post_json(user_client, "/api/v1/providers", {"name": "HTTP", "kind": "ai", "adapter": "openai_compatible", "baseUrl": "https://provider.example/v1", "apiKey": SENTINEL, "model": "m", "enabled": True, "isDefault": True, "config": {}}).get_json()["provider"]
+
+    class BadResponse:
+        status_code = 200
+        content = b""
+        headers = {"Content-Type": "text/plain"}
+        def json(self):
+            return {"choices": [{"message": {"content": {"not": "text"}}}]}
+
+    monkeypatch.setattr("app.providers.adapters.requests.post", lambda *args, **kwargs: BadResponse())
+    rv = post_json(user_client, "/api/v1/chat/messages", {"message": "hello", "requestId": "bad-provider"})
+    assert rv.status_code == 502
+    body = rv.get_data(as_text=True)
+    assert "malformed" in body
+    assert SENTINEL not in body
+
+
+def test_conversation_history_false_does_not_persist_message_content(user_client, app):
+    create_mock_provider(user_client, config={"reply": "assistant private sentinel"})
+    settings = user_client.patch("/api/v1/settings", json={"conversationHistory": False}, headers={"X-CSRF-Token": csrf(user_client)})
+    assert settings.status_code == 200
+    rv = post_json(user_client, "/api/v1/chat/messages", {"message": "user private sentinel", "requestId": "private-1"})
+    assert rv.status_code == 201
+    assert rv.get_json()["conversation"]["title"] == "Private conversation"
+    repeat = post_json(user_client, "/api/v1/chat/messages", {"message": "user private sentinel", "requestId": "private-1"})
+    assert repeat.get_json() == rv.get_json()
+    conflict = post_json(user_client, "/api/v1/chat/messages", {"message": "changed private sentinel", "requestId": "private-1"})
+    assert conflict.status_code == 409
+    with app.app_context():
+        assert Message.query.count() == 0
+        assert IdempotencyKey.query.count() == 0
+        stored = " ".join(c.title for c in Conversation.query.all())
+        assert "private sentinel" not in stored
+
+
+def test_stream_endpoint_over_live_http(user_client, app):
+    # Copy authenticated cookies from the Flask client into a real HTTP request.
+    token = csrf(user_client)
+    cookie_header = "; ".join(f"{cookie.key}={cookie.value}" for cookie in user_client._cookies.values())
+    app.config["SERVER_NAME"] = None
+    server = make_server("localhost", 0, app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://localhost:{server.server_port}/api/v1/chat/stream"
+        response = requests.post(url, json={"message": "live", "requestId": "live-stream-1"}, headers={"X-CSRF-Token": token, "Cookie": cookie_header}, timeout=5)
+        assert response.status_code == 200
+        assert "event: done" in response.text
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+
+def test_static_spa_headers_and_production_fail_closed(tmp_path):
+    dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    (dist / "index.html").write_text("<div id='root'>Xultron</div>")
+    (assets / "app.js").write_text("console.log('x')")
+    try:
+        app = create_app(TestingConfig)
+        client = app.test_client()
+        index = client.get("/settings")
+        assert index.status_code == 200
+        assert b"Xultron" in index.data
+        assert index.headers["Cache-Control"].startswith("no-cache")
+        assert index.headers["X-Frame-Options"] == "DENY"
+        assert "frame-ancestors 'none'" in index.headers["Content-Security-Policy"]
+        asset = client.get("/assets/app.js")
+        assert asset.status_code == 200
+        assert "immutable" in asset.headers["Cache-Control"]
+    finally:
+        try:
+            (assets / "app.js").unlink()
+            assets.rmdir()
+            (dist / "index.html").unlink()
+            dist.rmdir()
+        except OSError:
+            pass
+
+    class BadProduction(Config):
+        XULTRON_ENV = "production"
+        SECRET_KEY = None
+        ENCRYPTION_KEY = None
+
+    with pytest.raises(RuntimeError):
+        create_app(BadProduction)
+
+
+def _flask_db_upgrade(db_path: Path, target: str | None = None):
+    env = {
+        **os.environ,
+        "DATABASE_URL": f"sqlite:///{db_path}",
+        "SECRET_KEY": "migration-test-secret",
+        "ENCRYPTION_KEY": "dQwqt9c0YlfLH2jBZ3YV0LzhCoVqBCybN7Ko65aoFZ4=",
+        "XULTRON_ENV": "development",
+    }
+    cmd = [sys.executable, "-m", "flask", "--app", "run", "db", "upgrade"]
+    if target:
+        cmd.append(target)
+    result = subprocess.run(cmd, cwd=Path(__file__).resolve().parents[1], env=env, text=True, capture_output=True, timeout=30)
+    assert result.returncode == 0, result.stderr + result.stdout
+
+
+def test_real_flask_db_upgrade_empty_and_existing_0001(tmp_path):
+    empty_db = tmp_path / "empty.sqlite3"
+    _flask_db_upgrade(empty_db)
+    engine = create_engine(f"sqlite:///{empty_db}")
+    inspector = inspect(engine)
+    assert "request_fingerprint" in {col["name"] for col in inspector.get_columns("idempotency_keys")}
+    assert "device_commands" in inspector.get_table_names()
+    assert "device_events" in inspector.get_table_names()
+
+    old_db = tmp_path / "old.sqlite3"
+    _flask_db_upgrade(old_db, "0001_initial")
+    old_inspector = inspect(create_engine(f"sqlite:///{old_db}"))
+    assert "request_fingerprint" not in {col["name"] for col in old_inspector.get_columns("idempotency_keys")}
+    _flask_db_upgrade(old_db)
+    upgraded = inspect(create_engine(f"sqlite:///{old_db}"))
+    assert "request_fingerprint" in {col["name"] for col in upgraded.get_columns("idempotency_keys")}
+    assert "device_commands" in upgraded.get_table_names()
+    assert "device_events" in upgraded.get_table_names()

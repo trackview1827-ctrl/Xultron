@@ -1,4 +1,20 @@
-from .core import Conversation, DEFAULT_SETTINGS, Device, IdempotencyKey, MemoryItem, Message, Provider, ProviderCredential, Session, User, UserSettings, utcnow
+from .core import (
+    Conversation,
+    DEFAULT_SETTINGS,
+    Device,
+    DeviceCommand,
+    DeviceEvent,
+    IdempotencyKey,
+    MemoryItem,
+    Message,
+    Provider,
+    ProviderCredential,
+    Session,
+    User,
+    UserSettings,
+    new_id,
+    utcnow,
+)
 
 __all__ = [
     "User",
@@ -11,6 +27,9 @@ __all__ = [
     "ProviderCredential",
     "UserSettings",
     "Device",
+    "DeviceCommand",
+    "DeviceEvent",
     "DEFAULT_SETTINGS",
+    "new_id",
     "utcnow",
 ]

@@ -51,8 +51,17 @@ def install_guards(app):
     @app.after_request
     def secure_headers(response):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=()")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; "
+            "font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+        )
         response.headers.setdefault("Referrer-Policy", "same-origin")
-        response.headers.setdefault("Cache-Control", "no-store")
+        if not response.headers.get("Cache-Control"):
+            response.headers["Cache-Control"] = "no-store"
         response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
         return response
 
@@ -98,4 +107,6 @@ def require_json():
     data = request.get_json(silent=True)
     if data is None:
         raise APIError("invalid_json", "A valid JSON body is required.", 400)
+    if not isinstance(data, dict):
+        raise APIError("validation_failed", "JSON body must be an object.", 422)
     return data

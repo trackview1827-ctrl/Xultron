@@ -25,10 +25,14 @@ def register_error_handlers(app):
     @app.errorhandler(HTTPException)
     def http_error(err):
         code = "request_entity_too_large" if err.code == 413 else "http_error"
-        message = "Request is too large." if err.code == 413 else err.description or "Request failed."
+        message = "Request is too large." if err.code == 413 else "Request failed."
         return error_response(code, message, err.code or 500)
 
     @app.errorhandler(Exception)
     def unhandled(err):
-        app.logger.exception("Unhandled API error")
+        app.logger.error(
+            "Unhandled API error type=%s request_id=%s",
+            type(err).__name__,
+            getattr(request, "request_id", "unknown"),
+        )
         return error_response("internal_error", "An internal error occurred.", 500)

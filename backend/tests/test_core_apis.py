@@ -27,8 +27,10 @@ def test_conversations_messages_no_provider_and_idempotency(user_client):
     conv_id = c.get_json()["conversation"]["id"]
     m1 = post_json(user_client, "/api/v1/chat/messages", {"conversationId": conv_id, "message": "Hello 🌌", "requestId": "idem-1"})
     assert m1.status_code == 201
-    m2 = post_json(user_client, "/api/v1/chat/messages", {"conversationId": conv_id, "message": "Different", "requestId": "idem-1"})
+    m2 = post_json(user_client, "/api/v1/chat/messages", {"conversationId": conv_id, "message": "Hello 🌌", "requestId": "idem-1"})
     assert m2.get_json() == m1.get_json()
+    conflict = post_json(user_client, "/api/v1/chat/messages", {"conversationId": conv_id, "message": "Different", "requestId": "idem-1"})
+    assert conflict.status_code == 409
     messages = user_client.get(f"/api/v1/chat/conversations/{conv_id}/messages").get_json()["messages"]
     assert len(messages) == 2
     assert "No AI provider" in messages[-1]["content"]

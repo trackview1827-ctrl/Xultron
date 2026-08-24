@@ -118,6 +118,7 @@ class IdempotencyKey(db.Model):
     id = db.Column(db.String(40), primary_key=True, default=lambda: new_id("idem"))
     user_id = db.Column(db.String(40), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     request_id = db.Column(db.String(100), nullable=False)
+    request_fingerprint = db.Column(db.String(64), nullable=True)
     response = db.Column(db.JSON, nullable=False)
     created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     __table_args__ = (UniqueConstraint("user_id", "request_id", name="uq_idempotency_user_request"),)
@@ -190,7 +191,7 @@ class ProviderCredential(TimestampMixin, db.Model):
 
 
 DEFAULT_SETTINGS = {
-    "locale": "en-US",
+    "locale": "en",
     "lowDataMode": False,
     "memoryEnabled": True,
     "conversationHistory": True,
@@ -198,9 +199,11 @@ DEFAULT_SETTINGS = {
     "saveAudio": False,
     "analytics": False,
     "reducedMotion": False,
-    "preferredVoice": None,
-    "sttLanguage": None,
-    "appearance": {"theme": "xultron-dark"},
+    "preferredVoice": "",
+    "sttLanguage": "auto",
+    "theme": "dark",
+    "accent": "cyan",
+    "textScale": "standard",
 }
 
 
@@ -230,9 +233,50 @@ class Device(TimestampMixin, db.Model):
         return {
             "id": self.id,
             "name": self.name,
+            "type": self.device_type,
             "deviceType": self.device_type,
             "status": self.status,
             "metadata": self.device_metadata or {},
             "createdAt": self.created_at.isoformat() + "Z",
             "updatedAt": self.updated_at.isoformat() + "Z",
+        }
+
+
+class DeviceCommand(TimestampMixin, db.Model):
+    __tablename__ = "device_commands"
+    id = db.Column(db.String(40), primary_key=True, default=lambda: new_id("cmd"))
+    user_id = db.Column(db.String(40), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id = db.Column(db.String(40), db.ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    command = db.Column(db.String(120), nullable=False)
+    payload = db.Column(db.JSON, default=dict, nullable=False)
+    status = db.Column(db.String(40), nullable=False, default="queued")
+    executed_at = db.Column(db.DateTime, nullable=True)
+
+    def to_public(self):
+        return {
+            "id": self.id,
+            "deviceId": self.device_id,
+            "command": self.command,
+            "payload": self.payload or {},
+            "status": self.status,
+            "createdAt": self.created_at.isoformat() + "Z",
+            "executedAt": self.executed_at.isoformat() + "Z" if self.executed_at else None,
+        }
+
+
+class DeviceEvent(TimestampMixin, db.Model):
+    __tablename__ = "device_events"
+    id = db.Column(db.String(40), primary_key=True, default=lambda: new_id("evt"))
+    user_id = db.Column(db.String(40), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id = db.Column(db.String(40), db.ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type = db.Column(db.String(120), nullable=False)
+    payload = db.Column(db.JSON, default=dict, nullable=False)
+
+    def to_public(self):
+        return {
+            "id": self.id,
+            "deviceId": self.device_id,
+            "eventType": self.event_type,
+            "payload": self.payload or {},
+            "createdAt": self.created_at.isoformat() + "Z",
         }

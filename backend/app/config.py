@@ -1,4 +1,5 @@
 import os
+import secrets
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -7,16 +8,59 @@ from cryptography.fernet import Fernet
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+INSTANCE_DIR = BASE_DIR / "instance"
+INSTANCE_SECRETS = INSTANCE_DIR / "secrets.env"
 
 
 def _bool(name: str, default: bool = False) -> bool:
     return os.getenv(name, str(default)).lower() in {"1", "true", "yes", "on"}
 
 
+def _load_instance_secrets(env: str) -> dict[str, str]:
+    """Load or create ignored per-install secrets for non-production runs.
+
+    The repo ignores instance/, so development gets persistent random secrets without
+    checking them into source. Production never auto-generates secrets and therefore
+    fails closed when deployment env vars are missing.
+    """
+    if env == "production":
+        return {}
+    values: dict[str, str] = {}
+    if INSTANCE_SECRETS.exists():
+        for line in INSTANCE_SECRETS.read_text().splitlines():
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip()
+    changed = False
+    if not values.get("SECRET_KEY"):
+        values["SECRET_KEY"] = secrets.token_urlsafe(48)
+        changed = True
+    if not values.get("ENCRYPTION_KEY"):
+        values["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+        changed = True
+    if changed:
+        INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
+        INSTANCE_SECRETS.write_text(
+            "# Ignored local Xultron backend secrets. Do not commit.\n"
+            f"SECRET_KEY={values['SECRET_KEY']}\n"
+            f"ENCRYPTION_KEY={values['ENCRYPTION_KEY']}\n"
+        )
+        try:
+            INSTANCE_SECRETS.chmod(0o600)
+        except OSError:
+            pass
+    return values
+
+
+_ENV = os.getenv("XULTRON_ENV", "development")
+_INSTANCE = _load_instance_secrets(_ENV)
+
+
 class Config:
-    XULTRON_ENV = os.getenv("XULTRON_ENV", "development")
+    XULTRON_ENV = _ENV
     TESTING = False
-    SECRET_KEY = os.getenv("SECRET_KEY") or ("dev-only-change-me" if XULTRON_ENV != "production" else None)
+    SECRET_KEY = os.getenv("SECRET_KEY") or _INSTANCE.get("SECRET_KEY")
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL") or f"sqlite:///{BASE_DIR / 'instance' / 'xultron.sqlite3'}"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SESSION_COOKIE_NAME = "xultron_session"
@@ -29,10 +73,11 @@ class Config:
     MAX_AUDIO_BYTES = int(os.getenv("MAX_AUDIO_BYTES", "5242880"))
     RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "120"))
     PROVIDER_TIMEOUT_SECONDS = int(os.getenv("PROVIDER_TIMEOUT_SECONDS", "20"))
+    MAX_PROVIDER_TEXT_CHARS = int(os.getenv("MAX_PROVIDER_TEXT_CHARS", "24000"))
     WTF_CSRF_ENABLED = False
     JSON_SORT_KEYS = False
     ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
-    ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+    ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY") or _INSTANCE.get("ENCRYPTION_KEY")
 
     @classmethod
     def validate(cls):
@@ -41,6 +86,10 @@ class Config:
                 raise RuntimeError("SECRET_KEY is required in production")
             if not cls.ENCRYPTION_KEY:
                 raise RuntimeError("ENCRYPTION_KEY is required in production")
+        if not cls.SECRET_KEY:
+            raise RuntimeError("SECRET_KEY is required")
+        if not cls.ENCRYPTION_KEY:
+            raise RuntimeError("ENCRYPTION_KEY is required")
         if cls.ENCRYPTION_KEY:
             Fernet(cls.ENCRYPTION_KEY.encode() if isinstance(cls.ENCRYPTION_KEY, str) else cls.ENCRYPTION_KEY)
 
