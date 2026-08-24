@@ -1,5 +1,6 @@
 import hashlib
 import json
+import threading
 import time
 
 from sqlalchemy.exc import IntegrityError
@@ -14,7 +15,9 @@ from app.services.settings import get_settings
 MAX_MESSAGE_CHARS = 8000
 MAX_REQUEST_ID_CHARS = 100
 EPHEMERAL_IDEM_TTL_SECONDS = 300
+EPHEMERAL_IDEM_MAX_ENTRIES = 512
 _EPHEMERAL_IDEM = {}
+_EPHEMERAL_IDEM_LOCK = threading.Lock()
 
 
 def owned_conversation(conversation_id, user_id):
@@ -135,22 +138,31 @@ def _fingerprint(message: str, conversation_id: str | None) -> str:
 
 
 def _ephemeral_get(user_id: str, request_id: str, fingerprint: str):
-    _ephemeral_cleanup()
-    item = _EPHEMERAL_IDEM.get((user_id, request_id))
-    if not item:
-        return None
-    if item["fingerprint"] != fingerprint:
-        raise APIError("idempotency_conflict", "requestId was already used for a different chat payload.", 409)
-    return item["response"]
+    with _EPHEMERAL_IDEM_LOCK:
+        _ephemeral_cleanup_locked(time.time())
+        item = _EPHEMERAL_IDEM.get((user_id, request_id))
+        if not item:
+            return None
+        if item["fingerprint"] != fingerprint:
+            raise APIError("idempotency_conflict", "requestId was already used for a different chat payload.", 409)
+        return item["response"]
 
 
 def _ephemeral_put(user_id: str, request_id: str, fingerprint: str, response: dict):
-    _EPHEMERAL_IDEM[(user_id, request_id)] = {"fingerprint": fingerprint, "response": response, "expires": time.time() + EPHEMERAL_IDEM_TTL_SECONDS}
-    _ephemeral_cleanup()
-
-
-def _ephemeral_cleanup():
     now = time.time()
+    with _EPHEMERAL_IDEM_LOCK:
+        _ephemeral_cleanup_locked(now)
+        if len(_EPHEMERAL_IDEM) >= EPHEMERAL_IDEM_MAX_ENTRIES:
+            oldest = min(_EPHEMERAL_IDEM, key=lambda key: _EPHEMERAL_IDEM[key]["expires"])
+            _EPHEMERAL_IDEM.pop(oldest, None)
+        _EPHEMERAL_IDEM[(user_id, request_id)] = {
+            "fingerprint": fingerprint,
+            "response": response,
+            "expires": now + EPHEMERAL_IDEM_TTL_SECONDS,
+        }
+
+
+def _ephemeral_cleanup_locked(now: float):
     for key, item in list(_EPHEMERAL_IDEM.items()):
         if item["expires"] <= now:
             _EPHEMERAL_IDEM.pop(key, None)

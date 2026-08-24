@@ -188,6 +188,22 @@ def test_conversation_history_false_does_not_persist_message_content(user_client
         assert "private sentinel" not in stored
 
 
+def test_ephemeral_idempotency_cache_is_bounded():
+    from app.services import chat
+
+    with chat._EPHEMERAL_IDEM_LOCK:
+        chat._EPHEMERAL_IDEM.clear()
+    try:
+        for index in range(chat.EPHEMERAL_IDEM_MAX_ENTRIES + 1):
+            chat._ephemeral_put("user", f"request-{index}", f"fingerprint-{index}", {"index": index})
+        with chat._EPHEMERAL_IDEM_LOCK:
+            assert len(chat._EPHEMERAL_IDEM) == chat.EPHEMERAL_IDEM_MAX_ENTRIES
+            assert ("user", "request-0") not in chat._EPHEMERAL_IDEM
+    finally:
+        with chat._EPHEMERAL_IDEM_LOCK:
+            chat._EPHEMERAL_IDEM.clear()
+
+
 def test_current_message_survives_large_memory_context(user_client, monkeypatch):
     captured = {}
 
