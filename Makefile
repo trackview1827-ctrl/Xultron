@@ -1,4 +1,4 @@
-.PHONY: setup dev migrate test typecheck build check serve clean
+.PHONY: setup dev migrate test typecheck build smoke check serve clean
 
 setup:
 	./scripts/bootstrap.sh
@@ -19,6 +19,9 @@ typecheck:
 build:
 	npm --prefix frontend run build
 
+smoke: build
+	./scripts/release-smoke.sh
+
 check:
 	./scripts/check.sh
 
@@ -27,4 +30,3 @@ serve: build migrate
 
 clean:
 	rm -rf frontend/dist frontend/coverage backend/.pytest_cache backend/htmlcov
-
