@@ -8,8 +8,8 @@ from app.security.validation import bool_field, enum_field, require_object, stri
 THEMES = {"dark", "darker"}
 ACCENTS = {"cyan", "violet"}
 TEXT_SCALES = {"compact", "standard", "large"}
-LOCALES = {"en", "es", "fr", "de"}
-STT_LANGUAGES = {"auto", "en", "es", "fr", "de"}
+LOCALES = {"en", "tr", "es", "fr", "de"}
+STT_LANGUAGES = {"auto", "en", "tr", "es", "fr", "de"}
 BOOLEAN_SETTINGS = {
     "lowDataMode",
     "memoryEnabled",

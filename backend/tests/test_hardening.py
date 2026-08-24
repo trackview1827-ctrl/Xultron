@@ -82,9 +82,11 @@ def test_provider_url_and_settings_validation(user_client):
     assert invalid.status_code == 422
     bad_settings = user_client.patch("/api/v1/settings", json={"theme": "neon", "lowDataMode": "yes"}, headers={"X-CSRF-Token": csrf(user_client)})
     assert bad_settings.status_code == 422
-    good_settings = user_client.patch("/api/v1/settings", json={"theme": "darker", "accent": "violet", "textScale": "large"}, headers={"X-CSRF-Token": csrf(user_client)})
+    good_settings = user_client.patch("/api/v1/settings", json={"theme": "darker", "accent": "violet", "textScale": "large", "locale": "tr", "sttLanguage": "tr"}, headers={"X-CSRF-Token": csrf(user_client)})
     assert good_settings.status_code == 200
     assert good_settings.get_json()["settings"]["theme"] == "darker"
+    assert good_settings.get_json()["settings"]["locale"] == "tr"
+    assert good_settings.get_json()["settings"]["sttLanguage"] == "tr"
 
 
 def test_safe_log_validation(client, app, caplog):
