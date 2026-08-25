@@ -154,3 +154,10 @@
   .transmission { border-radius:16px;padding:.9rem }
   .settings-content,.memory-field>section { border-radius:18px;padding:.9rem }
 }
+@media (max-width:767px) {
+  .topbar,.system-nav { backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px) }
+  .home-tools,.command-dock,.conversation-ledger { backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px) }
+  .transmission,.system-notice,.settings-callout,.security-note,.settings-content,.memory-field>section { backdrop-filter:none;-webkit-backdrop-filter:none }
+  .transmission { background:rgba(13,13,15,.9);box-shadow:inset 0 1px 0 rgba(255,255,255,.035) }
+  .settings-content,.memory-field>section { background:rgba(10,10,12,.9) }
+}

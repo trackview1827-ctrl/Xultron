@@ -19,4 +19,17 @@ describe('XultronCore', () => {
     const { container } = render(<XultronCore state="ONLINE" reducedMotion />)
     expect(container.querySelector('.x-core')).toHaveClass('motion-reduced')
   })
+  it('selects the lighter motion profile on phone-sized viewports', () => {
+    const originalWidth = window.innerWidth
+    const originalMatchMedia = window.matchMedia
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList })
+    try {
+      const { container } = render(<XultronCore state="ONLINE" />)
+      expect(container.querySelector('.x-core')).toHaveAttribute('data-motion-profile', 'mobile')
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
+      Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia })
+    }
+  })
 })

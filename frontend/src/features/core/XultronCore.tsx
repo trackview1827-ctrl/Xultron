@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { useEffect, useState } from 'react'
 import type { CoreState } from '../../types'
 import { coreLabel } from './coreMachine'
 
@@ -13,18 +14,39 @@ const stateTone: Record<CoreState, { status: string; glow: string }> = {
   ERROR: { status: '#8b8b92', glow: '#5c5c63' },
 }
 
+function useMobileMotionProfile(): boolean {
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 767)
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia('(max-width: 767px)')
+    if (!query) return
+    const update = () => setMobile(query.matches)
+    update()
+    if (typeof query.addEventListener === 'function') {
+      query.addEventListener('change', update)
+      return () => query.removeEventListener('change', update)
+    }
+    query.addListener?.(update)
+    return () => query.removeListener?.(update)
+  }, [])
+  return mobile
+}
+
 export function XultronCore({ state, reducedMotion = false, compact = false, level = 0.4 }: { state: CoreState; reducedMotion?: boolean; compact?: boolean; level?: number }) {
   const tone = stateTone[state]
+  const mobileMotion = useMobileMotionProfile()
   const activeMotion = !reducedMotion && state !== 'OFFLINE' && state !== 'ERROR'
-  const spinDuration = state === 'THINKING' ? 3.2 : state === 'CONNECTING' ? 5.8 : state === 'LISTENING' ? 8 : 18
-  const pulseScale = state === 'LISTENING' ? 1 + level * .14 : state === 'SPEAKING' ? 1.07 : state === 'ERROR' ? 1.02 : 1.025
+  const fullOrbitMotion = activeMotion && !mobileMotion
+  const centerPulseMotion = activeMotion && !mobileMotion
+  const spinDuration = state === 'THINKING' ? 7.5 : state === 'CONNECTING' ? 12 : state === 'LISTENING' ? 18 : 28
+  const pulseScale = state === 'LISTENING' ? 1 + level * .1 : state === 'SPEAKING' ? 1.04 : state === 'ERROR' ? 1.015 : 1.016
   const style = {
     '--core-status': tone.status,
     '--core-glow': tone.glow,
     '--voice-opacity': String(.58 + level * .36),
   } as React.CSSProperties
 
-  return <figure className={`x-core ${compact ? 'x-core-compact' : ''} ${reducedMotion ? 'motion-reduced' : ''}`} data-state={state} aria-label={`Xultron Core: ${coreLabel(state)}`}>
+  return <figure className={`x-core ${compact ? 'x-core-compact' : ''} ${reducedMotion ? 'motion-reduced' : ''}`} data-state={state} data-motion-profile={mobileMotion ? 'mobile' : 'full'} aria-label={`Xultron Core: ${coreLabel(state)}`}>
     <div className="core-field" style={style}>
       <div className="core-shadow" />
       <div className="core-grid" />
@@ -37,7 +59,7 @@ export function XultronCore({ state, reducedMotion = false, compact = false, lev
         <circle cx="160" cy="15" r="3.5" className="core-node" />
       </motion.svg>
 
-      <motion.svg className="core-orbit-layer orbit-layer-middle" viewBox="0 0 320 320" aria-hidden="true" animate={activeMotion ? { rotate: -360 } : { rotate: 0 }} transition={{ duration: spinDuration * .72, repeat: activeMotion ? Infinity : 0, ease: 'linear' }}>
+      <motion.svg className="core-orbit-layer orbit-layer-middle" viewBox="0 0 320 320" aria-hidden="true" animate={fullOrbitMotion ? { rotate: -360 } : { rotate: 0 }} transition={{ duration: spinDuration * .72, repeat: fullOrbitMotion ? Infinity : 0, ease: 'linear' }}>
         <circle cx="160" cy="160" r="116" className="core-orbit orbit-middle" />
         <path d="M78 78a116 116 0 0 1 164 0M242 242a116 116 0 0 1-164 0" className="core-arc middle-arc" />
         <circle cx="160" cy="44" r="4" className="core-node core-node-glass" />
@@ -50,7 +72,7 @@ export function XultronCore({ state, reducedMotion = false, compact = false, lev
         <path d="M160 72v13M160 235v13M72 160h13M235 160h13" className="core-cardinals" />
       </motion.svg>
 
-      <motion.div className="core-energy" animate={activeMotion ? { scale: [1, pulseScale, 1], opacity: [.84, 1, .84] } : { scale: 1, opacity: state === 'OFFLINE' ? .46 : .78 }} transition={{ duration: state === 'LISTENING' ? .52 : state === 'SPEAKING' ? .78 : 3.6, repeat: activeMotion ? Infinity : 0, ease: 'easeInOut' }}>
+      <motion.div className="core-energy" animate={centerPulseMotion ? { scale: [1, pulseScale, 1], opacity: [.88, 1, .88] } : { scale: 1, opacity: state === 'OFFLINE' ? .46 : .84 }} transition={{ duration: state === 'LISTENING' ? .85 : state === 'SPEAKING' ? 1.1 : 7.5, repeat: centerPulseMotion ? Infinity : 0, ease: 'easeInOut' }}>
         <div className="core-liquid-orb">
           <span className="liquid-flow liquid-flow-one" />
           <span className="liquid-flow liquid-flow-two" />

@@ -211,12 +211,12 @@ body::before {
   background:radial-gradient(circle at 35% 24%,#353537 0%,#121214 24%,#020202 67%);
   border:1px solid rgba(255,255,255,.19);
   box-shadow:inset 14px 18px 34px rgba(255,255,255,.075),inset -18px -20px 36px #000,0 0 0 7px rgba(255,255,255,.018),0 18px 38px rgba(0,0,0,.7);
-  animation:liquid-morph 8s ease-in-out infinite alternate;
+  animation:liquid-morph 18s ease-in-out infinite alternate;
 }
 .core-liquid-orb>svg { position:relative;z-index:3;width:100%;height:100%;overflow:visible }
 .liquid-flow { position:absolute;z-index:1;border-radius:50%;filter:blur(11px);mix-blend-mode:screen }
-.liquid-flow-one { width:74%;height:52%;left:-6%;top:7%;background:rgba(255,255,255,.075);animation:liquid-flow-one 7s ease-in-out infinite alternate }
-.liquid-flow-two { width:68%;height:58%;right:-18%;bottom:-4%;background:rgba(255,255,255,.045);animation:liquid-flow-two 9s ease-in-out infinite alternate }
+.liquid-flow-one { width:74%;height:52%;left:-6%;top:7%;background:rgba(255,255,255,.075);animation:liquid-flow-one 16s ease-in-out infinite alternate }
+.liquid-flow-two { width:68%;height:58%;right:-18%;bottom:-4%;background:rgba(255,255,255,.045);animation:liquid-flow-two 22s ease-in-out infinite alternate }
 .liquid-highlight { position:absolute;z-index:4;width:34%;height:12%;left:20%;top:15%;border-radius:50%;transform:rotate(-27deg);background:linear-gradient(90deg,rgba(255,255,255,.28),rgba(255,255,255,.02));filter:blur(4px) }
 .energy-shell { fill:rgba(0,0,0,.08);stroke:rgba(255,255,255,.15);stroke-width:1 }
 .energy-inner { fill:rgba(0,0,0,.16);stroke:rgba(255,255,255,.1);stroke-width:1;filter:none }
@@ -248,6 +248,7 @@ body::before {
 @keyframes liquid-morph { 0% { border-radius:48% 52% 51% 49% / 54% 46% 54% 46% } 50% { border-radius:55% 45% 47% 53% / 46% 55% 45% 54% } 100% { border-radius:46% 54% 56% 44% / 52% 43% 57% 48% } }
 @keyframes liquid-flow-one { to { transform:translate(38%,35%) rotate(28deg) scale(1.12) } }
 @keyframes liquid-flow-two { to { transform:translate(-32%,-28%) rotate(-24deg) scale(.88) } }
+@keyframes liquid-mobile-drift { to { transform:rotate(4deg) scale(1.025) } }
 
 @media (min-width:800px) {
   .auth-panel { border:1px solid var(--glass-border);padding:2rem }
@@ -259,6 +260,18 @@ body::before {
   .auth-screen { gap:.5rem;padding-top:calc(1.25rem + var(--safe-top)) }
   .auth-panel { border-radius:24px }
   .auth-core .x-core { width:min(66vw,300px) }
+}
+@media (max-width:767px) {
+  .ambient-grid,.ambient-ripple,.ambient-glass-wave,.ambient-noise,.ambient-orb-two,.ambient-orb-three { display:none }
+  .ambient-orb-one { width:96vw;left:-52%;top:12%;opacity:.32;filter:none;animation-duration:36s }
+  .core-scan { display:none }
+  .core-field { filter:drop-shadow(0 24px 28px rgba(0,0,0,.62)) drop-shadow(0 0 18px rgba(255,255,255,.035)) }
+  .core-shadow { box-shadow:inset 12px 14px 30px rgba(255,255,255,.035),inset -16px -18px 30px #000,0 0 0 6px rgba(255,255,255,.01),0 22px 44px rgba(0,0,0,.6) }
+  .core-liquid-orb { animation:liquid-mobile-drift 28s ease-in-out infinite alternate;will-change:transform }
+  .liquid-flow { filter:blur(6px) }
+  .liquid-flow-one { animation-duration:26s }
+  .liquid-flow-two { display:none }
+  .orbit-layer-middle { opacity:.62 }
 }
 @media (prefers-reduced-motion:reduce) {
   .ambient-grid,.ambient-orb,.ambient-ripple,.ambient-glass-wave,.core-scan::before,.core-liquid-orb,.liquid-flow { animation:none!important }
