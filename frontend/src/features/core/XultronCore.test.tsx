@@ -9,4 +9,14 @@ describe('XultronCore', () => {
     expect(screen.getByText(label)).toBeInTheDocument()
   })
   it('remains understandable with animation disabled', () => { const { container } = render(<XultronCore state="THINKING" reducedMotion />); expect(container.querySelectorAll('svg').length).toBeGreaterThan(2) })
+  it('renders three counter-rotating monochrome orbit layers around the liquid core', () => {
+    const { container } = render(<XultronCore state="ONLINE" />)
+    expect(container.querySelectorAll('.core-orbit-layer')).toHaveLength(3)
+    expect(container.querySelector('.core-liquid-orb')).toBeInTheDocument()
+    expect(container.querySelector('.core-field')).toHaveStyle({ '--core-status': '#f1f1f2' })
+  })
+  it('marks CSS-driven effects as reduced when motion is disabled', () => {
+    const { container } = render(<XultronCore state="ONLINE" reducedMotion />)
+    expect(container.querySelector('.x-core')).toHaveClass('motion-reduced')
+  })
 })
