@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import requests
 from flask import current_app
 
-from app.services.text_intent import matches_any_phrase, normalize_for_match
+from app.services.text_intent import consists_only_of_terms, matches_any_phrase, normalize_for_match
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -229,7 +229,7 @@ def _fallback_plan(question: str) -> VerificationPlan:
     expression = question.strip().replace(",", ".")
     if re.fullmatch(r"[\d\s+\-*/().%^]+", expression):
         return VerificationPlan("calculate", query=expression, reason="Arithmetic verification")
-    if re.fullmatch(r"\s*(merhaba|selam|hello|hey|nasılsın|naber)[!?.\s]*", text):
+    if consists_only_of_terms(text, ("merhaba", "selam", "hello", "hey", "nasilsin", "naber", "iyisin", "iyi", "misin")):
         return VerificationPlan("reasoning", reason="Greeting or conversation")
     if any(phrase in text for phrase in ("şiir yaz", "hikaye yaz", "yeniden yaz", "metni düzelt", "özetle", "fikir ver", "tavsiye ver", "ne yapmalıyım", "brainstorm")):
         return VerificationPlan("reasoning", reason="Creative, rewriting, or subjective request")

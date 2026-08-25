@@ -30,7 +30,7 @@ Alembic migration tests.
 
 ## Passed evidence
 
-- Backend: **54 tests passed**.
+- Backend: **55 tests passed**.
 - Frontend: **61 tests passed across 16 files**.
 - Strict TypeScript: passed.
 - Python compile check: passed.

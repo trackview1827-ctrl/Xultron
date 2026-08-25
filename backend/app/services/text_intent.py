@@ -73,6 +73,15 @@ def matches_any_phrase(value: str, phrases: tuple[str, ...]) -> bool:
     return False
 
 
+def consists_only_of_terms(value: str, terms: tuple[str, ...], maximum_tokens: int = 5) -> bool:
+    """Accept a short utterance only when every token belongs to one safe vocabulary."""
+    tokens = normalize_for_match(value).split()
+    expected = [normalize_for_match(term) for term in terms]
+    if not tokens or len(tokens) > maximum_tokens:
+        return False
+    return all(any(_token_matches(token, candidate) for candidate in expected) for token in tokens)
+
+
 def _token_matches(token: str, expected: str) -> bool:
     if token == expected:
         return True

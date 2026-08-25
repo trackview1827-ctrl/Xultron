@@ -1,4 +1,4 @@
-from app.services.text_intent import bounded_levenshtein, matches_any_phrase, normalize_for_match
+from app.services.text_intent import bounded_levenshtein, consists_only_of_terms, matches_any_phrase, normalize_for_match
 
 
 def test_normalization_handles_turkish_diacritics_and_punctuation():
@@ -15,3 +15,9 @@ def test_guarded_phrase_matching_accepts_small_typos_but_not_unrelated_words():
     assert matches_any_phrase("termuks api iznin varmi", ("termux",)) is True
     assert matches_any_phrase("tamamen farkli", ("terminal",)) is False
     assert matches_any_phrase("sil bunu", ("pil",)) is False
+
+
+def test_short_conversation_match_requires_every_token_to_be_safe():
+    terms = ("merhaba", "selam", "nasilsin", "naber")
+    assert consists_only_of_terms("Selamm nasilsn?", terms) is True
+    assert consists_only_of_terms("Merhabaa bugunku altin fiyati", terms) is False

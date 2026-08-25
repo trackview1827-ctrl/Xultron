@@ -86,6 +86,8 @@ def test_minor_typos_still_select_the_expected_safe_intent(app):
             network = deterministic_plan("Wifim durm ne?")
             terminal = deterministic_plan("Termuks API iznin varmi?")
             project = deterministic_plan("Xultrn backend kodu nerede?")
+            greeting = deterministic_plan("Selamm nasilsn?")
+            greeting_with_fact = deterministic_plan("Merhabaa bugunku altin fiyati ne?")
         finally:
             app.config["TESTING"] = True
 
@@ -94,6 +96,8 @@ def test_minor_typos_still_select_the_expected_safe_intent(app):
     assert network == VerificationPlan("termux", "network", reason="Live network evidence")
     assert terminal == VerificationPlan("termux", "api_status", reason="Live Termux capability evidence")
     assert project.tool == "project"
+    assert greeting.tool == "reasoning"
+    assert greeting_with_fact.tool == "web"
 
 
 def test_location_typos_remain_fail_closed(app):
