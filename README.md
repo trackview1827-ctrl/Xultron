@@ -156,10 +156,10 @@ backend tarafından gönderilir.
 Xultron, AI sağlayıcısına her kullanıcı sorusunda kalıcı bir terminal ve doğrulama
 politikası gönderir. Backend soruyu önce sabit, sınırlandırılmış niyet kurallarıyla
 planlar; yalnızca izin verilen bir aracı çalıştırdıktan ve kullanılabilir kanıt elde
-ettikten sonra nihai cevap çağrısına izin verir. Saat, hesaplama ve desteklenen canlı
-telefon durumları sağlayıcıya ikinci kez sorulmadan kısa ve doğrudan yanıtlanır. Bu
-kontrol kullanıcıya cevap başında gösterilmez; yanıt doğrudan sorunun cevabıyla başlar.
-Kontrol başarısızsa Xultron tahmin üretmez.
+ettikten sonra nihai cevap çağrısına izin verir. Selamlaşma, saat, hesaplama ve
+desteklenen canlı telefon durumları sağlayıcıya ikinci kez sorulmadan kısa ve doğrudan
+yanıtlanır. Bu kontrol kullanıcıya cevap başında gösterilmez; yanıt doğrudan sorunun
+cevabıyla başlar. Kontrol başarısızsa Xultron tahmin üretmez.
 
 Niyet eşleme Türkçe karakter eksikliği, tek harflik yazım hataları ve yaygın ekleri
 sınırlı bir araç sözlüğünde tolere eder. Konum gibi özel veri işlemleri bulanık

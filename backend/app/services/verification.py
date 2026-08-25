@@ -56,6 +56,7 @@ ANSWER_POLICY = """XULTRON TERMINAL AND VERIFICATION POLICY — HIGHEST PRIORITY
 - Keep simple questions concise, normally one to three short sentences. Give longer detail only when the request needs it or the user asks for it.
 - Prefer a complete concise answer over a long answer that may end abruptly.
 - Infer obvious minor spelling, missing-diacritic, keyboard-adjacent, and speech-to-text errors when one interpretation is clear. Do not get stuck on a single-letter typo. Ask one short clarification only when the wording is genuinely ambiguous.
+- Reply in the user's language and use standard spelling in your own answer instead of copying an obvious typo.
 - If evidence is insufficient, say verification is insufficient instead of guessing.
 - For reasoning-only evidence, answer only the subjective, creative, conversational, or advisory request. Do not add unverified current facts.
 - Terminal access is read-only and bounded. Never imply permission for destructive commands, purchases, messages, camera capture, file deletion, credential access, or other side effects.
@@ -137,7 +138,8 @@ def execute(plan: VerificationPlan, question: str) -> VerificationResult:
         if plan.tool == "calculate":
             return _calculate(plan.query or question)
         if plan.tool == "reasoning":
-            return VerificationResult(True, "reasoning", "The request is non-factual or subjective.", "No external factual claim is required. The answer must remain within subjective, creative, conversational, rewriting, or advisory scope.")
+            tool = "reasoning:greeting" if plan.reason == "Greeting or conversation" else "reasoning"
+            return VerificationResult(True, tool, "The request is non-factual or subjective.", "No external factual claim is required. The answer must remain within subjective, creative, conversational, rewriting, or advisory scope.")
     except (ArithmeticError, OSError, SyntaxError, ValueError, requests.RequestException, subprocess.SubprocessError) as exc:
         current_app.logger.warning("Verification failed tool=%s error_type=%s", plan.tool, type(exc).__name__)
     return VerificationResult(False, plan.tool, "Verification could not be completed.", "No reliable evidence was produced.")
@@ -160,6 +162,8 @@ def direct_answer(result: VerificationResult, locale: str = "tr") -> str | None:
             return f"The time is {str(data['time'])[:5]} on {data['date']}. Time zone: {data['timezone']}."
         if result.tool == "calculate":
             return result.evidence.strip()
+        if result.tool == "reasoning:greeting":
+            return "Selam! İyiyim, nasıl yardımcı olabilirim?" if locale == "tr" else "Hello! I am doing well. How can I help?"
         if result.tool == "termux:api_status":
             return "Terminal ve Termux:API erişimi aktif." if locale == "tr" else "Terminal and Termux:API access are active."
         if result.tool == "termux:battery":

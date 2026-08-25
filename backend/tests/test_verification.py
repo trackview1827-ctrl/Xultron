@@ -196,6 +196,19 @@ def test_clock_answer_does_not_call_rate_limited_provider(app, monkeypatch):
     assert calls == []
 
 
+def test_typo_greeting_is_answered_locally_without_provider(app, monkeypatch):
+    calls = []
+    monkeypatch.setattr(chat, "adapter_call", lambda *args, **kwargs: calls.append((args, kwargs)))
+    with app.app_context():
+        app.config["TESTING"] = False
+        try:
+            answer = chat._verified_complete(SimpleNamespace(id="provider"), [{"role": "user", "content": "Selamm nasilsn?"}], "Selamm nasilsn?", "tr")
+        finally:
+            app.config["TESTING"] = True
+    assert answer == "Selam! İyiyim, nasıl yardımcı olabilirim?"
+    assert calls == []
+
+
 def test_private_values_are_not_sent_to_web_verification(app, monkeypatch):
     requested = []
     monkeypatch.setattr("app.services.verification.requests.get", lambda *args, **kwargs: requested.append((args, kwargs)))

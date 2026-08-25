@@ -30,7 +30,7 @@ Alembic migration tests.
 
 ## Passed evidence
 
-- Backend: **55 tests passed**.
+- Backend: **56 tests passed**.
 - Frontend: **61 tests passed across 16 files**.
 - Strict TypeScript: passed.
 - Python compile check: passed.
@@ -95,6 +95,8 @@ Alembic migration tests.
   and small spelling mistakes for clock, battery, storage, network, Termux and project
   questions. Location remains fail-closed and cannot be enabled by fuzzy matching. The
   matching design is attributed to the MIT-licensed OpenClaw patterns it adapts.
+- Short typo-bearing greetings are answered locally with standard spelling, avoiding
+  an unnecessary provider request and rate-limit exposure.
 
 ## Environment-limited checks
 
