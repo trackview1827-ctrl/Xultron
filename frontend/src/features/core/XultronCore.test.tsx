@@ -11,7 +11,10 @@ describe('XultronCore', () => {
   it('remains understandable with animation disabled', () => { const { container } = render(<XultronCore state="THINKING" reducedMotion />); expect(container.querySelectorAll('svg').length).toBeGreaterThan(2) })
   it('renders three counter-rotating monochrome orbit layers around the liquid core', () => {
     const { container } = render(<XultronCore state="ONLINE" />)
-    expect(container.querySelectorAll('.core-orbit-layer')).toHaveLength(3)
+    const orbitLayers = container.querySelectorAll('.core-orbit-layer')
+    expect(orbitLayers).toHaveLength(3)
+    orbitLayers.forEach(layer => expect(layer).not.toHaveAttribute('style'))
+    expect(container.querySelector('.x-core')).toHaveClass('core-motion-active')
     expect(container.querySelector('.core-liquid-orb')).toBeInTheDocument()
     expect(container.querySelector('.core-field')).toHaveStyle({ '--core-status': '#f1f1f2' })
   })

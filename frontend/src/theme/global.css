@@ -160,6 +160,11 @@ body::before {
   box-shadow:inset 18px 20px 45px rgba(255,255,255,.045),inset -24px -28px 45px #000,0 0 0 9px rgba(255,255,255,.012),0 0 38px color-mix(in srgb,var(--core-glow) 13%,transparent),0 30px 70px rgba(0,0,0,.72);
 }
 .core-field>svg { z-index:3;overflow:visible }
+.core-orbit-layer { transform-box:fill-box;transform-origin:center;will-change:transform;backface-visibility:hidden }
+.orbit-layer-outer { animation:core-orbit-clockwise 42s linear infinite;animation-delay:-11s }
+.orbit-layer-middle { animation:core-orbit-counter 29s linear infinite;animation-delay:-19s }
+.orbit-layer-inner { animation:core-orbit-clockwise 21s linear infinite;animation-delay:-7s }
+.x-core:not(.core-motion-active) .core-orbit-layer { animation-play-state:paused }
 .core-grid {
   z-index:1;
   inset:14%;
@@ -245,6 +250,8 @@ body::before {
 @keyframes ambient-ripple { 0%,100% { transform:scale(.86);opacity:.14 } 50% { transform:scale(1.12);opacity:.5 } }
 @keyframes ambient-wave { to { transform:translate3d(5vw,-5vh,0) rotate(3deg) scale(1.08) } }
 @keyframes core-scan { to { transform:rotate(360deg) } }
+@keyframes core-orbit-clockwise { from { transform:rotate(0turn) } to { transform:rotate(1turn) } }
+@keyframes core-orbit-counter { from { transform:rotate(0turn) } to { transform:rotate(-1turn) } }
 @keyframes liquid-morph { 0% { border-radius:48% 52% 51% 49% / 54% 46% 54% 46% } 50% { border-radius:55% 45% 47% 53% / 46% 55% 45% 54% } 100% { border-radius:46% 54% 56% 44% / 52% 43% 57% 48% } }
 @keyframes liquid-flow-one { to { transform:translate(38%,35%) rotate(28deg) scale(1.12) } }
 @keyframes liquid-flow-two { to { transform:translate(-32%,-28%) rotate(-24deg) scale(.88) } }
@@ -272,8 +279,12 @@ body::before {
   .liquid-flow-one { animation-duration:26s }
   .liquid-flow-two { display:none }
   .orbit-layer-middle { opacity:.62 }
+  .orbit-layer-outer { animation-duration:52s }
+  .orbit-layer-middle { animation-duration:38s }
+  .orbit-layer-inner { animation-duration:29s }
 }
 @media (prefers-reduced-motion:reduce) {
   .ambient-grid,.ambient-orb,.ambient-ripple,.ambient-glass-wave,.core-scan::before,.core-liquid-orb,.liquid-flow { animation:none!important }
 }
 html[data-low-data="true"] .ambient-orb,html[data-low-data="true"] .ambient-ripple,html[data-low-data="true"] .ambient-noise,html[data-low-data="true"] .core-scan { display:none }
+.motion-reduced .core-orbit-layer { animation:none!important;will-change:auto }

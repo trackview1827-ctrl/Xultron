@@ -36,9 +36,7 @@ export function XultronCore({ state, reducedMotion = false, compact = false, lev
   const tone = stateTone[state]
   const mobileMotion = useMobileMotionProfile()
   const activeMotion = !reducedMotion && state !== 'OFFLINE' && state !== 'ERROR'
-  const fullOrbitMotion = activeMotion && !mobileMotion
   const centerPulseMotion = activeMotion && !mobileMotion
-  const spinDuration = state === 'THINKING' ? 7.5 : state === 'CONNECTING' ? 12 : state === 'LISTENING' ? 18 : 28
   const pulseScale = state === 'LISTENING' ? 1 + level * .1 : state === 'SPEAKING' ? 1.04 : state === 'ERROR' ? 1.015 : 1.016
   const style = {
     '--core-status': tone.status,
@@ -46,31 +44,31 @@ export function XultronCore({ state, reducedMotion = false, compact = false, lev
     '--voice-opacity': String(.58 + level * .36),
   } as React.CSSProperties
 
-  return <figure className={`x-core ${compact ? 'x-core-compact' : ''} ${reducedMotion ? 'motion-reduced' : ''}`} data-state={state} data-motion-profile={mobileMotion ? 'mobile' : 'full'} aria-label={`Xultron Core: ${coreLabel(state)}`}>
+  return <figure className={`x-core ${compact ? 'x-core-compact' : ''} ${reducedMotion ? 'motion-reduced' : ''} ${activeMotion ? 'core-motion-active' : ''}`} data-state={state} data-motion-profile={mobileMotion ? 'mobile' : 'full'} aria-label={`Xultron Core: ${coreLabel(state)}`}>
     <div className="core-field" style={style}>
       <div className="core-shadow" />
       <div className="core-grid" />
       <div className="core-scan" />
 
-      <motion.svg className="core-orbit-layer orbit-layer-outer" viewBox="0 0 320 320" role="img" aria-hidden="true" animate={activeMotion ? { rotate: 360 } : { rotate: 0 }} transition={{ duration: spinDuration, repeat: activeMotion ? Infinity : 0, ease: 'linear' }}>
+      <svg className="core-orbit-layer orbit-layer-outer" viewBox="0 0 320 320" role="img" aria-hidden="true">
         <circle cx="160" cy="160" r="145" className="core-orbit orbit-outer" />
         <path d="M160 15A145 145 0 0 1 305 160M160 305A145 145 0 0 1 15 160" className="core-arc outer-arc" />
         <g className="core-ticks">{Array.from({ length: 32 }, (_, i) => <line key={i} x1="160" y1="18" x2="160" y2={i % 4 === 0 ? 31 : 25} transform={`rotate(${i * 11.25} 160 160)`} />)}</g>
         <circle cx="160" cy="15" r="3.5" className="core-node" />
-      </motion.svg>
+      </svg>
 
-      <motion.svg className="core-orbit-layer orbit-layer-middle" viewBox="0 0 320 320" aria-hidden="true" animate={fullOrbitMotion ? { rotate: -360 } : { rotate: 0 }} transition={{ duration: spinDuration * .72, repeat: fullOrbitMotion ? Infinity : 0, ease: 'linear' }}>
+      <svg className="core-orbit-layer orbit-layer-middle" viewBox="0 0 320 320" aria-hidden="true">
         <circle cx="160" cy="160" r="116" className="core-orbit orbit-middle" />
         <path d="M78 78a116 116 0 0 1 164 0M242 242a116 116 0 0 1-164 0" className="core-arc middle-arc" />
         <circle cx="160" cy="44" r="4" className="core-node core-node-glass" />
         <circle cx="160" cy="276" r="2.5" className="core-node" />
-      </motion.svg>
+      </svg>
 
-      <motion.svg className="core-orbit-layer orbit-layer-inner" viewBox="0 0 320 320" aria-hidden="true" animate={activeMotion ? { rotate: 360 } : { rotate: 0 }} transition={{ duration: spinDuration * .46, repeat: activeMotion ? Infinity : 0, ease: 'linear' }}>
+      <svg className="core-orbit-layer orbit-layer-inner" viewBox="0 0 320 320" aria-hidden="true">
         <circle cx="160" cy="160" r="88" className="core-orbit orbit-inner" />
         <path d="M98 98a88 88 0 0 1 124 0M222 222a88 88 0 0 1-124 0" className="core-arc inner-arc" />
         <path d="M160 72v13M160 235v13M72 160h13M235 160h13" className="core-cardinals" />
-      </motion.svg>
+      </svg>
 
       <motion.div className="core-energy" animate={centerPulseMotion ? { scale: [1, pulseScale, 1], opacity: [.88, 1, .88] } : { scale: 1, opacity: state === 'OFFLINE' ? .46 : .84 }} transition={{ duration: state === 'LISTENING' ? .85 : state === 'SPEAKING' ? 1.1 : 7.5, repeat: centerPulseMotion ? Infinity : 0, ease: 'easeInOut' }}>
         <div className="core-liquid-orb">
