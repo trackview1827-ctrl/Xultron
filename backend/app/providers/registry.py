@@ -1,11 +1,12 @@
 from app.models import Provider
-from app.providers.adapters import CustomHTTPAdapter, GeminiAdapter, MockAdapter, OpenAICompatibleAdapter
+from app.providers.adapters import AnthropicAdapter, CustomHTTPAdapter, GeminiAdapter, MockAdapter, OpenAICompatibleAdapter
 from app.providers.base import ProviderConfig, ProviderFailure
 from app.security.crypto import decrypt_secret
 
 ADAPTERS = {
     "openai_compatible": OpenAICompatibleAdapter,
     "local_http": OpenAICompatibleAdapter,
+    "anthropic": AnthropicAdapter,
     "gemini": GeminiAdapter,
     "custom_http": CustomHTTPAdapter,
     "mock": MockAdapter,

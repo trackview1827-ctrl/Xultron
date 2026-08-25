@@ -30,14 +30,14 @@ Alembic migration tests.
 
 ## Passed evidence
 
-- Backend: **42 tests passed**.
-- Frontend: **57 tests passed across 15 files**.
+- Backend: **48 tests passed**.
+- Frontend: **61 tests passed across 16 files**.
 - Strict TypeScript: passed.
 - Python compile check: passed.
-- Vite build: passed with **456 transformed modules**.
+- Vite build: passed with **457 transformed modules**.
 - Production bundles:
   - CSS: 57.14 kB, 13.38 kB gzip.
-  - JavaScript: 396.36 kB, 127.03 kB gzip.
+  - JavaScript: 402.97 kB, 128.62 kB gzip.
   - No production sourcemaps were emitted.
 - PWA build: valid manifest, service worker and 192/512 icons.
 - Service worker: build-time hashed CSS and JavaScript assets are precached under a
@@ -84,6 +84,13 @@ Alembic migration tests.
   web evidence tools; injects live terminal/Termux:API capability evidence into every
   final model call; blocks private search queries; and returns no factual answer when
   relevant verification fails.
+- AI configuration now includes more than 30 presets covering native Gemini and
+  Anthropic adapters, major OpenAI-compatible hosted services, and loopback local
+  runtimes. Claude credentials use native `x-api-key` headers and bounded responses.
+- Device date/time questions now use live runtime clock evidence. Public web evidence
+  includes named source domains and URLs so first-party and official documentation can
+  be preferred. Verification labels remain internal and are removed from visible chat
+  responses. Provider output and timeout defaults were raised to prevent abrupt answers.
 
 ## Environment-limited checks
 

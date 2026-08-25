@@ -140,27 +140,36 @@ açıklayıcı bir sistem durumu olarak gösterilir.
 Aynı akış STT ve TTS sağlayıcıları için de geçerlidir. Saklanan anahtar hiçbir
 listeleme veya ayar yanıtında tarayıcıya geri gönderilmez.
 
-Google Gemini doğrudan desteklenir. AI sağlayıcısı eklerken **Google Gemini**
-adaptörünü seçmek güvenli Google API taban adresini ve `gemini-2.5-flash` modelini
-otomatik doldurur. API anahtarı URL'ye eklenmez, backend tarafından `x-goog-api-key`
-başlığında gönderilir.
+AI ekranında 30'dan fazla hazır sağlayıcı seçeneği bulunur. Google Gemini ve
+Anthropic Claude native REST adaptörleriyle; OpenAI, xAI/Grok, NVIDIA NIM, Hugging
+Face, Groq, OpenRouter, Mistral, Cohere, DeepSeek, Together, Fireworks, Cerebras,
+SambaNova, Perplexity, Qwen, Kimi ve diğer OpenAI uyumlu servisler hazır güvenli
+base URL'lerle sunulur. Ollama, LM Studio, LocalAI, vLLM, llama.cpp ve Jan için
+loopback yerel presetleri de vardır. Gemini anahtarı `x-goog-api-key`, Anthropic
+anahtarı `x-api-key`, diğer uyumlu servislerin anahtarları Bearer başlığıyla yalnızca
+backend tarafından gönderilir.
 
 ## Terminal ve zorunlu doğrulama
 
 Xultron, AI sağlayıcısına her kullanıcı sorusunda kalıcı bir terminal ve doğrulama
 politikası gönderir. Model önce ayrı bir doğrulama planı üretir; backend yalnızca
 izin verilen bir aracı çalıştırdıktan ve kullanılabilir kanıt elde ettikten sonra
-nihai cevap çağrısına izin verir. Doğrulama başarısızsa Xultron tahmin üretmez ve
-doğrulama yapılamadığını bildirir.
+nihai cevap çağrısına izin verir. Bu kontrol kullanıcıya cevap başında gösterilmez;
+yanıt doğrudan sorunun cevabıyla başlar. Kontrol başarısızsa Xultron tahmin üretmez.
 
 Desteklenen doğrulama yolları:
 
 - Canlı terminal/Termux:API yetki durumu
+- Cihaz çalışma zamanından canlı yerel tarih, saat ve saat dilimi
 - Salt-okunur batarya, depolama ve ağ kontrolleri
 - Yalnızca açık konum sorularında Termux konum sorgusu
 - Xultron kaynak ağacında sınırlandırılmış proje araması
 - Güvenli aritmetik değerlendirme
-- Sabit HTTPS arama adresi üzerinden güncel web doğrulaması
+- Sabit HTTPS arama adresi üzerinden kaynak alan adı ve URL içeren güncel web kanıtı
+
+Canlı Termux komut sonuçları ilgili cihaz bilgileri için yetkili kaynak kabul edilir.
+Web sonuçlarında resmi ürün dokümantasyonu, kamu, üniversite, standart kurumu ve
+birinci taraf alan adları ikincil özetlerden öncelikli kabul edilir.
 
 Modelin serbest biçimli shell komutu çalıştırmasına izin verilmez. Dosya silme,
 mesaj gönderme, kamera, satın alma ve diğer yan etkili komutlar otomatik araç

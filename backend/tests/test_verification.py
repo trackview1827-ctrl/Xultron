@@ -61,6 +61,45 @@ def test_safe_calculation_and_location_explicitness(app):
         assert nested_power.verified is False
 
 
+def test_live_clock_questions_use_runtime_evidence(app):
+    with app.app_context():
+        app.config["TESTING"] = False
+        try:
+            plan = parse_plan('{"tool":"web","query":"time"}', "Şu an saat kaç?")
+            result = execute(plan, "Şu an saat kaç?")
+        finally:
+            app.config["TESTING"] = True
+    assert plan == VerificationPlan("runtime", "clock", reason="Live local date and time evidence")
+    assert result.verified is True
+    assert result.tool == "runtime:clock"
+    assert '"date"' in result.evidence
+    assert '"time"' in result.evidence
+    assert '"timezone"' in result.evidence
+
+
+def test_web_evidence_names_public_source_domains(app, monkeypatch):
+    page = b'<a class="result__a" href="https://docs.python.org/3/">Python documentation</a><div class="result__snippet">Official Python documentation.</div>'
+
+    class Response:
+        status_code = 200
+        headers = {"Content-Length": str(len(page))}
+        encoding = "utf-8"
+
+        def iter_content(self, chunk_size=32768):
+            yield page
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("app.services.verification.requests.get", lambda *args, **kwargs: Response())
+    with app.app_context():
+        app.config["VERIFICATION_WEB_ENABLED"] = True
+        result = execute(VerificationPlan("web", query="Python official documentation"), "Python resmi sitesi nedir?")
+    assert result.verified is True
+    assert "docs.python.org" in result.evidence
+    assert "Python documentation" in result.evidence
+
+
 def test_verified_completion_injects_terminal_policy_and_evidence(app, monkeypatch):
     calls = []
 
@@ -68,18 +107,20 @@ def test_verified_completion_injects_terminal_policy_and_evidence(app, monkeypat
         calls.append(messages)
         if len(calls) == 1:
             return '{"tool":"reasoning","query":"","reason":"greeting"}'
-        return "Doğrulama: konuşma isteği. Merhaba."
+        return "**Doğrulama:** Merhaba."
 
     monkeypatch.setattr(chat, "adapter_call", fake_call)
     with app.app_context():
         answer = chat._verified_complete(SimpleNamespace(id="provider"), [{"role": "user", "content": "Merhaba"}], "Merhaba", "tr")
 
-    assert answer.startswith("Doğrulama:")
+    assert answer == "Merhaba."
     assert len(calls) == 2
     system_text = "\n".join(item["content"] for item in calls[1] if item["role"] == "system")
     assert "TERMINAL AND VERIFICATION POLICY" in system_text
     assert "RUNTIME CAPABILITY" in system_text
     assert "VERIFIED EVIDENCE" in system_text
+    assert "Do not mention verification" in system_text
+    assert "one to three short sentences" in system_text
     assert calls[1][-1] == {"role": "user", "content": "Merhaba"}
     assert calls[1][-2]["role"] == "system"
     assert "VERIFIED EVIDENCE" in calls[1][-2]["content"]
@@ -101,8 +142,8 @@ def test_failed_verification_returns_no_model_answer(app, monkeypatch):
             app.config["TESTING"] = True
 
     assert len(calls) == 1
-    assert answer.startswith("Doğrulama yapılamadı")
-    assert "cevap veremem" in answer
+    assert answer == "Şu anda güvenilir bir cevap üretemiyorum. Lütfen biraz sonra tekrar dene."
+    assert "Doğrulama" not in answer
 
 
 def test_private_values_are_not_sent_to_web_verification(app, monkeypatch):

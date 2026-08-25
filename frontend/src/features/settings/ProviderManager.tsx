@@ -5,6 +5,7 @@ import { Icon } from '../../components/Icon'
 import { Button, EmptyState, Field, Input, Spinner, Switch } from '../../components/ui'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { useLocale } from '../../hooks/useLocale'
+import { AI_PROVIDER_PRESETS, AI_PROVIDER_PRESET_GROUPS } from './providerPresets'
 
 const labels: Record<ProviderKind, { title: string; titleTr: string; copy: string; copyTr: string }> = {
   ai: { title: 'AI Providers', titleTr: 'AI Sağlayıcıları', copy: 'Intelligence engines for reasoning and conversation.', copyTr: 'Akıl yürütme ve sohbet için yapay zeka motorları.' },
@@ -13,7 +14,7 @@ const labels: Record<ProviderKind, { title: string; titleTr: string; copy: strin
 }
 
 function blank(kind: ProviderKind): ProviderInput {
-  return { name: '', kind, adapter: 'openai_compatible', baseUrl: '', apiKey: '', model: '', temperature: .3, maxTokens: 800, streaming: kind === 'ai', enabled: true, isDefault: false, config: {} }
+  return { name: '', kind, adapter: 'openai_compatible', baseUrl: '', apiKey: '', model: '', temperature: .3, maxTokens: 4096, streaming: kind === 'ai', enabled: true, isDefault: false, config: {} }
 }
 
 function providerToInput(provider: Provider): ProviderInput {
@@ -108,19 +109,37 @@ export function ProviderManager({ kind, online }: { kind: ProviderKind; online: 
 function ProviderEditor({ kind, online, provider, confirmationOpen, deleteButtonRef, onClose, onSaved, onDelete }: { kind: ProviderKind; online: boolean; provider?: Provider; confirmationOpen: boolean; deleteButtonRef: RefObject<HTMLButtonElement | null>; onClose: () => void; onSaved: (provider: Provider) => void; onDelete: (provider: Provider) => void }) {
   const { t } = useLocale()
   const [form, setForm] = useState<ProviderInput>(() => provider ? providerToInput(provider) : blank(kind))
+  const [presetId, setPresetId] = useState(() => provider ? AI_PROVIDER_PRESETS.find(preset => preset.adapter === provider.adapter && preset.baseUrl === provider.baseUrl)?.id ?? '' : '')
   const [models, setModels] = useState<ModelOption[]>([])
   const [busy, setBusy] = useState('')
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null)
   const [error, setError] = useState('')
   const panelRef = useRef<HTMLDivElement>(null); const returnFocusRef = useRef<HTMLElement | null>(null); const onCloseRef = useRef(onClose); const confirmationOpenRef = useRef(confirmationOpen); onCloseRef.current = onClose; confirmationOpenRef.current = confirmationOpen
   const update = <K extends keyof ProviderInput>(key: K, value: ProviderInput[K]) => setForm(current => ({ ...current, [key]: value }))
-  const selectAdapter = (adapter: string) => setForm(current => adapter === 'gemini' ? {
-    ...current,
-    adapter,
-    name: current.name || 'Google Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    model: current.model || 'gemini-2.5-flash',
-  } : { ...current, adapter })
+  const applyPreset = (id: string) => {
+    setPresetId(id)
+    const preset = AI_PROVIDER_PRESETS.find(item => item.id === id)
+    if (!preset) return
+    setForm(current => ({ ...current, name: preset.label, adapter: preset.adapter, baseUrl: preset.baseUrl, model: preset.model, temperature: .3, maxTokens: 4096, streaming: true }))
+    setModels([]); setStatus(null); setError('')
+  }
+  const selectAdapter = (adapter: string) => {
+    setPresetId('')
+    setForm(current => adapter === 'gemini' ? {
+      ...current,
+      adapter,
+      name: current.name || 'Google Gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      model: current.model || 'gemini-2.5-flash',
+    } : adapter === 'anthropic' ? {
+      ...current,
+      adapter,
+      name: current.name || 'Anthropic Claude',
+      baseUrl: 'https://api.anthropic.com',
+      model: current.model || 'claude-sonnet-5',
+    } : { ...current, adapter })
+  }
+  const selectedPreset = AI_PROVIDER_PRESETS.find(item => item.id === presetId)
 
   useEffect(() => {
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -187,12 +206,13 @@ function ProviderEditor({ kind, online, provider, confirmationOpen, deleteButton
     <header><div><span className="section-index">{kind.toUpperCase()} LINK CONFIGURATION</span><h2 id="provider-title">{provider ? provider.name : 'New provider'}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close provider editor"><Icon name="close" /></button></header>
     <form onSubmit={event => void save(event)} autoComplete="off"><fieldset className="provider-editor-fields" disabled={!online}>
       <div className="form-grid">
+        {kind === 'ai' && <Field label={t('Provider preset', 'Hazır sağlayıcı')} hint={selectedPreset?.note || t('Choose a service to fill its safe API defaults.', 'Güvenli API ayarlarını doldurmak için bir servis seç.')}><select className="field" aria-label={t('Provider preset', 'Hazır sağlayıcı')} value={presetId} onChange={event => applyPreset(event.target.value)}><option value="">{t('Manual configuration', 'Elle yapılandırma')}</option>{AI_PROVIDER_PRESET_GROUPS.map(group => <optgroup label={group.label} key={group.id}>{AI_PROVIDER_PRESETS.filter(preset => preset.group === group.id).map(preset => <option value={preset.id} key={preset.id}>{preset.label}</option>)}</optgroup>)}</select></Field>}
         <Field label="Provider name"><Input value={form.name} onChange={event => update('name', event.target.value)} required autoFocus /></Field>
-        <Field label={t('Adapter', 'Adaptör')}><select className="field" value={form.adapter} onChange={event => selectAdapter(event.target.value)}><option value="openai_compatible">OpenAI compatible</option>{kind === 'ai' && <option value="gemini">Google Gemini</option>}<option value="custom_http">Custom HTTP</option><option value="local_http">Local endpoint</option></select></Field>
+        <Field label={t('Adapter', 'Adaptör')}><select className="field" value={form.adapter} onChange={event => selectAdapter(event.target.value)}><option value="openai_compatible">OpenAI compatible</option>{kind === 'ai' && <><option value="anthropic">Anthropic Claude</option><option value="gemini">Google Gemini</option></>}<option value="custom_http">Custom HTTP</option><option value="local_http">Local endpoint</option></select></Field>
         <Field label="Base URL" hint="Credentials are sent only to Xultron's backend."><Input value={form.baseUrl} onChange={event => update('baseUrl', event.target.value)} type="url" placeholder="https://api.example.com/v1" required /></Field>
         <Field label="API key" hint={provider?.credential.configured ? `Stored securely: ${provider.credential.masked || 'masked credential'}. Leave blank to keep it.` : 'Never saved in browser storage.'}><Input value={form.apiKey ?? ''} onChange={event => update('apiKey', event.target.value)} type="password" placeholder={provider?.credential.configured ? 'Leave blank to keep existing key' : 'Enter secret once'} autoComplete="new-password" /></Field>
         <Field label="Model ID" hint="Enter manually or use model discovery."><div className="compound-field"><Input value={form.model} onChange={event => update('model', event.target.value)} list="provider-models" /><button type="button" onClick={() => void refreshModels()} disabled={!!busy} aria-label="Refresh models"><Icon name="refresh" /></button></div><datalist id="provider-models">{models.map(model => <option value={model.id} key={model.id}>{model.label}</option>)}</datalist></Field>
-        {kind === 'ai' && <><Field label="Temperature"><Input value={form.temperature ?? .3} onChange={event => update('temperature', Number(event.target.value))} type="number" min="0" max="2" step="0.1" /></Field><Field label="Max output tokens"><Input value={form.maxTokens ?? 800} onChange={event => update('maxTokens', Number(event.target.value))} type="number" min="1" max="32000" /></Field></>}
+        {kind === 'ai' && <><Field label="Temperature"><Input value={form.temperature ?? .3} onChange={event => update('temperature', Number(event.target.value))} type="number" min="0" max="2" step="0.1" /></Field><Field label="Max output tokens"><Input value={form.maxTokens ?? 4096} onChange={event => update('maxTokens', Number(event.target.value))} type="number" min="1" max="32000" /></Field></>}
         {kind === 'stt' && <Field label="Language override"><Input value={String(form.config.language ?? '')} onChange={event => update('config', { ...form.config, language: event.target.value })} placeholder="auto" /></Field>}
         {kind === 'tts' && <><Field label="Voice"><Input value={String(form.config.voice ?? '')} onChange={event => update('config', { ...form.config, voice: event.target.value })} /></Field><Field label="Speed"><Input type="number" min="0.5" max="2" step="0.1" value={Number(form.config.speed ?? 1)} onChange={event => update('config', { ...form.config, speed: Number(event.target.value) })} /></Field></>}
       </div>

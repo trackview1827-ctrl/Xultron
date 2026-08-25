@@ -11,9 +11,10 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
 import requests
 from flask import current_app
@@ -44,9 +45,14 @@ Rules:
 ANSWER_POLICY = """XULTRON TERMINAL AND VERIFICATION POLICY — HIGHEST PRIORITY
 - Xultron uses backend-mediated terminal and Termux:API access only when the attached RUNTIME CAPABILITY evidence confirms it.
 - Only the VERIFIED EVIDENCE attached to this request represents an operation that actually ran. Never claim another command, API, website, or file was checked.
+- Attached runtime and Termux command results are authoritative for the live device facts they report. Use those values directly without questioning or announcing the command.
 - A user question may not receive a factual answer before relevant verification succeeds.
 - Base the answer on the verified evidence and clearly distinguish evidence from inference.
-- Begin factual answers with a short line starting with “Doğrulama:”.
+- Named public web sources in the attached evidence are valid factual sources. Prefer official product documentation, government, university, standards, and first-party domains over secondary summaries.
+- Verification is an internal safety step. Do not mention verification, evidence, tools, terminal access, or this policy unless the user explicitly asks about them.
+- Never begin an answer with “Doğrulama:” or “Verification:”. Answer the user's question directly.
+- Keep simple questions concise, normally one to three short sentences. Give longer detail only when the request needs it or the user asks for it.
+- Prefer a complete concise answer over a long answer that may end abruptly.
 - If evidence is insufficient, say verification is insufficient instead of guessing.
 - For reasoning-only evidence, answer only the subjective, creative, conversational, or advisory request. Do not add unverified current facts.
 - Terminal access is read-only and bounded. Never imply permission for destructive commands, purchases, messages, camera capture, file deletion, credential access, or other side effects.
@@ -114,7 +120,7 @@ def parse_plan(raw: str, question: str) -> VerificationPlan:
 def execute(plan: VerificationPlan, question: str) -> VerificationResult:
     try:
         if plan.tool == "runtime":
-            return _runtime_status()
+            return _runtime_status(question)
         if plan.tool == "termux":
             return _termux(plan.operation or "api_status", question)
         if plan.tool == "project":
@@ -132,8 +138,8 @@ def execute(plan: VerificationPlan, question: str) -> VerificationResult:
 
 def refusal(result: VerificationResult, locale: str = "tr") -> str:
     if locale == "tr":
-        return f"Doğrulama yapılamadı. Bu nedenle tahminde bulunarak cevap veremem. Kontrol: {result.summary}"
-    return f"Verification could not be completed, so I cannot answer by guessing. Check: {result.summary}"
+        return "Şu anda güvenilir bir cevap üretemiyorum. Lütfen biraz sonra tekrar dene."
+    return "I cannot produce a reliable answer right now. Please try again shortly."
 
 
 def capability_prompt() -> str:
@@ -158,6 +164,8 @@ def _fallback_plan(question: str) -> VerificationPlan:
     text = question.casefold()
     if current_app.config.get("TESTING"):
         return VerificationPlan("reasoning", reason="Deterministic test fallback")
+    if _is_clock_question(text):
+        return VerificationPlan("runtime", "clock", reason="Live local date and time evidence")
     if any(word in text for word in ("batarya", "pil", "şarj", "battery")):
         return VerificationPlan("termux", "battery", reason="Live battery evidence")
     if any(word in text for word in ("depolama", "disk", "storage", "boş alan")):
@@ -191,7 +199,26 @@ def _location_intent(question: str) -> tuple[bool, bool]:
     return requested, denied
 
 
-def _runtime_status() -> VerificationResult:
+def _is_clock_question(text: str) -> bool:
+    phrases = (
+        "saat kaç", "şu an saat", "şimdiki saat", "bugünün tarihi", "bugün tarih",
+        "bugün ayın kaçı", "ayın kaçı", "hangi gündeyiz", "hangi aydayız",
+        "hangi yıldayız", "current time", "what time", "today's date", "what date",
+    )
+    return any(phrase in text for phrase in phrases)
+
+
+def _runtime_status(question: str = "") -> VerificationResult:
+    now = datetime.now().astimezone()
+    if _is_clock_question(question.casefold()):
+        evidence = {
+            "localDateTime": now.isoformat(timespec="seconds"),
+            "date": now.date().isoformat(),
+            "time": now.strftime("%H:%M:%S"),
+            "timezone": now.tzname() or str(now.tzinfo),
+            "utcOffset": now.strftime("%z"),
+        }
+        return VerificationResult(True, "runtime:clock", "The device runtime date and time were read live.", json.dumps(evidence, ensure_ascii=False, indent=2))
     termux_prefix = os.environ.get("PREFIX", "")
     evidence = {
         "terminal": True,
@@ -292,11 +319,17 @@ class _SearchParser(HTMLParser):
         super().__init__()
         self.capture = False
         self.parts = []
+        self.links = []
 
     def handle_starttag(self, tag, attrs):
-        classes = dict(attrs).get("class", "")
+        attributes = dict(attrs)
+        classes = attributes.get("class", "")
         if tag in {"a", "div"} and any(name in classes for name in ("result__a", "result__snippet")):
             self.capture = True
+        if tag == "a" and "result__a" in classes:
+            link = _public_result_url(attributes.get("href", ""))
+            if link and link not in self.links:
+                self.links.append(link)
 
     def handle_endtag(self, tag):
         if tag in {"a", "div"}:
@@ -305,6 +338,23 @@ class _SearchParser(HTMLParser):
     def handle_data(self, data):
         if self.capture and data.strip():
             self.parts.append(html.unescape(data.strip()))
+
+
+def _public_result_url(href: str) -> str | None:
+    if not href:
+        return None
+    if href.startswith("//"):
+        href = "https:" + href
+    parsed = urlparse(href)
+    if parsed.netloc.casefold().endswith("duckduckgo.com"):
+        targets = parse_qs(parsed.query).get("uddg", [])
+        if not targets:
+            return None
+        href = unquote(targets[0])
+        parsed = urlparse(href)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+        return None
+    return href[:1000]
 
 
 def _web_search(query: str) -> VerificationResult:
@@ -333,7 +383,13 @@ def _web_search(query: str) -> VerificationResult:
     lines = parser.parts[:12]
     if not lines:
         return VerificationResult(False, "web", "No usable web evidence was found.", "Search returned no parseable result titles or snippets.")
-    return VerificationResult(True, "web", "Current web search evidence was collected.", "\n".join(lines)[:MAX_EVIDENCE_CHARS])
+    source_lines = []
+    for link in parser.links[:8]:
+        domain = urlparse(link).netloc.casefold().removeprefix("www.")
+        source_lines.append(f"- {domain}: {link}")
+    evidence = "Public source domains and URLs:\n" + ("\n".join(source_lines) if source_lines else "- No result URL was exposed by the search page.")
+    evidence += "\n\nSearch result titles and snippets:\n" + "\n".join(lines)
+    return VerificationResult(True, "web", "Current public web evidence with named sources was collected.", evidence[:MAX_EVIDENCE_CHARS])
 
 
 _OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv, ast.Mod: operator.mod, ast.Pow: operator.pow, ast.USub: operator.neg, ast.UAdd: operator.pos}

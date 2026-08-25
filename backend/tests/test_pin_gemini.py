@@ -95,6 +95,22 @@ def test_gemini_adapter_uses_header_auth_and_translates_messages(app, monkeypatc
     assert captured["json"]["contents"][0] == {"role": "user", "parts": [{"text": "Merhaba"}]}
 
 
+def test_gemini_uses_large_complete_answer_default(app, monkeypatch):
+    captured = {}
+    config = gemini_config()
+    config.max_tokens = None
+
+    def post(url, **kwargs):
+        captured.update(kwargs)
+        return FakeResponse({"candidates": [{"content": {"parts": [{"text": "Tam cevap"}]}}]})
+
+    monkeypatch.setattr("app.providers.adapters.requests.post", post)
+    with app.app_context():
+        assert GeminiAdapter(config).complete([{"role": "user", "content": "Açıkla"}]) == "Tam cevap"
+
+    assert captured["json"]["generationConfig"]["maxOutputTokens"] == 4096
+
+
 def test_gemini_model_discovery_filters_non_generation_models(app, monkeypatch):
     payload = {
         "models": [

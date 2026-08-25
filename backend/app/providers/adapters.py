@@ -102,7 +102,7 @@ class OpenAICompatibleAdapter:
         value = value.strip()
         if not value:
             raise ProviderFailure(empty_code, "Provider returned an empty response.", 502, True)
-        return value[: current_app.config.get("MAX_PROVIDER_TEXT_CHARS", 24000)]
+        return value[: current_app.config.get("MAX_PROVIDER_TEXT_CHARS", 200000)]
 
     def test(self):
         start = time.monotonic()
@@ -156,7 +156,7 @@ class OpenAICompatibleAdapter:
             "model": self.cfg.model,
             "messages": messages,
             "temperature": self.cfg.temperature if self.cfg.temperature is not None else 0.3,
-            "max_tokens": self.cfg.max_tokens or 800,
+            "max_tokens": self.cfg.max_tokens or current_app.config.get("DEFAULT_AI_MAX_TOKENS", 4096),
             "stream": False,
         }
         try:
@@ -232,6 +232,103 @@ class OpenAICompatibleAdapter:
         if not media_type.startswith("audio/"):
             media_type = "audio/mpeg"
         return audio, media_type
+
+
+class AnthropicAdapter(OpenAICompatibleAdapter):
+    """Anthropic Messages REST adapter for Claude models."""
+
+    @property
+    def base(self):
+        configured = self.cfg.base_url or "https://api.anthropic.com"
+        parsed = urlparse(configured)
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+            raise ProviderFailure("provider_invalid", "Anthropic base URL must be a valid HTTPS URL.", 422)
+        return configured.rstrip("/")
+
+    def headers(self):
+        if not self.cfg.api_key:
+            raise ProviderFailure("provider_authentication_failed", "Anthropic API key is required.", 422)
+        return {
+            "Content-Type": "application/json",
+            "x-api-key": self.cfg.api_key,
+            "anthropic-version": "2023-06-01",
+        }
+
+    def _json_response(self, response, failure_code="provider_request_failed"):
+        body = self._read_bounded(response)
+        if response.status_code in {401, 403}:
+            raise ProviderFailure("provider_authentication_failed", "Authentication was rejected by Anthropic.", 502)
+        if response.status_code == 429:
+            raise ProviderFailure("provider_rate_limited", "Anthropic rate limit reached.", 502, True)
+        if response.status_code >= 400:
+            raise ProviderFailure(failure_code, f"Anthropic returned HTTP {response.status_code}.", 502, response.status_code >= 500)
+        try:
+            data = json.loads(body.decode(getattr(response, "encoding", None) or "utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, LookupError):
+            raise ProviderFailure("provider_malformed_response", "Anthropic returned malformed response.", 502, True)
+        if not isinstance(data, dict):
+            raise ProviderFailure("provider_malformed_response", "Anthropic returned malformed response.", 502, True)
+        return data
+
+    def models(self):
+        try:
+            response = requests.get(f"{self.base}/v1/models", headers=self.headers(), timeout=self.timeout, allow_redirects=False, stream=True)
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "Anthropic request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc, "provider_model_discovery_failed")
+        data = self._json_response(response, "provider_model_discovery_failed")
+        raw = data.get("data", [])
+        if not isinstance(raw, list):
+            raise ProviderFailure("provider_malformed_response", "Anthropic returned malformed model data.", 502, True)
+        models = []
+        for item in raw[:500]:
+            if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+                continue
+            model_id = item["id"].strip()[:160]
+            if not model_id:
+                continue
+            label = item.get("display_name") if isinstance(item.get("display_name"), str) else model_id
+            models.append({"id": model_id, "label": label[:160]})
+        return models
+
+    def test(self):
+        start = time.monotonic()
+        self.models()
+        return {"ok": True, "latencyMs": int((time.monotonic() - start) * 1000), "message": "Anthropic bağlantısı başarılı."}
+
+    def complete(self, messages):
+        system_parts = []
+        conversation = []
+        for message in messages:
+            content = message.get("content") if isinstance(message, dict) else None
+            role = message.get("role") if isinstance(message, dict) else None
+            if not isinstance(content, str) or not content.strip():
+                continue
+            if role == "system":
+                system_parts.append(content)
+            else:
+                conversation.append({"role": "assistant" if role == "assistant" else "user", "content": content})
+        if not conversation:
+            raise ProviderFailure("provider_invalid", "Anthropic requires at least one message.", 422)
+        payload = {
+            "model": self.cfg.model or "claude-sonnet-5",
+            "messages": conversation,
+            "temperature": self.cfg.temperature if self.cfg.temperature is not None else 0.3,
+            "max_tokens": self.cfg.max_tokens or current_app.config.get("DEFAULT_AI_MAX_TOKENS", 4096),
+        }
+        if system_parts:
+            payload["system"] = "\n\n".join(system_parts)
+        try:
+            response = requests.post(f"{self.base}/v1/messages", headers=self.headers(), json=payload, timeout=self.timeout, allow_redirects=False, stream=True)
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "Anthropic request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc)
+        data = self._json_response(response)
+        blocks = data.get("content", [])
+        text = "".join(block.get("text", "") for block in blocks if isinstance(block, dict) and block.get("type") == "text") if isinstance(blocks, list) else ""
+        return self._bound_text(text)
 
 
 class GeminiAdapter(OpenAICompatibleAdapter):
@@ -317,7 +414,7 @@ class GeminiAdapter(OpenAICompatibleAdapter):
             "contents": contents,
             "generationConfig": {
                 "temperature": self.cfg.temperature if self.cfg.temperature is not None else 0.3,
-                "maxOutputTokens": self.cfg.max_tokens or 800,
+                "maxOutputTokens": self.cfg.max_tokens or current_app.config.get("DEFAULT_AI_MAX_TOKENS", 4096),
             },
         }
         if system_parts:

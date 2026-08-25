@@ -1,8 +1,10 @@
 import hashlib
 import json
+import re
 import threading
 import time
 
+from flask import current_app
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
@@ -69,7 +71,7 @@ def handle_message(user, data):
         provider_id = None
     if not isinstance(assistant_text, str) or not assistant_text.strip():
         raise APIError("provider_empty_response", "Provider returned an empty response.", 502, True)
-    assistant_text = assistant_text.strip()[:24000]
+    assistant_text = assistant_text.strip()[: current_app.config.get("MAX_PROVIDER_TEXT_CHARS", 200000)]
     conv.updated_at = utcnow()
     db.session.add(conv)
     if history_enabled:
@@ -117,7 +119,14 @@ def _verified_complete(provider, provider_messages: list[dict], question: str, l
         {"role": "system", "content": result.prompt()},
         *current_message,
     ]
-    return adapter_call(provider, "complete", verified_messages)
+    return _clean_visible_answer(adapter_call(provider, "complete", verified_messages), locale)
+
+
+def _clean_visible_answer(answer: str, locale: str) -> str:
+    cleaned = re.sub(r"^\s*(?:#{1,6}\s*)?(?:\*\*|__)?(?:Doğrulama|Verification)\s*:?(?:\*\*|__)?\s*", "", answer, count=1, flags=re.IGNORECASE).strip()
+    if cleaned:
+        return cleaned
+    return "Yanıt hazırlanamadı. Lütfen tekrar dene." if locale == "tr" else "The answer could not be prepared. Please try again."
 
 
 def _provider_context(user_id: str, conversation_id: str | None, message: str, settings: dict, low_data: bool) -> list[dict]:
