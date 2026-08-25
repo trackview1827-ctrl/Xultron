@@ -18,6 +18,8 @@ durumlarıyla gösterir.
 - Ayarlar ekranından sağlayıcı ekleme, düzenleme, test etme ve model keşfi
 - Fernet ile şifrelenmiş API anahtarları ve yalnızca maskelenmiş geri bildirim
 - SSE tabanlı sohbet akışı, idempotent istekler ve ağ kurtarma davranışı
+- Her AI cevabından önce zorunlu doğrulama planı, canlı kanıt ve doğrulanamazsa cevap vermeme
+- Termux terminali ve Termux:API için sınırlandırılmış, salt-okunur doğrulama araçları
 - Tarayıcı mikrofonu, STT transkripsiyonu ve TTS ses oynatma akışı
 - Aranabilir ve tamamen kullanıcı kontrollü kişisel hafıza
 - Gizlilik, Düşük Veri Modu, Reduced Motion ve oturum veri sayacı
@@ -142,6 +144,30 @@ Google Gemini doğrudan desteklenir. AI sağlayıcısı eklerken **Google Gemini
 adaptörünü seçmek güvenli Google API taban adresini ve `gemini-2.5-flash` modelini
 otomatik doldurur. API anahtarı URL'ye eklenmez, backend tarafından `x-goog-api-key`
 başlığında gönderilir.
+
+## Terminal ve zorunlu doğrulama
+
+Xultron, AI sağlayıcısına her kullanıcı sorusunda kalıcı bir terminal ve doğrulama
+politikası gönderir. Model önce ayrı bir doğrulama planı üretir; backend yalnızca
+izin verilen bir aracı çalıştırdıktan ve kullanılabilir kanıt elde ettikten sonra
+nihai cevap çağrısına izin verir. Doğrulama başarısızsa Xultron tahmin üretmez ve
+doğrulama yapılamadığını bildirir.
+
+Desteklenen doğrulama yolları:
+
+- Canlı terminal/Termux:API yetki durumu
+- Salt-okunur batarya, depolama ve ağ kontrolleri
+- Yalnızca açık konum sorularında Termux konum sorgusu
+- Xultron kaynak ağacında sınırlandırılmış proje araması
+- Güvenli aritmetik değerlendirme
+- Sabit HTTPS arama adresi üzerinden güncel web doğrulaması
+
+Modelin serbest biçimli shell komutu çalıştırmasına izin verilmez. Dosya silme,
+mesaj gönderme, kamera, satın alma ve diğer yan etkili komutlar otomatik araç
+listesinde bulunmaz. Web doğrulaması parola, PIN, API anahtarı, token veya e-posta
+benzeri özel veri algılarsa sorguyu dışarı göndermez. Web doğrulaması
+`VERIFICATION_WEB_ENABLED=false` ile kapatıldığında ilgili sorular cevap yerine
+kapalı biçimde doğrulama hatası alır.
 
 ## Yerel PIN girişi
 

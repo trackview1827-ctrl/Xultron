@@ -1,6 +1,6 @@
 # Xultron validation report
 
-Date: 2026-08-24
+Date: 2026-08-25
 
 ## Release result
 
@@ -30,14 +30,14 @@ Alembic migration tests.
 
 ## Passed evidence
 
-- Backend: **34 tests passed**.
-- Frontend: **53 tests passed across 14 files**.
+- Backend: **40 tests passed**.
+- Frontend: **57 tests passed across 15 files**.
 - Strict TypeScript: passed.
 - Python compile check: passed.
-- Vite build: passed with **455 transformed modules**.
+- Vite build: passed with **456 transformed modules**.
 - Production bundles:
-  - CSS: 38.65 kB, 9.42 kB gzip.
-  - JavaScript: 394.65 kB, 126.71 kB gzip.
+  - CSS: 57.14 kB, 13.38 kB gzip.
+  - JavaScript: 396.36 kB, 127.03 kB gzip.
   - No production sourcemaps were emitted.
 - PWA build: valid manifest, service worker and 192/512 icons.
 - Service worker: build-time hashed CSS and JavaScript assets are precached under a
@@ -79,6 +79,11 @@ Alembic migration tests.
   bounded responses, model discovery, safe message conversion and AI-only validation.
 - English and Turkish locale changes now update the document language and visible
   navigation, chat, memory, provider and settings surfaces immediately.
+- Every provider-backed answer now runs through a separate verification plan. The
+  backend exposes only bounded read-only Termux, project, calculation and fixed-host
+  web evidence tools; injects live terminal/Termux:API capability evidence into every
+  final model call; blocks private search queries; and returns no factual answer when
+  relevant verification fails.
 
 ## Environment-limited checks
 

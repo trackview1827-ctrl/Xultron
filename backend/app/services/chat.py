@@ -11,6 +11,7 @@ from app.security.errors import APIError
 from app.security.validation import require_object, string_field
 from app.services.providers import adapter_call, default_provider
 from app.services.settings import get_settings
+from app.services.verification import ANSWER_POLICY, capability_prompt, execute as execute_verification, parse_plan, planner_messages, refusal as verification_refusal
 
 MAX_MESSAGE_CHARS = 8000
 MAX_REQUEST_ID_CHARS = 100
@@ -61,7 +62,7 @@ def handle_message(user, data):
     provider_messages = _provider_context(user.id, conv.id if conv_id else None, message, settings, low_data)
     provider = default_provider(user.id, "ai")
     if provider:
-        assistant_text = adapter_call(provider, "complete", provider_messages)
+        assistant_text = _verified_complete(provider, provider_messages, message, settings.get("locale", "tr"))
         provider_id = provider.id
     else:
         assistant_text = "No AI provider is configured yet. Add a provider in Settings to enable model-backed responses."
@@ -98,6 +99,21 @@ def handle_message(user, data):
             return existing.response
         raise
     return response
+
+
+def _verified_complete(provider, provider_messages: list[dict], question: str, locale: str) -> str:
+    raw_plan = adapter_call(provider, "complete", planner_messages(question))
+    plan = parse_plan(raw_plan, question)
+    result = execute_verification(plan, question)
+    if not result.verified:
+        return verification_refusal(result, locale)
+    verified_messages = [
+        {"role": "system", "content": ANSWER_POLICY},
+        {"role": "system", "content": capability_prompt()},
+        {"role": "system", "content": result.prompt()},
+        *provider_messages,
+    ]
+    return adapter_call(provider, "complete", verified_messages)
 
 
 def _provider_context(user_id: str, conversation_id: str | None, message: str, settings: dict, low_data: bool) -> list[dict]:
