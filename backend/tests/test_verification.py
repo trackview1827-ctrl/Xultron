@@ -2,7 +2,7 @@ import json
 from types import SimpleNamespace
 
 from app.services import chat
-from app.services.verification import VerificationPlan, execute, parse_plan
+from app.services.verification import VerificationPlan, deterministic_plan, execute, parse_plan
 
 
 def test_planner_accepts_only_bounded_read_only_tools(app):
@@ -77,6 +77,38 @@ def test_live_clock_questions_use_runtime_evidence(app):
     assert '"timezone"' in result.evidence
 
 
+def test_minor_typos_still_select_the_expected_safe_intent(app):
+    with app.app_context():
+        app.config["TESTING"] = False
+        try:
+            clock = deterministic_plan("Saaat kac?")
+            battery = deterministic_plan("Sarzim kac?")
+            network = deterministic_plan("Wifim durm ne?")
+            terminal = deterministic_plan("Termuks API iznin varmi?")
+            project = deterministic_plan("Xultrn backend kodu nerede?")
+        finally:
+            app.config["TESTING"] = True
+
+    assert clock == VerificationPlan("runtime", "clock", reason="Live local date and time evidence")
+    assert battery == VerificationPlan("termux", "battery", reason="Live battery evidence")
+    assert network == VerificationPlan("termux", "network", reason="Live network evidence")
+    assert terminal == VerificationPlan("termux", "api_status", reason="Live Termux capability evidence")
+    assert project.tool == "project"
+
+
+def test_location_typos_remain_fail_closed(app):
+    with app.app_context():
+        app.config["TESTING"] = False
+        try:
+            denied = deterministic_plan("Sakn konmumu alma")
+            ambiguous = deterministic_plan("Konmumu soyle")
+        finally:
+            app.config["TESTING"] = True
+
+    assert denied.tool == "reasoning"
+    assert ambiguous.tool != "termux"
+
+
 def test_web_evidence_names_public_source_domains(app, monkeypatch):
     page = b'<a class="result__a" href="https://docs.python.org/3/">Python documentation</a><div class="result__snippet">Official Python documentation.</div>'
 
@@ -105,8 +137,6 @@ def test_verified_completion_injects_terminal_policy_and_evidence(app, monkeypat
 
     def fake_call(provider, method, messages):
         calls.append(messages)
-        if len(calls) == 1:
-            return '{"tool":"reasoning","query":"","reason":"greeting"}'
         return "**Doğrulama:** Merhaba."
 
     monkeypatch.setattr(chat, "adapter_call", fake_call)
@@ -114,16 +144,17 @@ def test_verified_completion_injects_terminal_policy_and_evidence(app, monkeypat
         answer = chat._verified_complete(SimpleNamespace(id="provider"), [{"role": "user", "content": "Merhaba"}], "Merhaba", "tr")
 
     assert answer == "Merhaba."
-    assert len(calls) == 2
-    system_text = "\n".join(item["content"] for item in calls[1] if item["role"] == "system")
+    assert len(calls) == 1
+    system_text = "\n".join(item["content"] for item in calls[0] if item["role"] == "system")
     assert "TERMINAL AND VERIFICATION POLICY" in system_text
     assert "RUNTIME CAPABILITY" in system_text
     assert "VERIFIED EVIDENCE" in system_text
     assert "Do not mention verification" in system_text
     assert "one to three short sentences" in system_text
-    assert calls[1][-1] == {"role": "user", "content": "Merhaba"}
-    assert calls[1][-2]["role"] == "system"
-    assert "VERIFIED EVIDENCE" in calls[1][-2]["content"]
+    assert "minor spelling" in system_text
+    assert calls[0][-1] == {"role": "user", "content": "Merhaba"}
+    assert calls[0][-2]["role"] == "system"
+    assert "VERIFIED EVIDENCE" in calls[0][-2]["content"]
 
 
 def test_failed_verification_returns_no_model_answer(app, monkeypatch):
@@ -141,9 +172,24 @@ def test_failed_verification_returns_no_model_answer(app, monkeypatch):
         finally:
             app.config["TESTING"] = True
 
-    assert len(calls) == 1
+    assert len(calls) == 0
     assert answer == "Şu anda güvenilir bir cevap üretemiyorum. Lütfen biraz sonra tekrar dene."
     assert "Doğrulama" not in answer
+
+
+def test_clock_answer_does_not_call_rate_limited_provider(app, monkeypatch):
+    calls = []
+    monkeypatch.setattr(chat, "adapter_call", lambda *args, **kwargs: calls.append((args, kwargs)))
+    with app.app_context():
+        app.config["TESTING"] = False
+        try:
+            answer = chat._verified_complete(SimpleNamespace(id="provider"), [{"role": "user", "content": "Şu an saat kaç?"}], "Şu an saat kaç?", "tr")
+        finally:
+            app.config["TESTING"] = True
+    assert answer.startswith("Şu an saat ")
+    assert "tarih" in answer
+    assert "Doğrulama" not in answer
+    assert calls == []
 
 
 def test_private_values_are_not_sent_to_web_verification(app, monkeypatch):

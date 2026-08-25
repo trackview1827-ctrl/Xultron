@@ -13,7 +13,7 @@ from app.security.errors import APIError
 from app.security.validation import require_object, string_field
 from app.services.providers import adapter_call, default_provider
 from app.services.settings import get_settings
-from app.services.verification import ANSWER_POLICY, capability_prompt, execute as execute_verification, parse_plan, planner_messages, refusal as verification_refusal
+from app.services.verification import ANSWER_POLICY, capability_prompt, deterministic_plan, direct_answer, execute as execute_verification, refusal as verification_refusal
 
 MAX_MESSAGE_CHARS = 8000
 MAX_REQUEST_ID_CHARS = 100
@@ -104,11 +104,13 @@ def handle_message(user, data):
 
 
 def _verified_complete(provider, provider_messages: list[dict], question: str, locale: str) -> str:
-    raw_plan = adapter_call(provider, "complete", planner_messages(question))
-    plan = parse_plan(raw_plan, question)
+    plan = deterministic_plan(question)
     result = execute_verification(plan, question)
     if not result.verified:
         return verification_refusal(result, locale)
+    direct = direct_answer(result, locale)
+    if direct is not None:
+        return direct
     current_message = provider_messages[-1:]
     prior_context = provider_messages[:-1]
     verified_messages = [

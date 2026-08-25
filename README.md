@@ -19,6 +19,7 @@ durumlarıyla gösterir.
 - Fernet ile şifrelenmiş API anahtarları ve yalnızca maskelenmiş geri bildirim
 - SSE tabanlı sohbet akışı, idempotent istekler ve ağ kurtarma davranışı
 - Her AI cevabından önce zorunlu doğrulama planı, canlı kanıt ve doğrulanamazsa cevap vermeme
+- Türkçe karakter eksikliği ve küçük yazım hatalarında güvenli, sınırlandırılmış niyet eşleme
 - Termux terminali ve Termux:API için sınırlandırılmış, salt-okunur doğrulama araçları
 - Tarayıcı mikrofonu, STT transkripsiyonu ve TTS ses oynatma akışı
 - Aranabilir ve tamamen kullanıcı kontrollü kişisel hafıza
@@ -43,6 +44,7 @@ Ayrıntılı belgeler:
 - [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md)
 - [`docs/VALIDATION_REPORT.md`](docs/VALIDATION_REPORT.md)
 - [`SECURITY.md`](SECURITY.md)
+- [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
 
 ## Gereksinimler
 
@@ -152,10 +154,18 @@ backend tarafından gönderilir.
 ## Terminal ve zorunlu doğrulama
 
 Xultron, AI sağlayıcısına her kullanıcı sorusunda kalıcı bir terminal ve doğrulama
-politikası gönderir. Model önce ayrı bir doğrulama planı üretir; backend yalnızca
-izin verilen bir aracı çalıştırdıktan ve kullanılabilir kanıt elde ettikten sonra
-nihai cevap çağrısına izin verir. Bu kontrol kullanıcıya cevap başında gösterilmez;
-yanıt doğrudan sorunun cevabıyla başlar. Kontrol başarısızsa Xultron tahmin üretmez.
+politikası gönderir. Backend soruyu önce sabit, sınırlandırılmış niyet kurallarıyla
+planlar; yalnızca izin verilen bir aracı çalıştırdıktan ve kullanılabilir kanıt elde
+ettikten sonra nihai cevap çağrısına izin verir. Saat, hesaplama ve desteklenen canlı
+telefon durumları sağlayıcıya ikinci kez sorulmadan kısa ve doğrudan yanıtlanır. Bu
+kontrol kullanıcıya cevap başında gösterilmez; yanıt doğrudan sorunun cevabıyla başlar.
+Kontrol başarısızsa Xultron tahmin üretmez.
+
+Niyet eşleme Türkçe karakter eksikliği, tek harflik yazım hataları ve yaygın ekleri
+sınırlı bir araç sözlüğünde tolere eder. Konum gibi özel veri işlemleri bulanık
+eşlemeyle otomatik açılmaz ve açık izin şartını korur. Bu tasarım OpenClaw'ın MIT
+lisanslı sınırlı Levenshtein ve korumalı eşleme desenlerinden uyarlanmıştır; ayrıntılı
+atıf [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) dosyasındadır.
 
 Desteklenen doğrulama yolları:
 

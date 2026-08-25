@@ -19,6 +19,8 @@ from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import requests
 from flask import current_app
 
+from app.services.text_intent import matches_any_phrase, normalize_for_match
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MAX_EVIDENCE_CHARS = 6000
@@ -53,6 +55,7 @@ ANSWER_POLICY = """XULTRON TERMINAL AND VERIFICATION POLICY — HIGHEST PRIORITY
 - Never begin an answer with “Doğrulama:” or “Verification:”. Answer the user's question directly.
 - Keep simple questions concise, normally one to three short sentences. Give longer detail only when the request needs it or the user asks for it.
 - Prefer a complete concise answer over a long answer that may end abruptly.
+- Infer obvious minor spelling, missing-diacritic, keyboard-adjacent, and speech-to-text errors when one interpretation is clear. Do not get stuck on a single-letter typo. Ask one short clarification only when the wording is genuinely ambiguous.
 - If evidence is insufficient, say verification is insufficient instead of guessing.
 - For reasoning-only evidence, answer only the subjective, creative, conversational, or advisory request. Do not add unverified current facts.
 - Terminal access is read-only and bounded. Never imply permission for destructive commands, purchases, messages, camera capture, file deletion, credential access, or other side effects.
@@ -85,6 +88,10 @@ def planner_messages(question: str) -> list[dict]:
         {"role": "system", "content": PLANNER_PROMPT},
         {"role": "user", "content": question[:8000]},
     ]
+
+
+def deterministic_plan(question: str) -> VerificationPlan:
+    return _fallback_plan(question)
 
 
 def parse_plan(raw: str, question: str) -> VerificationPlan:
@@ -142,6 +149,44 @@ def refusal(result: VerificationResult, locale: str = "tr") -> str:
     return "I cannot produce a reliable answer right now. Please try again shortly."
 
 
+def direct_answer(result: VerificationResult, locale: str = "tr") -> str | None:
+    if not result.verified:
+        return None
+    try:
+        if result.tool == "runtime:clock":
+            data = json.loads(result.evidence)
+            if locale == "tr":
+                return f"Şu an saat {str(data['time'])[:5]}; tarih {data['date']}. Saat dilimi: {data['timezone']}."
+            return f"The time is {str(data['time'])[:5]} on {data['date']}. Time zone: {data['timezone']}."
+        if result.tool == "calculate":
+            return result.evidence.strip()
+        if result.tool == "termux:api_status":
+            return "Terminal ve Termux:API erişimi aktif." if locale == "tr" else "Terminal and Termux:API access are active."
+        if result.tool == "termux:battery":
+            data = json.loads(result.evidence)
+            percentage = data.get("percentage")
+            status = data.get("status")
+            if locale == "tr":
+                return f"Pil seviyesi %{percentage}. Durum: {status}."
+            return f"Battery level is {percentage}%. Status: {status}."
+        if result.tool == "termux:storage":
+            data = json.loads(result.evidence)
+            free_gib = data.get("freeBytes", 0) / (1024 ** 3)
+            total_gib = data.get("totalBytes", 0) / (1024 ** 3)
+            if locale == "tr":
+                return f"Depolamada {free_gib:.1f} GB boş alan var. Toplam kapasite {total_gib:.1f} GB."
+            return f"Storage has {free_gib:.1f} GB free out of {total_gib:.1f} GB."
+        if result.tool in {"termux:network", "termux:location"}:
+            data = json.loads(result.evidence)
+            label = "Ağ bilgisi" if result.tool == "termux:network" else "Konum bilgisi"
+            english_label = "Network data" if result.tool == "termux:network" else "Location data"
+            compact = ", ".join(f"{key}: {value}" for key, value in data.items())
+            return f"{label}: {compact}." if locale == "tr" else f"{english_label}: {compact}."
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return None
+
+
 def capability_prompt() -> str:
     if current_app.config.get("TESTING"):
         return "RUNTIME CAPABILITY\nStatus: TEST MODE\nTerminal and Termux operations are mocked or disabled during tests."
@@ -161,23 +206,25 @@ def capability_prompt() -> str:
 
 
 def _fallback_plan(question: str) -> VerificationPlan:
-    text = question.casefold()
+    text = normalize_for_match(question)
     if current_app.config.get("TESTING"):
         return VerificationPlan("reasoning", reason="Deterministic test fallback")
     if _is_clock_question(text):
         return VerificationPlan("runtime", "clock", reason="Live local date and time evidence")
-    if any(word in text for word in ("batarya", "pil", "şarj", "battery")):
+    if matches_any_phrase(text, ("batarya", "sarj", "sarjim", "battery", "pil", "pil yuzde")):
         return VerificationPlan("termux", "battery", reason="Live battery evidence")
-    if any(word in text for word in ("depolama", "disk", "storage", "boş alan")):
+    if matches_any_phrase(text, ("depolama", "disk", "disk alan", "storage", "bos alan")):
         return VerificationPlan("termux", "storage", reason="Live storage evidence")
-    if any(word in text for word in ("wifi", "wi-fi", "ağ", "network", "internet bağlant")):
+    if matches_any_phrase(text, ("wifi", "wi-fi", "ag", "ag durumu", "network", "internet baglanti")):
         return VerificationPlan("termux", "network", reason="Live network evidence")
     location_requested, location_denied = _location_intent(question)
     if location_requested and not location_denied:
         return VerificationPlan("termux", "location", reason="Explicit live location request")
-    if any(word in text for word in ("termux", "terminal", "android sür", "telefonum", "cihazım", "cihaz durum")):
+    if matches_any_phrase(text, ("termux", "terminal", "android surum", "telefonum", "cihazim", "cihaz durum")):
         return VerificationPlan("termux", "api_status", reason="Live Termux capability evidence")
-    if any(word in text for word in ("xultron", "backend", "frontend", "commit", "dosya", "kod", "test")):
+    if location_denied:
+        return VerificationPlan("reasoning", reason="Location access was explicitly denied")
+    if matches_any_phrase(text, ("xultron", "backend", "frontend", "commit", "dosya", "kod", "kaynak kod", "test", "testler")):
         return VerificationPlan("project", query=question, reason="Project source evidence")
     expression = question.strip().replace(",", ".")
     if re.fullmatch(r"[\d\s+\-*/().%^]+", expression):
@@ -190,22 +237,26 @@ def _fallback_plan(question: str) -> VerificationPlan:
 
 
 def _location_intent(question: str) -> tuple[bool, bool]:
-    text = question.casefold()
-    requested = any(word in text for word in ("konum", "neredeyim", "location"))
+    text = normalize_for_match(question)
+    requested = bool(re.search(r"\b(?:konum\w*|neredeyim|location)\b", text))
+    mentioned = requested or matches_any_phrase(text, ("konum", "konm", "neredeyim", "location"))
     denied = bool(
-        re.search(r"(?:konum\w*|location).{0,40}(?:paylaşma|öğrenme|bakma|alma|erişme|kullanma|kontrol\s+etme|istemiyorum|doğrulama)", text)
-        or re.search(r"(?:sakın|asla|do\s+not|don't|dont|never).{0,40}(?:konum\w*|location)", text)
+        mentioned
+        and (
+            re.search(r"(?:konum\w*|location|konm\w*).{0,40}(?:paylasma|ogrenme|bakma|alma|erisme|kullanma|kontrol\s+etme|istemiyorum|dogrulama)", text)
+            or re.search(r"(?:sakin|asla|do\s+not|dont|never).{0,40}(?:konum\w*|location|konm\w*)", text)
+        )
     )
     return requested, denied
 
 
 def _is_clock_question(text: str) -> bool:
     phrases = (
-        "saat kaç", "şu an saat", "şimdiki saat", "bugünün tarihi", "bugün tarih",
-        "bugün ayın kaçı", "ayın kaçı", "hangi gündeyiz", "hangi aydayız",
-        "hangi yıldayız", "current time", "what time", "today's date", "what date",
+        "saat kac", "su an saat", "simdiki saat", "bugunun tarihi", "bugun tarih",
+        "bugun ayin kaci", "ayin kaci", "hangi gundeyiz", "hangi aydayiz",
+        "hangi yildayiz", "current time", "what time", "todays date", "what date",
     )
-    return any(phrase in text for phrase in phrases)
+    return matches_any_phrase(text, phrases)
 
 
 def _runtime_status(question: str = "") -> VerificationResult:

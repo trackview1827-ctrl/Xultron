@@ -30,7 +30,7 @@ Alembic migration tests.
 
 ## Passed evidence
 
-- Backend: **48 tests passed**.
+- Backend: **54 tests passed**.
 - Frontend: **61 tests passed across 16 files**.
 - Strict TypeScript: passed.
 - Python compile check: passed.
@@ -79,8 +79,8 @@ Alembic migration tests.
   bounded responses, model discovery, safe message conversion and AI-only validation.
 - English and Turkish locale changes now update the document language and visible
   navigation, chat, memory, provider and settings surfaces immediately.
-- Every provider-backed answer now runs through a separate verification plan. The
-  backend exposes only bounded read-only Termux, project, calculation and fixed-host
+- Every provider-backed answer now runs through a deterministic backend verification
+  plan. The backend exposes only bounded read-only Termux, project, calculation and fixed-host
   web evidence tools; injects live terminal/Termux:API capability evidence into every
   final model call; blocks private search queries; and returns no factual answer when
   relevant verification fails.
@@ -91,6 +91,10 @@ Alembic migration tests.
   includes named source domains and URLs so first-party and official documentation can
   be preferred. Verification labels remain internal and are removed from visible chat
   responses. Provider output and timeout defaults were raised to prevent abrupt answers.
+- The bounded intent router now tolerates missing Turkish diacritics, common suffixes,
+  and small spelling mistakes for clock, battery, storage, network, Termux and project
+  questions. Location remains fail-closed and cannot be enabled by fuzzy matching. The
+  matching design is attributed to the MIT-licensed OpenClaw patterns it adapts.
 
 ## Environment-limited checks
 
@@ -101,6 +105,8 @@ therefore remain manual checks. The automated voice lifecycle, offline recovery,
 responsive CSS, manifest and service worker behaviors passed, but this report does
 not claim physical-device validation.
 
-Real external AI, STT and TTS accounts were intentionally not called. Provider
-success, malformed response, redirect, timeout/failure, response-size and secret
-handling paths use deterministic mock adapters and live local HTTP boundaries.
+A configured real Gemini account was checked through model discovery and a minimal
+completion; the selected model returned `OK` after an earlier transient HTTP 429.
+External STT and TTS accounts were intentionally not called. Their success, malformed
+response, redirect, timeout/failure, response-size and secret handling paths use
+deterministic mock adapters and live local HTTP boundaries.
