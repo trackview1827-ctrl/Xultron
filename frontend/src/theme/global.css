@@ -44,6 +44,7 @@ body::before {
   background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);
   background-size:56px 56px;
   mask-image:radial-gradient(circle at 50% 35%,black,transparent 78%);
+  -webkit-mask-image:radial-gradient(circle at 50% 35%,black,transparent 78%);
 }
 ::selection { background:rgba(255,255,255,.18) }
 
@@ -67,6 +68,7 @@ body::before {
   background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);
   background-size:64px 64px;
   mask-image:linear-gradient(to top,black,transparent 72%);
+  -webkit-mask-image:linear-gradient(to top,black,transparent 72%);
   animation:ambient-grid-drift 18s linear infinite;
 }
 .ambient-orb {
@@ -165,6 +167,7 @@ body::before {
   border:1px solid rgba(255,255,255,.04);
   background:repeating-radial-gradient(circle,transparent 0 25px,rgba(255,255,255,.055) 26px 27px);
   mask-image:radial-gradient(circle,black 20%,transparent 76%);
+  -webkit-mask-image:radial-gradient(circle,black 20%,transparent 76%);
 }
 .core-scan {
   position:absolute;
@@ -174,6 +177,7 @@ body::before {
   border-radius:50%;
   opacity:.62;
   mask-image:radial-gradient(circle,transparent 38%,black 62%,transparent 73%);
+  -webkit-mask-image:radial-gradient(circle,transparent 38%,black 62%,transparent 73%);
 }
 .core-scan::before {
   content:"";
@@ -225,7 +229,14 @@ body::before {
 .core-state-dot { box-shadow:0 0 10px currentColor }
 .x-core[data-state="OFFLINE"] .core-field { filter:grayscale(1) drop-shadow(0 28px 40px rgba(0,0,0,.7));opacity:.48 }
 .x-core[data-state="ERROR"] .core-field { animation:error-settle .36s ease-out 1;opacity:.72 }
-.motion-reduced .core-scan::before,.motion-reduced .core-liquid-orb,.motion-reduced .liquid-flow { animation:none }
+.x-core[data-state="LISTENING"] .outer-arc { stroke-dasharray:7 12;stroke-width:2.4 }
+.x-core[data-state="LISTENING"] .core-state-dot { background:transparent!important;border:1px solid currentColor;box-shadow:0 0 10px currentColor }
+.x-core[data-state="THINKING"] .middle-arc { stroke-dasharray:24 9;stroke-width:2.5 }
+.x-core[data-state="THINKING"] .core-state-dot { border-radius:1px;transform:rotate(45deg) }
+.x-core[data-state="SPEAKING"] .inner-arc { stroke-dasharray:3 8;stroke-width:2.2 }
+.x-core[data-state="ERROR"] .core-arc { stroke-dasharray:2 13;filter:none }
+.x-core[data-state="ERROR"] .core-state-dot { border-radius:1px;transform:rotate(45deg) }
+.motion-reduced .core-field,.motion-reduced .core-scan::before,.motion-reduced .core-liquid-orb,.motion-reduced .liquid-flow { animation:none!important }
 
 @keyframes ambient-grid-drift { to { background-position:64px 64px } }
 @keyframes ambient-float-one { to { transform:translate3d(8vw,7vh,0) scale(1.08) } }
