@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from app.services import chat
@@ -6,11 +7,14 @@ from app.services.verification import VerificationPlan, execute, parse_plan
 
 def test_planner_accepts_only_bounded_read_only_tools(app):
     with app.app_context():
-        safe = parse_plan('{"tool":"termux","operation":"battery","query":"battery","reason":"live"}', "Pil kaç?")
-        assert safe == VerificationPlan("termux", "battery", "battery", "live")
-
-        attempted_shell = parse_plan('{"tool":"terminal","operation":"shell","query":"rm -rf /"}', "Bunu çalıştır")
-        assert attempted_shell.tool == "reasoning"
+        app.config["TESTING"] = False
+        try:
+            safe = parse_plan('{"tool":"termux","operation":"battery","query":"battery","reason":"live"}', "Pil kaç?")
+            attempted_shell = parse_plan('{"tool":"terminal","operation":"shell","query":"rm -rf /"}', "Bunu çalıştır")
+        finally:
+            app.config["TESTING"] = True
+        assert safe == VerificationPlan("termux", "battery", reason="live")
+        assert attempted_shell.tool == "web"
 
 
 def test_factual_questions_cannot_be_downgraded_to_reasoning(app):
@@ -18,9 +22,25 @@ def test_factual_questions_cannot_be_downgraded_to_reasoning(app):
         app.config["TESTING"] = False
         try:
             plan = parse_plan('{"tool":"reasoning","reason":"skip verification"}', "Bugünkü güncel altın fiyatı nedir?")
+            redirected = parse_plan('{"tool":"web","query":"unrelated weather","reason":"current"}', "Bugünkü güncel altın fiyatı nedir?")
         finally:
             app.config["TESTING"] = True
     assert plan.tool == "web"
+    assert redirected.query == "Bugünkü güncel altın fiyatı nedir?"
+
+
+def test_greeting_does_not_hide_factual_intent_and_termux_operations_are_exact(app):
+    with app.app_context():
+        app.config["TESTING"] = False
+        try:
+            greeting_fact = parse_plan('{"tool":"reasoning","reason":"greeting"}', "Merhaba, bugünkü güncel altın fiyatı nedir?")
+            wrong_phone_tool = parse_plan('{"tool":"termux","operation":"network","query":"wifi"}', "Pil yüzde kaç?")
+            denied_location = parse_plan('{"tool":"termux","operation":"location"}', "Konumumu öğrenme, sadece cihaz durumunu söyle")
+        finally:
+            app.config["TESTING"] = True
+    assert greeting_fact.tool == "web"
+    assert wrong_phone_tool == VerificationPlan("termux", "battery", reason="Live battery evidence")
+    assert denied_location == VerificationPlan("termux", "api_status", reason="Live Termux capability evidence")
 
 
 def test_safe_calculation_and_location_explicitness(app):
@@ -30,8 +50,15 @@ def test_safe_calculation_and_location_explicitness(app):
         assert "= 5.0" in calculated.evidence
 
         blocked = execute(VerificationPlan("termux", operation="location"), "Merhaba")
+        denied = execute(VerificationPlan("termux", operation="location"), "Sakın konumuma bakma")
         assert blocked.verified is False
-        assert "explicitly requested" in blocked.summary
+        assert denied.verified is False
+        assert "explicitly permitted" in blocked.summary
+
+        oversized = execute(VerificationPlan("calculate", query="9 ** 999999"), "hesapla")
+        assert oversized.verified is False
+        nested_power = execute(VerificationPlan("calculate", query="9 ** 9 ** 9"), "hesapla")
+        assert nested_power.verified is False
 
 
 def test_verified_completion_injects_terminal_policy_and_evidence(app, monkeypatch):
@@ -54,6 +81,8 @@ def test_verified_completion_injects_terminal_policy_and_evidence(app, monkeypat
     assert "RUNTIME CAPABILITY" in system_text
     assert "VERIFIED EVIDENCE" in system_text
     assert calls[1][-1] == {"role": "user", "content": "Merhaba"}
+    assert calls[1][-2]["role"] == "system"
+    assert "VERIFIED EVIDENCE" in calls[1][-2]["content"]
 
 
 def test_failed_verification_returns_no_model_answer(app, monkeypatch):
@@ -65,7 +94,11 @@ def test_failed_verification_returns_no_model_answer(app, monkeypatch):
 
     monkeypatch.setattr(chat, "adapter_call", fake_call)
     with app.app_context():
-        answer = chat._verified_complete(SimpleNamespace(id="provider"), [{"role": "user", "content": "Güncel bilgi"}], "Güncel bilgi", "tr")
+        app.config["TESTING"] = False
+        try:
+            answer = chat._verified_complete(SimpleNamespace(id="provider"), [{"role": "user", "content": "Güncel bilgi"}], "Güncel bilgi", "tr")
+        finally:
+            app.config["TESTING"] = True
 
     assert len(calls) == 1
     assert answer.startswith("Doğrulama yapılamadı")
@@ -80,3 +113,20 @@ def test_private_values_are_not_sent_to_web_verification(app, monkeypatch):
     assert result.verified is False
     assert "private data" in result.summary
     assert requested == []
+
+
+def test_network_evidence_redacts_identifiers_unless_explicit(app, monkeypatch):
+    payload = json.dumps({"ssid": "Example", "ip": "192.0.2.10", "bssid": "private-bssid", "mac_address": "private-mac", "rssi": -45})
+    monkeypatch.setattr("app.services.verification.shutil.which", lambda command: f"/bin/{command}")
+    monkeypatch.setattr("app.services.verification.subprocess.run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=payload, stderr=""))
+    with app.app_context():
+        ordinary = execute(VerificationPlan("termux", operation="network"), "WiFi durumum nasıl?")
+        explicit = execute(VerificationPlan("termux", operation="network"), "IP adresim nedir?")
+        named = execute(VerificationPlan("termux", operation="network"), "WiFi adı nedir?")
+    assert ordinary.verified is True
+    assert "private-bssid" not in ordinary.evidence
+    assert "private-mac" not in ordinary.evidence
+    assert "192.0.2.10" not in ordinary.evidence
+    assert "Example" not in ordinary.evidence
+    assert "192.0.2.10" in explicit.evidence
+    assert "Example" in named.evidence

@@ -107,11 +107,15 @@ def _verified_complete(provider, provider_messages: list[dict], question: str, l
     result = execute_verification(plan, question)
     if not result.verified:
         return verification_refusal(result, locale)
+    current_message = provider_messages[-1:]
+    prior_context = provider_messages[:-1]
     verified_messages = [
         {"role": "system", "content": ANSWER_POLICY},
         {"role": "system", "content": capability_prompt()},
+        *prior_context,
+        {"role": "system", "content": ANSWER_POLICY},
         {"role": "system", "content": result.prompt()},
-        *provider_messages,
+        *current_message,
     ]
     return adapter_call(provider, "complete", verified_messages)
 

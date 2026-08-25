@@ -1,6 +1,7 @@
 import ast
 import html
 import json
+import math
 import operator
 import os
 import platform
@@ -97,11 +98,16 @@ def parse_plan(raw: str, question: str) -> VerificationPlan:
                 reason = str(data.get("reason", "")).strip()[:500]
                 if tool in ALLOWED_TOOLS and (tool != "termux" or operation in TERMUX_OPERATIONS):
                     proposed = VerificationPlan(tool=tool, operation=operation, query=query, reason=reason)
-                    if fallback.tool in {"termux", "project", "calculate"} and proposed.tool != fallback.tool:
+                    if proposed.tool != fallback.tool:
                         return fallback
-                    if fallback.tool == "web" and proposed.tool in {"runtime", "reasoning", "calculate"}:
+                    if fallback.tool == "termux" and proposed.operation != fallback.operation:
                         return fallback
-                    return proposed
+                    return VerificationPlan(
+                        tool=fallback.tool,
+                        operation=fallback.operation,
+                        query=fallback.query,
+                        reason=reason or fallback.reason,
+                    )
     return fallback
 
 
@@ -119,7 +125,7 @@ def execute(plan: VerificationPlan, question: str) -> VerificationResult:
             return _calculate(plan.query or question)
         if plan.tool == "reasoning":
             return VerificationResult(True, "reasoning", "The request is non-factual or subjective.", "No external factual claim is required. The answer must remain within subjective, creative, conversational, rewriting, or advisory scope.")
-    except (OSError, ValueError, requests.RequestException, subprocess.SubprocessError) as exc:
+    except (ArithmeticError, OSError, SyntaxError, ValueError, requests.RequestException, subprocess.SubprocessError) as exc:
         current_app.logger.warning("Verification failed tool=%s error_type=%s", plan.tool, type(exc).__name__)
     return VerificationResult(False, plan.tool, "Verification could not be completed.", "No reliable evidence was produced.")
 
@@ -152,24 +158,37 @@ def _fallback_plan(question: str) -> VerificationPlan:
     text = question.casefold()
     if current_app.config.get("TESTING"):
         return VerificationPlan("reasoning", reason="Deterministic test fallback")
-    if any(word in text for word in ("merhaba", "selam", "hello", "nasılsın", "şiir", "hikaye", "yeniden yaz", "özetle", "fikir ver", "tavsiye")):
-        return VerificationPlan("reasoning", reason="Conversational or creative request")
     if any(word in text for word in ("batarya", "pil", "şarj", "battery")):
         return VerificationPlan("termux", "battery", reason="Live battery evidence")
     if any(word in text for word in ("depolama", "disk", "storage", "boş alan")):
         return VerificationPlan("termux", "storage", reason="Live storage evidence")
     if any(word in text for word in ("wifi", "wi-fi", "ağ", "network", "internet bağlant")):
         return VerificationPlan("termux", "network", reason="Live network evidence")
-    if any(word in text for word in ("konum", "neredeyim", "location")):
+    location_requested, location_denied = _location_intent(question)
+    if location_requested and not location_denied:
         return VerificationPlan("termux", "location", reason="Explicit live location request")
-    if any(word in text for word in ("termux", "terminal", "android sür", "telefonum", "cihazım")):
+    if any(word in text for word in ("termux", "terminal", "android sür", "telefonum", "cihazım", "cihaz durum")):
         return VerificationPlan("termux", "api_status", reason="Live Termux capability evidence")
     if any(word in text for word in ("xultron", "backend", "frontend", "commit", "dosya", "kod", "test")):
         return VerificationPlan("project", query=question, reason="Project source evidence")
     expression = question.strip().replace(",", ".")
     if re.fullmatch(r"[\d\s+\-*/().%^]+", expression):
         return VerificationPlan("calculate", query=expression, reason="Arithmetic verification")
+    if re.fullmatch(r"\s*(merhaba|selam|hello|hey|nasılsın|naber)[!?.\s]*", text):
+        return VerificationPlan("reasoning", reason="Greeting or conversation")
+    if any(phrase in text for phrase in ("şiir yaz", "hikaye yaz", "yeniden yaz", "metni düzelt", "özetle", "fikir ver", "tavsiye ver", "ne yapmalıyım", "brainstorm")):
+        return VerificationPlan("reasoning", reason="Creative, rewriting, or subjective request")
     return VerificationPlan("web", query=question, reason="External factual verification")
+
+
+def _location_intent(question: str) -> tuple[bool, bool]:
+    text = question.casefold()
+    requested = any(word in text for word in ("konum", "neredeyim", "location"))
+    denied = bool(
+        re.search(r"(?:konum\w*|location).{0,40}(?:paylaşma|öğrenme|bakma|alma|erişme|kullanma|kontrol\s+etme|istemiyorum|doğrulama)", text)
+        or re.search(r"(?:sakın|asla|do\s+not|don't|dont|never).{0,40}(?:konum\w*|location)", text)
+    )
+    return requested, denied
 
 
 def _runtime_status() -> VerificationResult:
@@ -191,8 +210,10 @@ def _termux(operation: str, question: str) -> VerificationResult:
         evidence = {"totalBytes": usage.total, "usedBytes": usage.used, "freeBytes": usage.free}
         return VerificationResult(True, "termux:storage", "Live storage values were read.", json.dumps(evidence, indent=2))
 
-    if operation == "location" and not any(word in question.casefold() for word in ("konum", "neredeyim", "location")):
-        return VerificationResult(False, "termux:location", "Location was not explicitly requested.", "Location access was blocked by the verification policy.")
+    if operation == "location":
+        location_requested, location_denied = _location_intent(question)
+        if not location_requested or location_denied:
+            return VerificationResult(False, "termux:location", "Location was not explicitly permitted.", "Location access was blocked by the verification policy.")
 
     commands = {
         "api_status": ["termux-battery-status"],
@@ -217,6 +238,22 @@ def _termux(operation: str, question: str) -> VerificationResult:
             return VerificationResult(False, "termux:api_status", "Termux:API permission could not be verified.", "Battery API response was malformed.")
         commands_found = sorted(name for name in ("termux-battery-status", "termux-wifi-connectioninfo", "termux-location", "termux-info") if shutil.which(name))
         return VerificationResult(True, "termux:api_status", "Terminal and Termux:API read permission were verified live.", json.dumps({"permission": "granted", "availableReadTools": commands_found}, indent=2))
+    if operation in {"battery", "network"}:
+        try:
+            parsed = json.loads(output)
+        except json.JSONDecodeError:
+            parsed = None
+        if not isinstance(parsed, dict):
+            return VerificationResult(False, f"termux:{operation}", "Termux:API returned malformed evidence.", "Expected a JSON object.")
+        if operation == "battery":
+            allowed = {key: parsed.get(key) for key in ("present", "health", "plugged", "status", "temperature", "percentage") if key in parsed}
+        else:
+            allowed = {key: parsed.get(key) for key in ("frequency_mhz", "link_speed_mbps", "rssi", "ssid_hidden", "supplicant_state") if key in parsed}
+            if re.search(r"\b(ssid|wi-?fi\s+adı|ağ\s+adı|hangi\s+wi-?fi|hangi\s+ağ)\b", question, re.I) and "ssid" in parsed:
+                allowed["ssid"] = parsed.get("ssid")
+            if re.search(r"\bip(?:\s+adres(?:i|im)?)?\b", question, re.I) and "ip" in parsed:
+                allowed["ip"] = parsed.get("ip")
+        return VerificationResult(True, f"termux:{operation}", f"Live Termux {operation} evidence was collected.", json.dumps(allowed, ensure_ascii=False, indent=2))
     return VerificationResult(True, f"termux:{operation}", f"Live Termux {operation} evidence was collected.", output[:MAX_EVIDENCE_CHARS])
 
 
@@ -271,16 +308,28 @@ class _SearchParser(HTMLParser):
 
 
 def _web_search(query: str) -> VerificationResult:
-    if re.search(r"\b(password|passwd|pin|şifre|parola|api.?key|token|secret|credential)\b|@", query, re.I):
+    private_pattern = r"\b(password|passwd|pin|şifre|parola|api.?key|token|secret|credential|tc\s*kimlik|ev\s*adres|adresim)\b|@|\+?\d[\d\s().-]{8,}\d|-?\d{1,3}\.\d{4,}\s*[, ]\s*-?\d{1,3}\.\d{4,}"
+    if re.search(private_pattern, query, re.I):
         return VerificationResult(False, "web", "The query may contain private data and was not sent externally.", "Privacy filter blocked external verification.")
     if not current_app.config.get("VERIFICATION_WEB_ENABLED", True):
         return VerificationResult(False, "web", "Web verification is disabled.", "No external source was queried.")
     url = f"https://html.duckduckgo.com/html/?q={quote_plus(query[:240])}"
-    response = requests.get(url, headers={"User-Agent": "Xultron-Verification/1.0"}, timeout=current_app.config.get("VERIFICATION_TIMEOUT_SECONDS", 8), allow_redirects=False)
-    if response.status_code != 200 or len(response.content) > 250000:
-        return VerificationResult(False, "web", "The web source did not return a bounded successful response.", f"HTTP {response.status_code}")
+    response = requests.get(url, headers={"User-Agent": "Xultron-Verification/1.0"}, timeout=current_app.config.get("VERIFICATION_TIMEOUT_SECONDS", 8), allow_redirects=False, stream=True)
+    try:
+        content_length = response.headers.get("Content-Length")
+        if response.status_code != 200 or (content_length and int(content_length) > 250000):
+            return VerificationResult(False, "web", "The web source did not return a bounded successful response.", f"HTTP {response.status_code}")
+        body = bytearray()
+        for chunk in response.iter_content(chunk_size=32768):
+            if not chunk:
+                continue
+            body.extend(chunk)
+            if len(body) > 250000:
+                return VerificationResult(False, "web", "The web response exceeded the evidence size limit.", "Response exceeded 250000 bytes.")
+    finally:
+        response.close()
     parser = _SearchParser()
-    parser.feed(response.text[:250000])
+    parser.feed(bytes(body).decode(response.encoding or "utf-8", errors="replace"))
     lines = parser.parts[:12]
     if not lines:
         return VerificationResult(False, "web", "No usable web evidence was found.", "Search returned no parseable result titles or snippets.")
@@ -293,14 +342,23 @@ _OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, as
 def _calculate(expression: str) -> VerificationResult:
     expression = expression.replace("^", "**").strip()[:200]
     tree = ast.parse(expression, mode="eval")
+    if len(list(ast.walk(tree))) > 80:
+        raise ValueError("expression too complex")
 
     def evaluate(node):
         if isinstance(node, ast.Expression):
             return evaluate(node.body)
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+            if abs(node.value) > 10 ** 100:
+                raise ValueError("numeric literal too large")
             return node.value
         if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
             left, right = evaluate(node.left), evaluate(node.right)
+            if isinstance(node.op, ast.Pow):
+                if not isinstance(right, int) or abs(right) > 100:
+                    raise ValueError("exponent too large")
+                if right > 0 and abs(left) > 1 and right * math.log10(abs(left)) > 100:
+                    raise ValueError("power result too large")
             value = _OPS[type(node.op)](left, right)
             if abs(value) > 10 ** 100:
                 raise ValueError("result too large")
