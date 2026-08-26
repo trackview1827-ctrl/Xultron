@@ -230,6 +230,12 @@ def patch_task(task_id):
     return ok({"task": update_task(task, require_json()).to_public()})
 
 
+@api_bp.post("/tasks/<task_id>/cancel")
+def cancel_task_route(task_id):
+    task = owned_task(task_id, require_user().id)
+    return ok({"task": update_task(task, {"status": "cancelled"}).to_public()})
+
+
 @api_bp.post("/tasks/<task_id>/claim")
 def claim_task_route(task_id):
     task = owned_task(task_id, require_user().id)
@@ -255,6 +261,12 @@ def plan_task_route(task_id):
 def approve_task_plan_route(task_id):
     user = require_user()
     return ok({"task": approve_plan(owned_task(task_id, user.id), user.id).to_public()})
+
+
+@api_bp.get("/tasks/<task_id>/plan")
+def get_task_plan_route(task_id):
+    task = owned_task(task_id, require_user().id)
+    return ok({"plan": (task.result or {}).get("plan")})
 
 
 @api_bp.post("/providers")
