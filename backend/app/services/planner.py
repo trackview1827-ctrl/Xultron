@@ -27,3 +27,19 @@ def generate_plan(task, user_id):
     task.updated_at = __import__("app.models", fromlist=["utcnow"]).utcnow()
     db.session.commit()
     return task
+
+
+def approve_plan(task, user_id):
+    if task.user_id != user_id:
+        raise APIError("forbidden", "You do not have access to this task.", 403)
+    plan = (task.result or {}).get("plan")
+    if not plan:
+        raise APIError("plan_required", "Generate a plan before approving it.", 409)
+    if task.status in {"completed", "failed", "cancelled"}:
+        raise APIError("task_unavailable", "Terminal tasks cannot be approved.", 409)
+    plan["status"] = "approved"
+    plan["requiresApproval"] = False
+    task.result = {"plan": plan}
+    task.updated_at = __import__("app.models", fromlist=["utcnow"]).utcnow()
+    db.session.commit()
+    return task
