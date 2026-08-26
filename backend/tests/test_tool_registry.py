@@ -6,7 +6,7 @@ def test_registry_exposes_metadata_for_read_only_capabilities(app):
     with app.app_context():
         descriptions = {item["name"]: item for item in _verification_registry().describe()}
 
-    assert {"runtime", "termux", "project", "web", "calculate", "reasoning"} <= descriptions.keys()
+    assert {"runtime", "project", "web", "calculate", "reasoning"} <= descriptions.keys()
     assert all(item["sideEffect"] is False for item in descriptions.values())
     assert all(item["verificationStrategy"] for item in descriptions.values())
 
@@ -45,6 +45,6 @@ def test_authenticated_tools_endpoint_returns_metadata_without_handlers(user_cli
 
     assert response.status_code == 200
     tools = response.get_json()["tools"]
-    assert any(tool["name"] == "termux" for tool in tools)
+    assert not any(tool["name"] == "termux" for tool in tools)
     assert all("handler" not in tool for tool in tools)
     assert all("api_key" not in str(tool).lower() for tool in tools)

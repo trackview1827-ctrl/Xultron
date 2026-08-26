@@ -20,7 +20,7 @@ durumlarıyla gösterir.
 - SSE tabanlı sohbet akışı, idempotent istekler ve ağ kurtarma davranışı
 - Her AI cevabından önce zorunlu doğrulama planı, canlı kanıt ve doğrulanamazsa cevap vermeme
 - Türkçe karakter eksikliği ve küçük yazım hatalarında güvenli, sınırlandırılmış niyet eşleme
-- Termux terminali ve Termux:API için sınırlandırılmış, salt-okunur doğrulama araçları
+- Güvenli runtime ve GMT/UTC tabanlı ülke saat dilimi doğrulaması
 - Tarayıcı mikrofonu, STT transkripsiyonu ve TTS ses oynatma akışı
 - Aranabilir ve tamamen kullanıcı kontrollü kişisel hafıza
 - Gizlilik, Düşük Veri Modu, Reduced Motion ve oturum veri sayacı
@@ -246,17 +246,13 @@ atıf [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) dosyasındadır.
 
 Desteklenen doğrulama yolları:
 
-- Canlı terminal/Termux:API yetki durumu
-- Cihaz çalışma zamanından canlı yerel tarih, saat ve saat dilimi
-- Salt-okunur batarya, depolama ve ağ kontrolleri
-- Yalnızca açık konum sorularında Termux konum sorgusu
+- GMT/UTC temelinden seçilen ülke saat dilimine dönüştürülen canlı saat ve tarih
 - Xultron kaynak ağacında sınırlandırılmış proje araması
 - Güvenli aritmetik değerlendirme
 - Sabit HTTPS arama adresi üzerinden kaynak alan adı ve URL içeren güncel web kanıtı
 
-Canlı Termux komut sonuçları ilgili cihaz bilgileri için yetkili kaynak kabul edilir.
-Web sonuçlarında resmi ürün dokümantasyonu, kamu, üniversite, standart kurumu ve
-birinci taraf alan adları ikincil özetlerden öncelikli kabul edilir.
+Cihaz bataryası, depolama, ağ ve konum gibi Termux:API otomasyonları bu sürümde
+kapalıdır. Böylece eksik veya hatalı Android izinleri sohbet akışını kesmez.
 
 Modelin serbest biçimli shell komutu çalıştırmasına izin verilmez. Dosya silme,
 mesaj gönderme, kamera, satın alma ve diğer yan etkili komutlar otomatik araç

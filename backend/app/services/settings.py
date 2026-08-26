@@ -10,6 +10,29 @@ ACCENTS = {"cyan", "violet"}
 TEXT_SCALES = {"compact", "standard", "large"}
 LOCALES = {"en", "tr"}
 STT_LANGUAGES = {"auto", "en", "tr", "es", "fr", "de"}
+TIME_ZONE_COUNTRIES = {
+    "UTC": "GMT / UTC",
+    "Europe/Istanbul": "Türkiye",
+    "Europe/London": "Birleşik Krallık",
+    "Europe/Berlin": "Almanya",
+    "Europe/Paris": "Fransa",
+    "Europe/Moscow": "Rusya",
+    "America/New_York": "Amerika Birleşik Devletleri (Doğu)",
+    "America/Chicago": "Amerika Birleşik Devletleri (Merkez)",
+    "America/Los_Angeles": "Amerika Birleşik Devletleri (Batı)",
+    "America/Toronto": "Kanada",
+    "America/Sao_Paulo": "Brezilya",
+    "Asia/Dubai": "Birleşik Arap Emirlikleri",
+    "Asia/Riyadh": "Suudi Arabistan",
+    "Asia/Kolkata": "Hindistan",
+    "Asia/Shanghai": "Çin",
+    "Asia/Tokyo": "Japonya",
+    "Asia/Seoul": "Güney Kore",
+    "Australia/Sydney": "Avustralya",
+    "Africa/Cairo": "Mısır",
+    "Africa/Johannesburg": "Güney Afrika",
+}
+TIME_ZONES = set(TIME_ZONE_COUNTRIES)
 BOOLEAN_SETTINGS = {
     "lowDataMode",
     "memoryEnabled",
@@ -23,6 +46,7 @@ STRING_SETTINGS = {"preferredVoice"}
 ENUM_SETTINGS = {
     "locale": LOCALES,
     "sttLanguage": STT_LANGUAGES,
+    "timeZone": TIME_ZONES,
     "theme": THEMES,
     "accent": ACCENTS,
     "textScale": TEXT_SCALES,
@@ -39,6 +63,8 @@ def _normalize_settings(values: dict) -> dict:
         merged["analytics"] = False
     if merged.get("locale") not in LOCALES:
         merged["locale"] = "en"
+    if merged.get("timeZone") not in TIME_ZONES:
+        merged["timeZone"] = "UTC"
     return merged
 
 

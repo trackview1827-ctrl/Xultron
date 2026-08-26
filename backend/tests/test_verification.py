@@ -5,7 +5,7 @@ from app.services import chat
 from app.services.verification import VerificationPlan, deterministic_plan, execute, parse_plan
 
 
-def test_planner_accepts_only_bounded_read_only_tools(app):
+def test_planner_rejects_removed_device_automation_tools(app):
     with app.app_context():
         app.config["TESTING"] = False
         try:
@@ -13,8 +13,8 @@ def test_planner_accepts_only_bounded_read_only_tools(app):
             attempted_shell = parse_plan('{"tool":"terminal","operation":"shell","query":"rm -rf /"}', "Bunu çalıştır")
         finally:
             app.config["TESTING"] = True
-        assert safe == VerificationPlan("termux", "battery", reason="live")
-        assert attempted_shell.tool == "web"
+    assert safe == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
+    assert attempted_shell.tool == "web"
 
 
 def test_factual_questions_cannot_be_downgraded_to_reasoning(app):
@@ -29,7 +29,7 @@ def test_factual_questions_cannot_be_downgraded_to_reasoning(app):
     assert redirected.query == "Bugünkü güncel altın fiyatı nedir?"
 
 
-def test_greeting_does_not_hide_factual_intent_and_termux_operations_are_exact(app):
+def test_greeting_does_not_hide_factual_intent_and_removed_device_operations_fail_closed(app):
     with app.app_context():
         app.config["TESTING"] = False
         try:
@@ -39,8 +39,8 @@ def test_greeting_does_not_hide_factual_intent_and_termux_operations_are_exact(a
         finally:
             app.config["TESTING"] = True
     assert greeting_fact.tool == "web"
-    assert wrong_phone_tool == VerificationPlan("termux", "battery", reason="Live battery evidence")
-    assert denied_location == VerificationPlan("termux", "api_status", reason="Live Termux capability evidence")
+    assert wrong_phone_tool == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
+    assert denied_location == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
 
 
 def test_safe_calculation_and_location_explicitness(app):
@@ -49,11 +49,11 @@ def test_safe_calculation_and_location_explicitness(app):
         assert calculated.verified is True
         assert "= 5.0" in calculated.evidence
 
-        blocked = execute(VerificationPlan("termux", operation="location"), "Merhaba")
-        denied = execute(VerificationPlan("termux", operation="location"), "Sakın konumuma bakma")
+        blocked = execute(VerificationPlan("runtime", operation="unsupported_device_fact"), "Merhaba")
+        denied = execute(VerificationPlan("runtime", operation="unsupported_device_fact"), "Sakın konumuma bakma")
         assert blocked.verified is False
         assert denied.verified is False
-        assert "explicitly permitted" in blocked.summary
+        assert "disabled" in blocked.summary
 
         oversized = execute(VerificationPlan("calculate", query="9 ** 999999"), "hesapla")
         assert oversized.verified is False
@@ -92,9 +92,9 @@ def test_minor_typos_still_select_the_expected_safe_intent(app):
             app.config["TESTING"] = True
 
     assert clock == VerificationPlan("runtime", "clock", reason="Live local date and time evidence")
-    assert battery == VerificationPlan("termux", "battery", reason="Live battery evidence")
-    assert network == VerificationPlan("termux", "network", reason="Live network evidence")
-    assert terminal == VerificationPlan("termux", "api_status", reason="Live Termux capability evidence")
+    assert battery == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
+    assert network == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
+    assert terminal == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
     assert project.tool == "project"
     assert greeting.tool == "reasoning"
     assert greeting_with_fact.tool == "web"
@@ -109,8 +109,8 @@ def test_location_typos_remain_fail_closed(app):
         finally:
             app.config["TESTING"] = True
 
-    assert denied.tool == "reasoning"
-    assert ambiguous.tool != "termux"
+    assert denied.tool == "runtime"
+    assert ambiguous.tool == "runtime"
 
 
 def test_web_evidence_names_public_source_domains(app, monkeypatch):
@@ -219,18 +219,18 @@ def test_private_values_are_not_sent_to_web_verification(app, monkeypatch):
     assert requested == []
 
 
-def test_network_evidence_redacts_identifiers_unless_explicit(app, monkeypatch):
-    payload = json.dumps({"ssid": "Example", "ip": "192.0.2.10", "bssid": "private-bssid", "mac_address": "private-mac", "rssi": -45})
-    monkeypatch.setattr("app.services.verification.shutil.which", lambda command: f"/bin/{command}")
-    monkeypatch.setattr("app.services.verification.subprocess.run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=payload, stderr=""))
+def test_removed_device_automation_never_calls_termux_api(app):
     with app.app_context():
-        ordinary = execute(VerificationPlan("termux", operation="network"), "WiFi durumum nasıl?")
-        explicit = execute(VerificationPlan("termux", operation="network"), "IP adresim nedir?")
-        named = execute(VerificationPlan("termux", operation="network"), "WiFi adı nedir?")
-    assert ordinary.verified is True
-    assert "private-bssid" not in ordinary.evidence
-    assert "private-mac" not in ordinary.evidence
-    assert "192.0.2.10" not in ordinary.evidence
-    assert "Example" not in ordinary.evidence
-    assert "192.0.2.10" in explicit.evidence
-    assert "Example" in named.evidence
+        result = execute(VerificationPlan("runtime", operation="unsupported_device_fact"), "WiFi durumum nasıl?")
+    assert result.verified is False
+
+
+def test_clock_uses_gmt_as_base_and_selected_time_zone(app):
+    with app.app_context():
+        result = execute(VerificationPlan("runtime", operation="clock"), "Şu an saat kaç?", settings={"timeZone": "Asia/Tokyo"})
+    data = json.loads(result.evidence)
+    assert result.verified is True
+    assert data["timezone"] == "Asia/Tokyo"
+    assert data["country"] == "Japonya"
+    assert data["gmtDateTime"].endswith("Z")
+    assert data["localDateTime"].endswith("+09:00")

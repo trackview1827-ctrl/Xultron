@@ -151,7 +151,9 @@ Memory write fields are `title`, `content` and `category`.
 
 Supported settings include `locale`, `lowDataMode`, `memoryEnabled`,
 `conversationHistory`, `voiceHistory`, `saveAudio`, `analytics`, `reducedMotion`,
-`preferredVoice`, `sttLanguage` and appearance preferences. Analytics defaults off.
+`preferredVoice`, `sttLanguage`, `timeZone` and appearance preferences. `timeZone`
+uses an allowlisted IANA zone. Clock evidence starts from GMT/UTC and is converted
+into this selected country time zone. Analytics defaults off.
 
 ## Devices
 

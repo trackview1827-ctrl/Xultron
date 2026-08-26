@@ -214,6 +214,7 @@ DEFAULT_SETTINGS = {
     "reducedMotion": False,
     "preferredVoice": "",
     "sttLanguage": "auto",
+    "timeZone": "UTC",
     "theme": "dark",
     "accent": "cyan",
     "textScale": "standard",

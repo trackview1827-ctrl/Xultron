@@ -78,9 +78,10 @@ Agent capabilities are declared as `ToolSpec` records in the shared
 schema, permissions, availability check, side-effect flag, risk level,
 reversibility, timeout, idempotency and verification strategy. The registry
 rejects unknown tools and blocks side-effecting tools unless the caller passes
-explicit permission. The current verification capabilities (`runtime`,
-`termux`, `project`, `web`, `calculate` and `reasoning`) are dispatched through
-this boundary rather than a command-specific execution tree.
+explicit permission. The current verification capabilities (`runtime`, `project`, `web`, `calculate` and
+`reasoning`) are dispatched through this boundary rather than a command-specific
+execution tree. Device APIs such as Termux:API are intentionally not registered, so
+missing Android integrations cannot break the verification or automation flow.
 
 Authenticated clients can inspect public metadata at `GET /api/v1/tools`.
 Handlers and credentials are never serialized. A new capability can therefore

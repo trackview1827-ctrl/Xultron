@@ -64,7 +64,7 @@ def handle_message(user, data):
     provider_messages = _provider_context(user.id, conv.id if conv_id else None, message, settings, low_data)
     provider = default_provider(user.id, "ai")
     if provider:
-        assistant_text = _verified_complete(provider, provider_messages, message, settings.get("locale", "tr"))
+        assistant_text = _verified_complete(provider, provider_messages, message, settings.get("locale", "tr"), settings)
         provider_id = provider.id
     else:
         assistant_text = "No AI provider is configured yet. Add a provider in Settings to enable model-backed responses."
@@ -103,9 +103,9 @@ def handle_message(user, data):
     return response
 
 
-def _verified_complete(provider, provider_messages: list[dict], question: str, locale: str) -> str:
+def _verified_complete(provider, provider_messages: list[dict], question: str, locale: str, settings: dict | None = None) -> str:
     plan = deterministic_plan(question)
-    result = execute_verification(plan, question)
+    result = execute_verification(plan, question, settings=settings)
     if not result.verified:
         return verification_refusal(result, locale)
     direct = direct_answer(result, locale)

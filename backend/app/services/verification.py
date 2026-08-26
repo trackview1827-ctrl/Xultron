@@ -3,39 +3,36 @@ import html
 import json
 import math
 import operator
-import os
-import platform
 import re
-import shutil
-import subprocess
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 from flask import current_app
 
 from app.agent.registry import ToolRegistry, ToolSpec
+from app.services.settings import TIME_ZONE_COUNTRIES
 from app.services.text_intent import consists_only_of_terms, matches_any_phrase, normalize_for_match
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MAX_EVIDENCE_CHARS = 6000
-ALLOWED_TOOLS = {"runtime", "termux", "project", "web", "calculate", "reasoning"}
-TERMUX_OPERATIONS = {"api_status", "battery", "storage", "network", "location"}
+ALLOWED_TOOLS = {"runtime", "project", "web", "calculate", "reasoning"}
 _CAPABILITY_CACHE = {"expires": 0.0, "result": None}
 _CAPABILITY_LOCK = threading.Lock()
 
 PLANNER_PROMPT = """You are Xultron's verification planner. Every user question must be checked before an answer is allowed.
 Return one JSON object only, without markdown:
-{"tool":"runtime|termux|project|web|calculate|reasoning","operation":"optional","query":"short verification query","reason":"why this evidence is relevant"}
+{"tool":"runtime|project|web|calculate|reasoning","operation":"optional","query":"short verification query","reason":"why this evidence is relevant"}
 
 Rules:
-- Use termux for live phone facts. operation must be api_status, battery, storage, network, or location.
+- Device battery, network, storage, and location automations are disabled. Do not attempt device APIs.
 - Use location only when the user explicitly asks for their location.
 - Use project for questions about Xultron, its files, configuration, tests, or code.
 - Use web for external factual or current claims.
@@ -46,9 +43,9 @@ Rules:
 """
 
 ANSWER_POLICY = """XULTRON TERMINAL AND VERIFICATION POLICY — HIGHEST PRIORITY
-- Xultron uses backend-mediated terminal and Termux:API access only when the attached RUNTIME CAPABILITY evidence confirms it.
+- Xultron uses backend-mediated runtime evidence only for safe local runtime and configured time-zone facts.
 - Only the VERIFIED EVIDENCE attached to this request represents an operation that actually ran. Never claim another command, API, website, or file was checked.
-- Attached runtime and Termux command results are authoritative for the live device facts they report. Use those values directly without questioning or announcing the command.
+- Attached runtime results are authoritative for the live facts they report. Use those values directly without questioning or announcing the command.
 - A user question may not receive a factual answer before relevant verification succeeds.
 - Base the answer on the verified evidence and clearly distinguish evidence from inference.
 - Named public web sources in the attached evidence are valid factual sources. Prefer official product documentation, government, university, standards, and first-party domains over secondary summaries.
@@ -111,11 +108,11 @@ def parse_plan(raw: str, question: str) -> VerificationPlan:
                 operation = str(data.get("operation", "")).strip().lower() or None
                 query = str(data.get("query", "")).strip()[:300]
                 reason = str(data.get("reason", "")).strip()[:500]
-                if tool in ALLOWED_TOOLS and (tool != "termux" or operation in TERMUX_OPERATIONS):
+                if tool in ALLOWED_TOOLS:
                     proposed = VerificationPlan(tool=tool, operation=operation, query=query, reason=reason)
                     if proposed.tool != fallback.tool:
                         return fallback
-                    if fallback.tool == "termux" and proposed.operation != fallback.operation:
+                    if fallback.tool == "runtime" and proposed.operation != fallback.operation:
                         return fallback
                     return VerificationPlan(
                         tool=fallback.tool,
@@ -126,13 +123,13 @@ def parse_plan(raw: str, question: str) -> VerificationPlan:
     return fallback
 
 
-def execute(plan: VerificationPlan, question: str) -> VerificationResult:
+def execute(plan: VerificationPlan, question: str, settings: dict | None = None) -> VerificationResult:
     try:
         return _verification_registry().execute(
             plan.tool,
-            {"operation": plan.operation, "query": plan.query, "question": question, "reason": plan.reason},
+            {"operation": plan.operation, "query": plan.query, "question": question, "reason": plan.reason, "settings": settings or {}},
         )
-    except (ArithmeticError, OSError, SyntaxError, ValueError, KeyError, RuntimeError, PermissionError, requests.RequestException, subprocess.SubprocessError) as exc:
+    except (ArithmeticError, OSError, SyntaxError, ValueError, KeyError, RuntimeError, PermissionError, requests.RequestException) as exc:
         current_app.logger.warning("Verification failed tool=%s error_type=%s", plan.tool, type(exc).__name__)
     return VerificationResult(False, plan.tool, "Verification could not be completed.", "No reliable evidence was produced.")
 
@@ -150,34 +147,12 @@ def direct_answer(result: VerificationResult, locale: str = "tr") -> str | None:
         if result.tool == "runtime:clock":
             data = json.loads(result.evidence)
             if locale == "tr":
-                return f"Şu an saat {str(data['time'])[:5]}; tarih {data['date']}. Saat dilimi: {data['timezone']}."
-            return f"The time is {str(data['time'])[:5]} on {data['date']}. Time zone: {data['timezone']}."
+                return f"Şu an saat {str(data['time'])[:5]}; tarih {data['date']}. Ülke: {data['country']}. Saat dilimi: {data['timezone']}."
+            return f"The time is {str(data['time'])[:5]} on {data['date']}. Country: {data['country']}. Time zone: {data['timezone']}."
         if result.tool == "calculate":
             return result.evidence.strip()
         if result.tool == "reasoning:greeting":
             return "Selam! İyiyim, nasıl yardımcı olabilirim?" if locale == "tr" else "Hello! I am doing well. How can I help?"
-        if result.tool == "termux:api_status":
-            return "Terminal ve Termux:API erişimi aktif." if locale == "tr" else "Terminal and Termux:API access are active."
-        if result.tool == "termux:battery":
-            data = json.loads(result.evidence)
-            percentage = data.get("percentage")
-            status = data.get("status")
-            if locale == "tr":
-                return f"Pil seviyesi %{percentage}. Durum: {status}."
-            return f"Battery level is {percentage}%. Status: {status}."
-        if result.tool == "termux:storage":
-            data = json.loads(result.evidence)
-            free_gib = data.get("freeBytes", 0) / (1024 ** 3)
-            total_gib = data.get("totalBytes", 0) / (1024 ** 3)
-            if locale == "tr":
-                return f"Depolamada {free_gib:.1f} GB boş alan var. Toplam kapasite {total_gib:.1f} GB."
-            return f"Storage has {free_gib:.1f} GB free out of {total_gib:.1f} GB."
-        if result.tool in {"termux:network", "termux:location"}:
-            data = json.loads(result.evidence)
-            label = "Ağ bilgisi" if result.tool == "termux:network" else "Konum bilgisi"
-            english_label = "Network data" if result.tool == "termux:network" else "Location data"
-            compact = ", ".join(f"{key}: {value}" for key, value in data.items())
-            return f"{label}: {compact}." if locale == "tr" else f"{english_label}: {compact}."
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None
     return None
@@ -185,17 +160,13 @@ def direct_answer(result: VerificationResult, locale: str = "tr") -> str | None:
 
 def capability_prompt() -> str:
     if current_app.config.get("TESTING"):
-        return "RUNTIME CAPABILITY\nStatus: TEST MODE\nTerminal and Termux operations are mocked or disabled during tests."
+        return "RUNTIME CAPABILITY\nStatus: TEST MODE\nDevice APIs are disabled during tests."
     now = time.monotonic()
     with _CAPABILITY_LOCK:
         cached = _CAPABILITY_CACHE.get("result")
         if cached is not None and _CAPABILITY_CACHE.get("expires", 0) > now:
             return "RUNTIME CAPABILITY\n" + cached.prompt()
-        try:
-            result = _termux("api_status", "Termux API durumunu doğrula")
-        except (OSError, subprocess.SubprocessError, ValueError) as exc:
-            current_app.logger.warning("Runtime capability check failed error_type=%s", type(exc).__name__)
-            result = VerificationResult(False, "termux:api_status", "Terminal or Termux:API capability was not verified.", "No usable capability evidence was returned.")
+        result = _runtime_status()
         _CAPABILITY_CACHE["result"] = result
         _CAPABILITY_CACHE["expires"] = now + 300
         return "RUNTIME CAPABILITY\n" + result.prompt()
@@ -207,19 +178,8 @@ def _fallback_plan(question: str) -> VerificationPlan:
         return VerificationPlan("reasoning", reason="Deterministic test fallback")
     if _is_clock_question(text):
         return VerificationPlan("runtime", "clock", reason="Live local date and time evidence")
-    if matches_any_phrase(text, ("batarya", "sarj", "sarjim", "battery", "pil", "pil yuzde")):
-        return VerificationPlan("termux", "battery", reason="Live battery evidence")
-    if matches_any_phrase(text, ("depolama", "disk", "disk alan", "storage", "bos alan")):
-        return VerificationPlan("termux", "storage", reason="Live storage evidence")
-    if matches_any_phrase(text, ("wifi", "wi-fi", "ag", "ag durumu", "network", "internet baglanti")):
-        return VerificationPlan("termux", "network", reason="Live network evidence")
-    location_requested, location_denied = _location_intent(question)
-    if location_requested and not location_denied:
-        return VerificationPlan("termux", "location", reason="Explicit live location request")
-    if matches_any_phrase(text, ("termux", "terminal", "android surum", "telefonum", "cihazim", "cihaz durum")):
-        return VerificationPlan("termux", "api_status", reason="Live Termux capability evidence")
-    if location_denied:
-        return VerificationPlan("reasoning", reason="Location access was explicitly denied")
+    if matches_any_phrase(text, ("batarya", "sarj", "sarjim", "battery", "pil", "pil yuzde", "depolama", "disk", "disk alan", "storage", "bos alan", "wifi", "wi-fi", "ag", "ag durumu", "network", "internet baglanti", "termux", "terminal", "android surum", "telefonum", "cihazim", "cihaz durum", "konum", "konm", "neredeyim", "location")):
+        return VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
     if matches_any_phrase(text, ("xultron", "backend", "frontend", "commit", "dosya", "kod", "kaynak kod", "test", "testler")):
         return VerificationPlan("project", query=question, reason="Project source evidence")
     expression = question.strip().replace(",", ".")
@@ -232,20 +192,6 @@ def _fallback_plan(question: str) -> VerificationPlan:
     return VerificationPlan("web", query=question, reason="External factual verification")
 
 
-def _location_intent(question: str) -> tuple[bool, bool]:
-    text = normalize_for_match(question)
-    requested = bool(re.search(r"\b(?:konum\w*|neredeyim|location)\b", text))
-    mentioned = requested or matches_any_phrase(text, ("konum", "konm", "neredeyim", "location"))
-    denied = bool(
-        mentioned
-        and (
-            re.search(r"(?:konum\w*|location|konm\w*).{0,40}(?:paylasma|ogrenme|bakma|alma|erisme|kullanma|kontrol\s+etme|istemiyorum|dogrulama)", text)
-            or re.search(r"(?:sakin|asla|do\s+not|dont|never).{0,40}(?:konum\w*|location|konm\w*)", text)
-        )
-    )
-    return requested, denied
-
-
 def _is_clock_question(text: str) -> bool:
     phrases = (
         "saat kac", "su an saat", "simdiki saat", "bugunun tarihi", "bugun tarih",
@@ -255,80 +201,34 @@ def _is_clock_question(text: str) -> bool:
     return matches_any_phrase(text, phrases)
 
 
-def _runtime_status(question: str = "") -> VerificationResult:
-    now = datetime.now().astimezone()
-    if _is_clock_question(question.casefold()):
+def _runtime_status(question: str = "", operation: str | None = None, settings: dict | None = None) -> VerificationResult:
+    if operation == "unsupported_device_fact":
+        return VerificationResult(False, "runtime", "Device API automations are disabled.", "No device API evidence is available.")
+    now_utc = datetime.now(UTC)
+    if operation == "clock" or _is_clock_question(question.casefold()):
+        timezone_name = str((settings or {}).get("timeZone") or "UTC")
+        if timezone_name not in TIME_ZONE_COUNTRIES:
+            timezone_name = "UTC"
+        try:
+            local = now_utc.astimezone(ZoneInfo(timezone_name))
+        except ZoneInfoNotFoundError:
+            timezone_name = "UTC"
+            local = now_utc
         evidence = {
-            "localDateTime": now.isoformat(timespec="seconds"),
-            "date": now.date().isoformat(),
-            "time": now.strftime("%H:%M:%S"),
-            "timezone": now.tzname() or str(now.tzinfo),
-            "utcOffset": now.strftime("%z"),
+            "gmtDateTime": now_utc.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "localDateTime": local.isoformat(timespec="seconds"),
+            "date": local.date().isoformat(),
+            "time": local.strftime("%H:%M:%S"),
+            "timezone": timezone_name,
+            "country": TIME_ZONE_COUNTRIES[timezone_name],
+            "utcOffset": local.strftime("%z"),
         }
-        return VerificationResult(True, "runtime:clock", "The device runtime date and time were read live.", json.dumps(evidence, ensure_ascii=False, indent=2))
-    termux_prefix = os.environ.get("PREFIX", "")
+        return VerificationResult(True, "runtime:clock", "GMT/UTC time was converted to the configured country time zone.", json.dumps(evidence, ensure_ascii=False, indent=2))
     evidence = {
         "terminal": True,
-        "platform": platform.platform(),
-        "python": platform.python_version(),
-        "termux": "com.termux" in os.environ.get("TERMUX_APP__PACKAGE_NAME", "") or "com.termux" in termux_prefix or "/com.termux/" in termux_prefix,
-        "termuxApiCommand": bool(shutil.which("termux-battery-status")),
         "projectRoot": str(PROJECT_ROOT),
     }
     return VerificationResult(True, "runtime", "Terminal runtime was checked successfully.", json.dumps(evidence, ensure_ascii=False, indent=2))
-
-
-def _termux(operation: str, question: str) -> VerificationResult:
-    if operation == "storage":
-        usage = shutil.disk_usage(PROJECT_ROOT)
-        evidence = {"totalBytes": usage.total, "usedBytes": usage.used, "freeBytes": usage.free}
-        return VerificationResult(True, "termux:storage", "Live storage values were read.", json.dumps(evidence, indent=2))
-
-    if operation == "location":
-        location_requested, location_denied = _location_intent(question)
-        if not location_requested or location_denied:
-            return VerificationResult(False, "termux:location", "Location was not explicitly permitted.", "Location access was blocked by the verification policy.")
-
-    commands = {
-        "api_status": ["termux-battery-status"],
-        "battery": ["termux-battery-status"],
-        "network": ["termux-wifi-connectioninfo"],
-        "location": ["termux-location", "-p", "network", "-r", "once"],
-    }
-    command = commands.get(operation)
-    if not command or not shutil.which(command[0]):
-        return VerificationResult(False, f"termux:{operation}", "The required Termux:API command is unavailable.", f"Missing command: {command[0] if command else operation}")
-    completed = subprocess.run(command, cwd=PROJECT_ROOT, text=True, capture_output=True, timeout=current_app.config.get("VERIFICATION_TIMEOUT_SECONDS", 8), check=False)
-    output = (completed.stdout or completed.stderr).strip()
-    if completed.returncode != 0 or not output:
-        return VerificationResult(False, f"termux:{operation}", "Termux:API did not return usable evidence.", output[:1000] or f"Exit code {completed.returncode}")
-    if operation == "api_status":
-        try:
-            parsed = json.loads(output)
-            permission_ok = isinstance(parsed, dict) and "percentage" in parsed
-        except json.JSONDecodeError:
-            permission_ok = False
-        if not permission_ok:
-            return VerificationResult(False, "termux:api_status", "Termux:API permission could not be verified.", "Battery API response was malformed.")
-        commands_found = sorted(name for name in ("termux-battery-status", "termux-wifi-connectioninfo", "termux-location", "termux-info") if shutil.which(name))
-        return VerificationResult(True, "termux:api_status", "Terminal and Termux:API read permission were verified live.", json.dumps({"permission": "granted", "availableReadTools": commands_found}, indent=2))
-    if operation in {"battery", "network"}:
-        try:
-            parsed = json.loads(output)
-        except json.JSONDecodeError:
-            parsed = None
-        if not isinstance(parsed, dict):
-            return VerificationResult(False, f"termux:{operation}", "Termux:API returned malformed evidence.", "Expected a JSON object.")
-        if operation == "battery":
-            allowed = {key: parsed.get(key) for key in ("present", "health", "plugged", "status", "temperature", "percentage") if key in parsed}
-        else:
-            allowed = {key: parsed.get(key) for key in ("frequency_mhz", "link_speed_mbps", "rssi", "ssid_hidden", "supplicant_state") if key in parsed}
-            if re.search(r"\b(ssid|wi-?fi\s+adı|ağ\s+adı|hangi\s+wi-?fi|hangi\s+ağ)\b", question, re.I) and "ssid" in parsed:
-                allowed["ssid"] = parsed.get("ssid")
-            if re.search(r"\bip(?:\s+adres(?:i|im)?)?\b", question, re.I) and "ip" in parsed:
-                allowed["ip"] = parsed.get("ip")
-        return VerificationResult(True, f"termux:{operation}", f"Live Termux {operation} evidence was collected.", json.dumps(allowed, ensure_ascii=False, indent=2))
-    return VerificationResult(True, f"termux:{operation}", f"Live Termux {operation} evidence was collected.", output[:MAX_EVIDENCE_CHARS])
 
 
 def _project_search(query: str) -> VerificationResult:
@@ -492,16 +392,11 @@ def _verification_registry() -> ToolRegistry:
         output_schema=common_output,
         required_permissions=("runtime",),
         verification_strategy="return_verified_runtime_evidence",
-        handler=lambda payload: _runtime_status(str(payload.get("question", ""))),
-    ))
-    registry.register(ToolSpec(
-        name="termux",
-        description="Read bounded device facts through installed Termux:API commands.",
-        input_schema={"type": "object", "required": ["operation"], "properties": {"operation": {"type": "string"}, "question": {"type": "string"}}},
-        output_schema=common_output,
-        required_permissions=("termux-api",),
-        verification_strategy="check_command_exit_code_and_normalize_json",
-        handler=lambda payload: _termux(str(payload.get("operation") or "api_status"), str(payload.get("question", ""))),
+        handler=lambda payload: _runtime_status(
+            str(payload.get("question", "")),
+            str(payload.get("operation") or "") or None,
+            payload.get("settings") if isinstance(payload.get("settings"), dict) else {},
+        ),
     ))
     registry.register(ToolSpec(
         name="project",

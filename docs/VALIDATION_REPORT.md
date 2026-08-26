@@ -93,21 +93,20 @@ Alembic migration tests.
 - English and Turkish locale changes now update the document language and visible
   navigation, chat, memory, provider and settings surfaces immediately.
 - Every provider-backed answer now runs through a deterministic backend verification
-  plan. The backend exposes only bounded read-only Termux, project, calculation and fixed-host
-  web evidence tools; injects live terminal/Termux:API capability evidence into every
-  final model call; blocks private search queries; and returns no factual answer when
-  relevant verification fails.
+  plan. The backend exposes bounded runtime, project, calculation and fixed-host
+  web evidence tools; device APIs such as Termux:API are not registered, so missing
+  Android integrations cannot interrupt the verification or automation flow.
+  Private search queries are blocked and no factual answer is returned when relevant
+  verification fails.
 - AI configuration now includes more than 30 presets covering native Gemini and
   Anthropic adapters, major OpenAI-compatible hosted services, and loopback local
   runtimes. Claude credentials use native `x-api-key` headers and bounded responses.
-- Device date/time questions now use live runtime clock evidence. Public web evidence
-  includes named source domains and URLs so first-party and official documentation can
-  be preferred. Verification labels remain internal and are removed from visible chat
-  responses. Provider output and timeout defaults were raised to prevent abrupt answers.
-- The bounded intent router now tolerates missing Turkish diacritics, common suffixes,
-  and small spelling mistakes for clock, battery, storage, network, Termux and project
-  questions. Location remains fail-closed and cannot be enabled by fuzzy matching. The
-  matching design is attributed to the MIT-licensed OpenClaw patterns it adapts.
+- Device date/time questions now use live GMT/UTC runtime evidence converted through
+  the user's selected country time zone. Public web evidence includes named source
+  domains and URLs so first-party and official documentation can be preferred.
+  Verification labels remain internal and are removed from visible chat responses.
+  Device battery, storage, network, location and Termux:API automations are disabled
+  and fail closed without invoking Android commands.
 - Short typo-bearing greetings are answered locally with standard spelling, avoiding
   an unnecessary provider request and rate-limit exposure.
 
