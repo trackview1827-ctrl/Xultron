@@ -13,6 +13,7 @@ from app.services.auth import cleanup_expired, create_guest, ensure_csrf, login,
 from app.services.chat import create_conversation, handle_message, owned_conversation
 from app.services.providers import adapter_call, create_provider, default_provider, update_provider, _owned as owned_provider
 from app.services.settings import get_settings, patch_settings
+from app.services.verification import tool_descriptions
 
 api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 MEMORY_CATEGORIES = {"personal", "preferences", "important", "temporary"}
@@ -193,6 +194,13 @@ def list_providers():
             raise APIError("validation_failed", "kind is invalid.", 422)
         q = q.filter_by(kind=request.args["kind"])
     return ok({"providers": [p.to_public() for p in q.order_by(Provider.created_at.desc()).all()]})
+
+
+@api_bp.get("/tools")
+def list_tools():
+    """Expose capability metadata without exposing credentials or handlers."""
+    require_user()
+    return ok({"tools": tool_descriptions()})
 
 
 @api_bp.post("/providers")

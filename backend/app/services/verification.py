@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import requests
 from flask import current_app
 
+from app.agent.registry import ToolRegistry, ToolSpec
 from app.services.text_intent import consists_only_of_terms, matches_any_phrase, normalize_for_match
 
 
@@ -127,20 +128,11 @@ def parse_plan(raw: str, question: str) -> VerificationPlan:
 
 def execute(plan: VerificationPlan, question: str) -> VerificationResult:
     try:
-        if plan.tool == "runtime":
-            return _runtime_status(question)
-        if plan.tool == "termux":
-            return _termux(plan.operation or "api_status", question)
-        if plan.tool == "project":
-            return _project_search(plan.query or question)
-        if plan.tool == "web":
-            return _web_search(plan.query or question)
-        if plan.tool == "calculate":
-            return _calculate(plan.query or question)
-        if plan.tool == "reasoning":
-            tool = "reasoning:greeting" if plan.reason == "Greeting or conversation" else "reasoning"
-            return VerificationResult(True, tool, "The request is non-factual or subjective.", "No external factual claim is required. The answer must remain within subjective, creative, conversational, rewriting, or advisory scope.")
-    except (ArithmeticError, OSError, SyntaxError, ValueError, requests.RequestException, subprocess.SubprocessError) as exc:
+        return _verification_registry().execute(
+            plan.tool,
+            {"operation": plan.operation, "query": plan.query, "question": question, "reason": plan.reason},
+        )
+    except (ArithmeticError, OSError, SyntaxError, ValueError, KeyError, RuntimeError, PermissionError, requests.RequestException, subprocess.SubprocessError) as exc:
         current_app.logger.warning("Verification failed tool=%s error_type=%s", plan.tool, type(exc).__name__)
     return VerificationResult(False, plan.tool, "Verification could not be completed.", "No reliable evidence was produced.")
 
@@ -480,3 +472,78 @@ def _calculate(expression: str) -> VerificationResult:
 
     result = evaluate(tree)
     return VerificationResult(True, "calculate", "The arithmetic expression was evaluated safely.", f"{expression} = {result}")
+
+
+_VERIFICATION_TOOLS: ToolRegistry | None = None
+
+
+def _verification_registry() -> ToolRegistry:
+    """Return the read-only verification capabilities exposed to the agent."""
+    global _VERIFICATION_TOOLS
+    if _VERIFICATION_TOOLS is not None:
+        return _VERIFICATION_TOOLS
+
+    registry = ToolRegistry()
+    common_output = {"type": "object", "properties": {"verified": {"type": "boolean"}}}
+    registry.register(ToolSpec(
+        name="runtime",
+        description="Read safe local runtime facts such as device time and platform.",
+        input_schema={"type": "object", "properties": {"question": {"type": "string"}}},
+        output_schema=common_output,
+        required_permissions=("runtime",),
+        verification_strategy="return_verified_runtime_evidence",
+        handler=lambda payload: _runtime_status(str(payload.get("question", ""))),
+    ))
+    registry.register(ToolSpec(
+        name="termux",
+        description="Read bounded device facts through installed Termux:API commands.",
+        input_schema={"type": "object", "required": ["operation"], "properties": {"operation": {"type": "string"}, "question": {"type": "string"}}},
+        output_schema=common_output,
+        required_permissions=("termux-api",),
+        verification_strategy="check_command_exit_code_and_normalize_json",
+        handler=lambda payload: _termux(str(payload.get("operation") or "api_status"), str(payload.get("question", ""))),
+    ))
+    registry.register(ToolSpec(
+        name="project",
+        description="Search bounded Xultron source and documentation evidence.",
+        input_schema={"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}},
+        output_schema=common_output,
+        verification_strategy="return_matching_source_lines",
+        handler=lambda payload: _project_search(str(payload.get("query") or payload.get("question") or "")),
+    ))
+    registry.register(ToolSpec(
+        name="web",
+        description="Collect bounded public web evidence while applying the privacy filter.",
+        input_schema={"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}},
+        output_schema=common_output,
+        verification_strategy="return_named_public_sources",
+        handler=lambda payload: _web_search(str(payload.get("query") or payload.get("question") or "")),
+    ))
+    registry.register(ToolSpec(
+        name="calculate",
+        description="Evaluate a bounded arithmetic expression without executing code.",
+        input_schema={"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}},
+        output_schema={"type": "string"},
+        verification_strategy="safe_ast_evaluation",
+        handler=lambda payload: _calculate(str(payload.get("query") or payload.get("question") or "")),
+    ))
+    registry.register(ToolSpec(
+        name="reasoning",
+        description="Mark a request as non-factual without inventing external evidence.",
+        input_schema={"type": "object", "properties": {"reason": {"type": "string"}}},
+        output_schema=common_output,
+        verification_strategy="explicitly_no_external_claim",
+        handler=lambda payload: VerificationResult(
+            True,
+            "reasoning:greeting" if payload.get("reason") == "Greeting or conversation" else "reasoning",
+            "The request is non-factual or subjective.",
+            "No external factual claim is required. The answer must remain within subjective, creative, conversational, rewriting, or advisory scope.",
+        ),
+    ))
+    _VERIFICATION_TOOLS = registry
+    return registry
+
+
+def tool_descriptions() -> list[dict]:
+    """Return public metadata for tools available to the verification agent."""
+    return _verification_registry().describe()

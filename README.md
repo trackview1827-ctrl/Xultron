@@ -116,6 +116,27 @@ npx --yes github:trackview1827-ctrl/Xultron start
 npx --yes github:trackview1827-ctrl/Xultron update
 ```
 
+Npm 11'de kullanıcı yapılandırmasında `allow-scripts=true` varsa GitHub
+paketlerinin geçici hazırlık kurulumu bilerek durdurulabilir. Mevcut global
+`~/.npmrc` dosyanı değiştirmeden Xultron'u geçici boş npm ayarıyla çalıştır:
+
+```bash
+XULTRON_NPMRC="$(mktemp)"
+npm_config_userconfig="$XULTRON_NPMRC" npx --yes github:trackview1827-ctrl/Xultron install
+rm -f "$XULTRON_NPMRC"
+```
+
+İstersen normal npm yapılandırmasındaki ayarı inceleyebilirsin:
+
+```bash
+npm config get allow-scripts
+```
+
+Yerel bir clone içinden npm kurulumu gerekmez; `xultron install` gerçek GitHub
+clone'unun backend ve frontend bağımlılıklarını kendisi hazırlar. Yalnızca CLI
+paketini yerel olarak denemek için proje kökünde `npm install` ve ardından
+`npm test` çalıştırılabilir.
+
 Farklı bir kurulum klasörü için her komuta `--dir` verilebilir:
 
 ```bash

@@ -20,6 +20,7 @@ backend/                  Flask application and REST/SSE API
   app/memory/             User-controlled memory
   app/models/             SQLAlchemy models
   app/providers/          AI, STT and TTS abstractions and adapters
+  app/agent/              Metadata-driven tool registry and execution boundary
   app/security/           CSRF, encryption, redaction and request guards
   app/services/           Business logic without route coupling
   app/voice/              Transcription and synthesis orchestration
@@ -62,6 +63,22 @@ The registry resolves a stored provider by `kind` and `adapter`:
 
 Initial adapters support OpenAI-compatible HTTP APIs and local/custom endpoints.
 Adding a provider is a registry change, not a route or UI rewrite.
+
+## Agent tool registry
+
+Agent capabilities are declared as `ToolSpec` records in the shared
+`app.agent.registry.ToolRegistry`. Each declaration contains an input/output
+schema, permissions, availability check, side-effect flag, risk level,
+reversibility, timeout, idempotency and verification strategy. The registry
+rejects unknown tools and blocks side-effecting tools unless the caller passes
+explicit permission. The current verification capabilities (`runtime`,
+`termux`, `project`, `web`, `calculate` and `reasoning`) are dispatched through
+this boundary rather than a command-specific execution tree.
+
+Authenticated clients can inspect public metadata at `GET /api/v1/tools`.
+Handlers and credentials are never serialized. A new capability can therefore
+be added by registering metadata and a handler without changing the route or
+model-selection contract.
 
 ## Core state machine
 

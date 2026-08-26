@@ -101,6 +101,16 @@ Model discovery returns `{ "models": [{ "id": "...", "label": "..." }] }`.
 Connection testing returns `{ "ok": true, "latencyMs": 143, "message": "..." }`
 or the common safe error envelope.
 
+## Agent tools
+
+- `GET /tools`
+
+Returns metadata for capabilities available to the authenticated agent. Each
+tool includes `name`, descriptions, input/output schemas, required permissions,
+availability, side-effect and risk information, reversibility, timeout,
+idempotency and verification strategy. Implementation handlers and provider
+credentials are never included.
+
 ## Voice
 
 - `POST /voice/transcribe`
