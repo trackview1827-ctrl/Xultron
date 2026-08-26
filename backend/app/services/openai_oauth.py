@@ -18,7 +18,10 @@ from app.extensions import db
 from app.models import Provider
 from app.security.crypto import encrypt_secret
 from app.security.errors import APIError
-CODEX_SCOPES = "openid profile email offline_access api.connectors.read api.connectors.invoke"
+# The public Codex client accepts the standard identity/offline scopes only.
+# Connector scopes are not valid for this authorization client and cause
+# auth.openai.com to reject the request before the consent screen.
+CODEX_SCOPES = "openid profile email offline_access"
 
 
 def _pkce() -> tuple[str, str]:

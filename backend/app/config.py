@@ -84,7 +84,7 @@ class Config:
     OPENAI_OAUTH_AUTHORIZE_URL = os.getenv("OPENAI_OAUTH_AUTHORIZE_URL", "https://auth.openai.com/oauth/authorize")
     OPENAI_OAUTH_TOKEN_URL = os.getenv("OPENAI_OAUTH_TOKEN_URL", "https://auth.openai.com/oauth/token")
     OPENAI_OAUTH_REDIRECT_URI = os.getenv("OPENAI_OAUTH_REDIRECT_URI", "http://127.0.0.1:5000/api/v1/providers/oauth/openai/callback")
-    OPENAI_OAUTH_SCOPES = os.getenv("OPENAI_OAUTH_SCOPES", "openid profile email offline_access api.connectors.read api.connectors.invoke")
+    OPENAI_OAUTH_SCOPES = os.getenv("OPENAI_OAUTH_SCOPES", "openid profile email offline_access")
     DEFAULT_AI_MAX_TOKENS = int(os.getenv("DEFAULT_AI_MAX_TOKENS", "4096"))
     VERIFICATION_TIMEOUT_SECONDS = int(os.getenv("VERIFICATION_TIMEOUT_SECONDS", "8"))
     VERIFICATION_WEB_ENABLED = _bool("VERIFICATION_WEB_ENABLED", True)
