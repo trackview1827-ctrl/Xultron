@@ -16,9 +16,10 @@ function id(): string { return crypto.randomUUID?.() ?? `${Date.now()}-${Math.ra
 function normalizeProviderList(data: { providers: Provider[] } | Provider[]): Provider[] { return Array.isArray(data) ? data : data.providers }
 
 export function HomePage() {
-  const { coreState, dispatchCore, settings, online, networkOnline, setPage } = useApp(); const [messages, setMessages] = useState<Message[]>([]); const [conversations, setConversations] = useState<Conversation[]>([])
+  const context = useApp(); const [fallbackMessages, setFallbackMessages] = useState<Message[]>([]); const [fallbackInput, setFallbackInput] = useState(''); const [fallbackConversationId, setFallbackConversationId] = useState<string>();
+  const { coreState, dispatchCore, settings, online, networkOnline, setPage } = context; const conversationId = context.activeConversationId ?? fallbackConversationId; const setConversationId = context.setActiveConversationId ?? setFallbackConversationId; const messages = context.activeMessages ?? fallbackMessages; const setMessages = context.setActiveMessages ?? setFallbackMessages; const input = context.activeDraft ?? fallbackInput; const setInput = context.setActiveDraft ?? setFallbackInput; const setActiveConversation = context.setActiveConversation ?? (() => undefined); const [conversations, setConversations] = useState<Conversation[]>([])
   const { t, locale } = useLocale()
-  const [conversationId, setConversationId] = useState<string>(); const [input, setInput] = useState(''); const [aiReady, setAiReady] = useState<boolean | null>(null)
+  const [aiReady, setAiReady] = useState<boolean | null>(null)
   const [sttReady, setSttReady] = useState(false); const [ttsReady, setTtsReady] = useState(false); const [error, setError] = useState(''); const [streaming, setStreaming] = useState(false); const [historyOpen, setHistoryOpen] = useState(false)
   const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0)
   const voice = useVoice(text => { setInput(text); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('#command-input')?.focus()) })
@@ -46,12 +47,12 @@ export function HomePage() {
   useEffect(() => () => { historyAbortRef.current?.abort(); const active = activeResponseRef.current; if (active) { active.stopped = true; abortRef.current?.abort(); dispatchCore({ type: 'CANCEL' }) } }, [dispatchCore])
   const selectConversation = async (conversation: Conversation) => {
     cancelActiveResponse(false); historyAbortRef.current?.abort(); const generation = ++selectionGenerationRef.current; const controller = new AbortController(); historyAbortRef.current = controller
-    setHistoryOpen(false); setConversationId(conversation.id); setMessages([]); setError('')
+    setHistoryOpen(false); setConversationId(conversation.id); setActiveConversation(conversation); setMessages([]); setError('')
     try { const result = await chatApi.messages(conversation.id, settings.lowDataMode ? 20 : 50, undefined, controller.signal); if (generation === selectionGenerationRef.current) setMessages(result.messages) }
     catch (caught) { if (!(caught instanceof DOMException && caught.name === 'AbortError') && generation === selectionGenerationRef.current) setError(caught instanceof Error ? caught.message : 'Conversation could not be loaded.') }
     finally { if (generation === selectionGenerationRef.current) historyAbortRef.current = null }
   }
-  const newConversation = () => { cancelActiveResponse(false); selectionGenerationRef.current += 1; historyAbortRef.current?.abort(); historyAbortRef.current = null; setConversationId(undefined); setMessages([]); setError(''); setHistoryOpen(false) }
+  const newConversation = () => { cancelActiveResponse(false); selectionGenerationRef.current += 1; historyAbortRef.current?.abort(); historyAbortRef.current = null; setConversationId(undefined); setActiveConversation(undefined); setMessages([]); setError(''); setHistoryOpen(false) }
   const send = async () => {
     const text = input.trim(); if (!text || streaming) return; if (!online) { setError(networkOnline ? t('The Xultron backend is unavailable. Retry the link before sending.', 'Xultron backend kullanılamıyor. Göndermeden önce bağlantıyı yenile.') : t('Xultron is offline. Reconnect before sending.', 'Xultron çevrimdışı. Göndermeden önce yeniden bağlan.')); if (!networkOnline) dispatchCore({ type: 'NETWORK_LOST' }); return }
     if (aiReady === false) { setError(t('No AI provider is configured.', 'AI sağlayıcısı yapılandırılmadı.')); return }
