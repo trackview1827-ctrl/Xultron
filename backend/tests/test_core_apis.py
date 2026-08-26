@@ -1,4 +1,5 @@
 from tests.conftest import delete_json, patch_json, post_json, register
+from io import BytesIO
 
 
 def test_health_settings_memory_devices(user_client):
@@ -65,3 +66,15 @@ def test_provider_routing_honors_declared_capabilities(user_client, app):
         user_id = user_client.get("/api/v1/auth/session").get_json()["user"]["id"]
         selected = route_provider(user_id, required_capabilities=("vision",))
         assert selected.id == second.get_json()["provider"]["id"]
+
+
+def test_attachment_returns_metadata_and_extracts_only_text(user_client):
+    csrf = user_client.get("/api/v1/auth/session").get_json()["csrfToken"]
+    text = user_client.post("/api/v1/attachments", data={"file": (BytesIO(b"hello\nworld"), "notes.txt")}, headers={"X-CSRF-Token": csrf}, content_type="multipart/form-data")
+    assert text.status_code == 201
+    attachment = text.get_json()["attachment"]
+    assert attachment["size"] == 11 and attachment["text"] == "hello\nworld"
+    image = user_client.post("/api/v1/attachments", data={"file": (BytesIO(b"not-an-image"), "screen.png")}, headers={"X-CSRF-Token": csrf}, content_type="multipart/form-data")
+    assert image.status_code == 201
+    assert image.get_json()["attachment"]["text"] is None
+    assert image.get_json()["attachment"]["extraction"] == "not_available"
