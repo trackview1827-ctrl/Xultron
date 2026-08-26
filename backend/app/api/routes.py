@@ -16,6 +16,7 @@ from app.services.openai_oauth import callback as openai_oauth_callback, start a
 from app.services.settings import get_settings, patch_settings
 from app.services.verification import tool_descriptions
 from app.services.tasks import claim_task, create_task, execute_task, owned_task, update_task
+from app.services.planner import generate_plan
 
 api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 MEMORY_CATEGORIES = {"personal", "preferences", "important", "temporary"}
@@ -241,6 +242,13 @@ def execute_task_route(task_id):
     task = owned_task(task_id, require_user().id)
     data = require_json()
     return ok({"task": execute_task(task, data.get("workerId")).to_public()})
+
+
+@api_bp.post("/tasks/<task_id>/plan")
+def plan_task_route(task_id):
+    user = require_user()
+    task = owned_task(task_id, user.id)
+    return ok({"task": generate_plan(task, user.id).to_public()})
 
 
 @api_bp.post("/providers")

@@ -1,0 +1,22 @@
+from app.extensions import db
+from app.security.errors import APIError
+from app.services.tasks import owned_task
+
+
+def generate_plan(task, user_id):
+    """Create a conservative, inspectable plan without executing side effects."""
+    if task.user_id != user_id:
+        raise APIError("forbidden", "You do not have access to this task.", 403)
+    if task.status in {"completed", "failed", "cancelled"}:
+        raise APIError("task_unavailable", "Terminal tasks cannot be replanned.", 409)
+    plan = {
+        "version": 1,
+        "status": "proposed",
+        "steps": [{"id": "understand", "action": "analyze_instruction", "status": "pending"}],
+        "requiresApproval": True,
+        "sideEffects": False,
+    }
+    task.result = {"plan": plan}
+    task.updated_at = __import__("app.models", fromlist=["utcnow"]).utcnow()
+    db.session.commit()
+    return task
