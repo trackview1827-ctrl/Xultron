@@ -12,7 +12,14 @@ def generate_plan(task, user_id):
     plan = {
         "version": 1,
         "status": "proposed",
-        "steps": [{"id": "understand", "action": "analyze_instruction", "status": "pending"}],
+        "steps": [
+            {"id": "understand", "action": "analyze_instruction", "status": "pending"},
+            {"id": "capabilities", "action": "analyze_capabilities", "status": "pending"},
+            {"id": "risk", "action": "assess_risk_and_permissions", "status": "pending"},
+            {"id": "select", "action": "select_tools", "status": "pending"},
+            {"id": "execute", "action": "execute_with_observation", "status": "pending"},
+            {"id": "validate", "action": "validate_result", "status": "pending"},
+        ],
         "requiresApproval": True,
         "sideEffects": False,
     }
