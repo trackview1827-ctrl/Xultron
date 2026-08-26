@@ -92,3 +92,16 @@ def recover_expired_tasks():
     if rows:
         db.session.commit()
     return rows
+
+
+def retry_task(task):
+    if task.status not in {"failed", "cancelled"}:
+        raise APIError("task_not_retryable", "Only failed or cancelled tasks can be retried.", 409)
+    task.status = "pending"
+    task.error = None
+    task.worker_id = None
+    task.lease_expires_at = None
+    task.updated_at = utcnow()
+    record_event(task, "retry_requested")
+    db.session.commit()
+    return task

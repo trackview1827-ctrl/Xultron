@@ -15,7 +15,7 @@ from app.services.providers import adapter_call, create_provider, default_provid
 from app.services.openai_oauth import callback as openai_oauth_callback, start as start_openai_oauth
 from app.services.settings import get_settings, patch_settings
 from app.services.verification import tool_descriptions
-from app.services.tasks import claim_task, create_task, execute_task, owned_task, record_event, update_task
+from app.services.tasks import claim_task, create_task, execute_task, owned_task, record_event, retry_task, update_task
 from app.services.planner import approve_plan, generate_plan
 
 api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
@@ -234,6 +234,11 @@ def patch_task(task_id):
 def cancel_task_route(task_id):
     task = owned_task(task_id, require_user().id)
     return ok({"task": update_task(task, {"status": "cancelled"}).to_public()})
+
+
+@api_bp.post("/tasks/<task_id>/retry")
+def retry_task_route(task_id):
+    return ok({"task": retry_task(owned_task(task_id, require_user().id)).to_public()})
 
 
 @api_bp.post("/tasks/<task_id>/claim")
