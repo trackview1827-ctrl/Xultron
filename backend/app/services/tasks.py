@@ -8,10 +8,19 @@ TASK_STATUSES = {"pending", "running", "completed", "failed", "cancelled"}
 LEASE_SECONDS = 60
 
 
+def record_event(task, event_type, payload=None):
+    result = dict(task.result or {}) if isinstance(task.result, dict) else {}
+    events = list(result.get("events") or [])
+    events.append({"type": event_type, "payload": payload or {}, "at": utcnow().isoformat() + "Z"})
+    result["events"] = events[-100:]
+    task.result = result
+
+
 def create_task(user_id, data):
     title = string_field(data, "title", required=True, min_len=1, max_len=160)
     instruction = string_field(data, "instruction", required=True, min_len=1, max_len=10000)
     task = Task(user_id=user_id, title=title, instruction=instruction)
+    record_event(task, "created")
     db.session.add(task)
     db.session.commit()
     return task
@@ -28,6 +37,7 @@ def update_task(task, data):
     status = enum_field(data, "status", TASK_STATUSES)
     if status is not None:
         task.status = status
+        record_event(task, "status_changed", {"status": status})
     if "result" in data:
         if not isinstance(data["result"], (dict, list, str, int, float, bool, type(None))):
             raise APIError("validation_failed", "result must be JSON-compatible.", 422)
@@ -51,6 +61,7 @@ def claim_task(task, worker_id, lease_seconds=LEASE_SECONDS):
     task.status = "running"
     task.lease_expires_at = now + timedelta(seconds=lease_seconds)
     task.updated_at = now
+    record_event(task, "claimed", {"workerId": worker_id})
     db.session.commit()
     return task
 
@@ -77,6 +88,7 @@ def recover_expired_tasks():
         task.worker_id = None
         task.lease_expires_at = None
         task.updated_at = now
+        record_event(task, "lease_recovered")
     if rows:
         db.session.commit()
     return rows

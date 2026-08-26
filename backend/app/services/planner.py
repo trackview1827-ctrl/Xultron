@@ -23,7 +23,9 @@ def generate_plan(task, user_id):
         "requiresApproval": True,
         "sideEffects": False,
     }
-    task.result = {"plan": plan}
+    result = dict(task.result or {}) if isinstance(task.result, dict) else {}
+    result["plan"] = plan
+    task.result = result
     task.updated_at = __import__("app.models", fromlist=["utcnow"]).utcnow()
     db.session.commit()
     return task
@@ -39,7 +41,9 @@ def approve_plan(task, user_id):
         raise APIError("task_unavailable", "Terminal tasks cannot be approved.", 409)
     plan["status"] = "approved"
     plan["requiresApproval"] = False
-    task.result = {"plan": plan}
+    result = dict(task.result or {}) if isinstance(task.result, dict) else {}
+    result["plan"] = plan
+    task.result = result
     task.updated_at = __import__("app.models", fromlist=["utcnow"]).utcnow()
     db.session.commit()
     return task

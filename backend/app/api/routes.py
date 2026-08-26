@@ -15,7 +15,7 @@ from app.services.providers import adapter_call, create_provider, default_provid
 from app.services.openai_oauth import callback as openai_oauth_callback, start as start_openai_oauth
 from app.services.settings import get_settings, patch_settings
 from app.services.verification import tool_descriptions
-from app.services.tasks import claim_task, create_task, execute_task, owned_task, update_task
+from app.services.tasks import claim_task, create_task, execute_task, owned_task, record_event, update_task
 from app.services.planner import approve_plan, generate_plan
 
 api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
@@ -267,6 +267,12 @@ def approve_task_plan_route(task_id):
 def get_task_plan_route(task_id):
     task = owned_task(task_id, require_user().id)
     return ok({"plan": (task.result or {}).get("plan")})
+
+
+@api_bp.get("/tasks/<task_id>/events")
+def task_events_route(task_id):
+    task = owned_task(task_id, require_user().id)
+    return ok({"events": (task.result or {}).get("events", [])})
 
 
 @api_bp.post("/providers")
