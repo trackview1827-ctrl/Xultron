@@ -14,15 +14,16 @@ then exercises the public HTTP interface with sentinel credentials.
 make check
 ```
 
-This command completed all seven stages:
+This command completed all eight stages:
 
-1. Backend pytest suite.
-2. Backend bytecode compilation.
-3. Strict frontend TypeScript checking.
-4. Frontend Vitest suite.
-5. Vite production build.
-6. Manifest, service worker and icon artifact checks.
-7. Isolated production HTTP smoke test.
+1. Clean tracked-source profile check.
+2. Backend pytest suite.
+3. Backend bytecode compilation.
+4. Strict frontend TypeScript checking.
+5. Frontend Vitest suite.
+6. Vite production build.
+7. Manifest, service worker and icon artifact checks.
+8. Isolated production HTTP smoke test.
 
 Additional targeted checks included `git diff --check`, tracked-secret scans,
 frontend storage/raw-HTML scans, production sourcemap inspection and fresh/upgrade
@@ -50,6 +51,9 @@ Alembic migration tests.
   keys, integrity and foreign-key checks passed.
 - Secret handling: sentinel provider keys were absent from HTTP output, static
   assets, server logs and plaintext database bytes.
+- Data profiles: chat, memory, sessions, local identity values, databases and
+  provider credentials remain outside Git. The release gate rejects tracked runtime
+  paths and non-placeholder local identity configuration.
 
 ## Failures found and fixed during validation
 

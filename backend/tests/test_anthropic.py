@@ -41,7 +41,7 @@ def test_anthropic_adapter_uses_native_headers_and_message_shape(app, monkeypatc
 
     def post(url, **kwargs):
         captured.update({"url": url, **kwargs})
-        return FakeResponse({"content": [{"type": "text", "text": "Merhaba"}, {"type": "text", "text": " Local User"}]})
+        return FakeResponse({"content": [{"type": "text", "text": "Merhaba"}, {"type": "text", "text": " kullanıcı"}]})
 
     monkeypatch.setattr("app.providers.adapters.requests.post", post)
     with app.app_context():
@@ -50,7 +50,7 @@ def test_anthropic_adapter_uses_native_headers_and_message_shape(app, monkeypatc
             {"role": "user", "content": "Merhaba"},
         ])
 
-    assert result == "Merhaba Local User"
+    assert result == "Merhaba kullanıcı"
     assert captured["url"] == "https://api.anthropic.com/v1/messages"
     assert captured["headers"]["x-api-key"] == "test-anthropic-key"
     assert "test-anthropic-key" not in captured["url"]

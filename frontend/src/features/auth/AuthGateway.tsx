@@ -8,7 +8,8 @@ import { XultronCore } from '../core/XultronCore'
 import { conservesMotion } from '../../theme/motionPolicy'
 
 const PIN_LENGTH = 4
-const LOCAL_USERNAME = 'local-user'
+const LOCAL_USERNAME = import.meta.env.MODE === 'test' ? 'local-user' : (import.meta.env.VITE_LOCAL_USERNAME || 'local-user')
+const LOCAL_DISPLAY_NAME = import.meta.env.MODE === 'test' ? 'Yerel kullanıcı' : (import.meta.env.VITE_LOCAL_DISPLAY_NAME || 'Yerel kullanıcı')
 
 export function AuthGateway() {
   const { setUser, sessionReachable, settings, retryConnection } = useApp()
@@ -80,7 +81,7 @@ export function AuthGateway() {
     </motion.section>
     <motion.section className="auth-panel" initial={conserveMotion ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: conserveMotion ? 0 : .12, duration: conserveMotion ? 0 : .38 }}>
       <span className="section-index">SİSTEM ERİŞİMİ / 01</span>
-      <h2>Hoş geldin,<br />Local User.</h2>
+      <h2>Hoş geldin,<br />{LOCAL_DISPLAY_NAME}.</h2>
       <p>Kimliğini doğrulamak için dört haneli Xultron PIN kodunu gir.</p>
       <form onSubmit={submit} noValidate className="pin-login-form">
         <label className="field-wrap"><span className="field-label">KULLANICI</span><Input value={LOCAL_USERNAME} readOnly aria-readonly="true" autoComplete="username" /></label>

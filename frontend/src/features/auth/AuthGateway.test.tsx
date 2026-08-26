@@ -27,7 +27,7 @@ describe('authentication critical flows', () => {
     const user = userEvent.setup()
     render(<AppProvider><AuthGateway /></AppProvider>)
     expect(await screen.findByDisplayValue('local-user')).toHaveAttribute('readonly')
-    for (const [index, digit] of ['1', '3', '2', '4'].entries()) await user.type(screen.getByLabelText(`PIN hanesi ${index + 1}`), digit)
+    for (const [index, digit] of ['2', '4', '6', '8'].entries()) await user.type(screen.getByLabelText(`PIN hanesi ${index + 1}`), digit)
     await user.click(screen.getByRole('button', { name: 'SİSTEME GİR' }))
     await waitFor(() => expect(auth.login).toHaveBeenCalledWith({ identifier: 'local-user', password: '2468' }))
   })

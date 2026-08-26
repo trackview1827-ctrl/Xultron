@@ -4,6 +4,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
+from werkzeug.security import generate_password_hash
 
 load_dotenv()
 
@@ -41,11 +42,9 @@ def _load_instance_secrets(env: str) -> dict[str, str]:
         changed = True
     if changed:
         INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
-        INSTANCE_SECRETS.write_text(
-            "# Ignored local Xultron backend secrets. Do not commit.\n"
-            f"SECRET_KEY={values['SECRET_KEY']}\n"
-            f"ENCRYPTION_KEY={values['ENCRYPTION_KEY']}\n"
-        )
+        lines = ["# Ignored local Xultron backend secrets. Do not commit."]
+        lines.extend(f"{key}={value}" for key, value in values.items())
+        INSTANCE_SECRETS.write_text("\n".join(lines) + "\n")
         try:
             INSTANCE_SECRETS.chmod(0o600)
         except OSError:
@@ -56,13 +55,12 @@ def _load_instance_secrets(env: str) -> dict[str, str]:
 _ENV = os.getenv("XULTRON_ENV", "development")
 _INSTANCE = _load_instance_secrets(_ENV)
 
-# This local-only identity is intentionally disabled by default in production.
-# The default stores only a one-way scrypt hash, never the requested PIN itself.
-_DEFAULT_LOCAL_PIN_HASH = (
-    "scrypt:32768:8:1$example$"
-    "0000000000000000000000000000000000000000000000000000000000000000"
-    "0000000000000000000000000000000000000000000000000000000000000000"
-)
+_LOCAL_PIN_USERNAME = (os.getenv("LOCAL_PIN_USERNAME") or _INSTANCE.get("LOCAL_PIN_USERNAME") or "").strip().lower()
+_LOCAL_PIN_HASH = os.getenv("LOCAL_PIN_HASH") or _INSTANCE.get("LOCAL_PIN_HASH") or ""
+_LOCAL_PIN_ENABLED_DEFAULT = _INSTANCE.get(
+    "LOCAL_PIN_LOGIN_ENABLED",
+    str(_ENV != "production" and bool(_LOCAL_PIN_USERNAME and _LOCAL_PIN_HASH)),
+).lower() in {"1", "true", "yes", "on"}
 
 
 class Config:
@@ -92,9 +90,9 @@ class Config:
     ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
     ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY") or _INSTANCE.get("ENCRYPTION_KEY")
     FRONTEND_DIST_DIR = os.getenv("FRONTEND_DIST_DIR") or str(BASE_DIR.parent / "frontend" / "dist")
-    LOCAL_PIN_LOGIN_ENABLED = _bool("LOCAL_PIN_LOGIN_ENABLED", XULTRON_ENV != "production")
-    LOCAL_PIN_USERNAME = (os.getenv("LOCAL_PIN_USERNAME") or "local-user").strip().lower()
-    LOCAL_PIN_HASH = os.getenv("LOCAL_PIN_HASH") or _DEFAULT_LOCAL_PIN_HASH
+    LOCAL_PIN_LOGIN_ENABLED = _bool("LOCAL_PIN_LOGIN_ENABLED", _LOCAL_PIN_ENABLED_DEFAULT)
+    LOCAL_PIN_USERNAME = _LOCAL_PIN_USERNAME
+    LOCAL_PIN_HASH = _LOCAL_PIN_HASH
 
     @classmethod
     def validate(cls):
@@ -126,3 +124,6 @@ class TestingConfig(Config):
     SERVER_NAME = "localhost"
     SESSION_COOKIE_SECURE = False
     VERIFICATION_WEB_ENABLED = False
+    LOCAL_PIN_LOGIN_ENABLED = True
+    LOCAL_PIN_USERNAME = "local-user"
+    LOCAL_PIN_HASH = generate_password_hash("2468", method="scrypt")

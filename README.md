@@ -43,6 +43,7 @@ Ayrıntılı belgeler:
 - [`docs/UI_SYSTEM.md`](docs/UI_SYSTEM.md)
 - [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md)
 - [`docs/VALIDATION_REPORT.md`](docs/VALIDATION_REPORT.md)
+- [`docs/DATA_PROFILES.md`](docs/DATA_PROFILES.md)
 - [`SECURITY.md`](SECURITY.md)
 - [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
 
@@ -190,16 +191,19 @@ kapalı biçimde doğrulama hatası alır.
 
 ## Yerel PIN girişi
 
-Geliştirme kurulumu tek kullanıcı için dört haneli PIN ekranı sunar:
+Geliştirme kurulumu isteğe bağlı tek kullanıcı için dört haneli PIN ekranı sunar.
+Gerçek kullanıcı adı ve PIN hash'i kaynakta tutulmaz; yalnızca Git tarafından yok
+sayılan `backend/instance/secrets.env` veya süreç ortamından okunur. Yerel giriş
+ekranındaki kullanıcı ve görünen ad `frontend/.env.local` dosyasında tutulabilir.
+Örnek değerler için `backend/.env.example` dosyasına bak. Mevcut yerel hesabı yeniden
+hazırlamak için `cd backend && .venv/bin/flask --app run.py provision-local-pin`
+komutunu çalıştır. Bu kolaylık üretim ortamında varsayılan olarak kapalıdır. Arayüz
+dili Sistemler → Genel bölümünden İngilizce ve Türkçe arasında anında değiştirilebilir.
 
-- Kullanıcı: `local-user`
-- PIN: `2468`
-
-PIN kaynakta düz metin tutulmaz. Yalnızca tek yönlü scrypt hash'i kullanılır ve
-yerel hesap ilk başarılı girişte oluşturulur. Mevcut yerel hesabı yeniden hazırlamak
-için `cd backend && .venv/bin/flask --app run.py provision-local-pin` komutunu çalıştır.
-Bu kolaylık üretim ortamında varsayılan olarak kapalıdır. Arayüz dili Sistemler →
-Genel bölümünden İngilizce ve Türkçe arasında anında değiştirilebilir.
+GitHub sürümü kişisel veri içermeyen temiz kaynak profilidir. Sohbet, hafıza,
+oturum, sağlayıcı kimlik bilgileri ve yerel kimlik yapılandırması yalnızca Git dışı
+runtime profilinde kalır. Ayrıntılar ve silme komutu için
+[`docs/DATA_PROFILES.md`](docs/DATA_PROFILES.md) belgesine bak.
 
 ## Test ve kalite komutları
 

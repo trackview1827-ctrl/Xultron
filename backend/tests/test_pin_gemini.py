@@ -38,15 +38,15 @@ def gemini_config():
     )
 
 
-def test_local_local-user_pin_requires_four_digits_and_is_hashed(client, app):
-    short = post_json(client, "/api/v1/auth/login", {"identifier": "local-user", "password": "132"})
+def test_local_pin_requires_four_digits_and_is_hashed(client, app):
+    short = post_json(client, "/api/v1/auth/login", {"identifier": "local-user", "password": "246"})
     assert short.status_code == 422
     letters = post_json(client, "/api/v1/auth/login", {"identifier": "local-user", "password": "abcd"})
     assert letters.status_code == 422
     wrong = post_json(client, "/api/v1/auth/login", {"identifier": "local-user", "password": "9999"})
     assert wrong.status_code == 401
 
-    success = post_json(client, "/api/v1/auth/login", {"identifier": "Local User", "password": "2468"})
+    success = post_json(client, "/api/v1/auth/login", {"identifier": "LOCAL-USER", "password": "2468"})
     assert success.status_code == 200
     assert success.get_json()["user"]["username"] == "local-user"
     with app.app_context():
@@ -78,7 +78,7 @@ def test_gemini_adapter_uses_header_auth_and_translates_messages(app, monkeypatc
 
     def post(url, **kwargs):
         captured.update({"url": url, **kwargs})
-        return FakeResponse({"candidates": [{"content": {"parts": [{"text": "Merhaba"}, {"text": " Local User"}]}}]})
+        return FakeResponse({"candidates": [{"content": {"parts": [{"text": "Merhaba"}, {"text": " kullanıcı"}]}}]})
 
     monkeypatch.setattr("app.providers.adapters.requests.post", post)
     with app.app_context():
@@ -87,7 +87,7 @@ def test_gemini_adapter_uses_header_auth_and_translates_messages(app, monkeypatc
             {"role": "user", "content": "Merhaba"},
         ])
 
-    assert result == "Merhaba Local User"
+    assert result == "Merhaba kullanıcı"
     assert captured["url"].endswith("/models/gemini-2.5-flash:generateContent")
     assert "test-gemini-key" not in captured["url"]
     assert captured["headers"]["x-goog-api-key"] == "test-gemini-key"
