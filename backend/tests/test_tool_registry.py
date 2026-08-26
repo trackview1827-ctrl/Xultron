@@ -31,6 +31,34 @@ def test_registry_rejects_side_effects_without_explicit_permission():
         raise AssertionError("side-effecting tools must require explicit permission")
 
 
+def test_registry_requires_declared_permissions_and_risk_approval():
+    registry = ToolRegistry()
+    registry.register(ToolSpec(
+        name="files.delete",
+        description="Delete a file",
+        input_schema={"type": "object"},
+        output_schema={"type": "object"},
+        required_permissions=("filesystem.write",),
+        side_effect=True,
+        risk_level="high",
+        handler=lambda payload: {"deleted": True},
+    ))
+    kwargs = {"allow_side_effects": True}
+    try:
+        registry.execute("files.delete", {}, **kwargs)
+    except PermissionError as exc:
+        assert "filesystem.write" in str(exc)
+    else:
+        raise AssertionError("declared permissions must be enforced")
+    try:
+        registry.execute("files.delete", {}, granted_permissions={"filesystem.write"}, **kwargs)
+    except PermissionError as exc:
+        assert "risk approval" in str(exc)
+    else:
+        raise AssertionError("high-risk tools must require explicit risk approval")
+    assert registry.execute("files.delete", {}, granted_permissions={"filesystem.write"}, approved_risk_levels={"high"}, **kwargs) == {"deleted": True}
+
+
 def test_verification_dispatches_through_registered_calculator(app):
     with app.app_context():
         result = execute(VerificationPlan("calculate", query="2 + 2"), "2 + 2")

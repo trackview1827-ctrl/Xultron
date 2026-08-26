@@ -80,7 +80,15 @@ class ToolRegistry:
             for tool in self._tools.values()
         ]
 
-    def execute(self, name: str, payload: Mapping[str, Any], *, allow_side_effects: bool = False) -> Any:
+    def execute(
+        self,
+        name: str,
+        payload: Mapping[str, Any],
+        *,
+        allow_side_effects: bool = False,
+        granted_permissions: set[str] | frozenset[str] = frozenset(),
+        approved_risk_levels: set[str] | frozenset[str] = frozenset(),
+    ) -> Any:
         spec = self.get(name)
         if spec is None:
             raise KeyError(f"unknown tool: {name}")
@@ -88,6 +96,11 @@ class ToolRegistry:
             raise RuntimeError(f"tool unavailable: {name}")
         if spec.side_effect and not allow_side_effects:
             raise PermissionError(f"side-effecting tool requires explicit permission: {name}")
+        missing = set(spec.required_permissions) - set(granted_permissions)
+        if missing:
+            raise PermissionError(f"missing tool permissions: {', '.join(sorted(missing))}")
+        if spec.risk_level in {"high", "critical"} and spec.risk_level not in approved_risk_levels:
+            raise PermissionError(f"risk approval required for {spec.risk_level} tool: {name}")
         if spec.handler is None:
             raise RuntimeError(f"tool has no handler: {name}")
         return spec.handler(payload)
