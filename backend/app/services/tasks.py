@@ -87,7 +87,7 @@ def renew_task(task, worker_id, lease_seconds=LEASE_SECONDS):
 
 
 def execute_task(task, worker_id):
-    """Run the deliberately deterministic, side-effect-free worker."""
+    """Execute only a declared read-only plan and persist the observed result."""
     if task.status != "running" or task.worker_id != worker_id:
         raise APIError("task_not_claimed", "Worker does not hold the task lease.", 409)
     if task.lease_expires_at and task.lease_expires_at <= utcnow():
@@ -95,19 +95,34 @@ def execute_task(task, worker_id):
     plan = (task.result or {}).get("plan") if isinstance(task.result, dict) else None
     if plan and plan.get("status") != "approved":
         raise APIError("plan_not_approved", "The task plan must be approved before execution.", 409)
-    task.status = "completed"
     result = dict(task.result or {}) if isinstance(task.result, dict) else {}
-    result.update({"workerId": worker_id, "instruction": task.instruction, "deterministic": True})
     if plan:
-        plan["status"] = "completed"
-        for step in plan.get("steps", []):
-            step["status"] = "completed"
-        result["plan"] = plan
-    if plan:
+        from app.services.verification import VerificationPlan, VerificationResult, execute as execute_verification
+        tool = plan.get("tool")
+        if tool not in {"runtime", "project", "web", "calculate", "reasoning"}:
+            raise APIError("unsupported_tool", "The approved plan contains no executable registered tool.", 409)
+        observed = execute_verification(VerificationPlan(
+            tool=tool, operation=plan.get("operation"), query=plan.get("query", task.instruction), reason=plan.get("reason", "")
+        ), task.instruction)
+        result["observation"] = {"verified": observed.verified, "tool": observed.tool, "summary": observed.summary, "evidence": observed.evidence}
         task.result = result
-        record_event(task, "execution_completed", {"workerId": worker_id, "planApproved": True})
+        record_event(task, "observation_recorded", {"tool": observed.tool, "verified": observed.verified})
+        result = dict(task.result)
+        if not isinstance(observed, VerificationResult) or not observed.verified:
+            task.status = "failed"
+            task.error = "Registered tool did not produce verified evidence."
+            plan["status"] = "failed"
+        else:
+            task.status = "completed"
+            plan["status"] = "completed"
+            for step in plan.get("steps", []):
+                step["status"] = "completed"
+            record_event(task, "execution_completed", {"workerId": worker_id, "planApproved": True})
+        result["plan"] = plan
     else:
-        task.result = {"workerId": worker_id, "instruction": task.instruction, "deterministic": True}
+        raise APIError("plan_required", "Generate and approve a plan before execution.", 409)
+    result.update({"workerId": worker_id, "instruction": task.instruction})
+    task.result = result
     task.lease_expires_at = None
     task.updated_at = utcnow()
     db.session.commit()
