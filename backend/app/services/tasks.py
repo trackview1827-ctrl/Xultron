@@ -6,6 +6,7 @@ from app.security.validation import enum_field, string_field
 
 TASK_STATUSES = {"pending", "running", "completed", "failed", "cancelled"}
 LEASE_SECONDS = 60
+MAX_LEASE_SECONDS = 3600
 
 
 def record_event(task, event_type, payload=None):
@@ -52,6 +53,8 @@ def update_task(task, data):
 def claim_task(task, worker_id, lease_seconds=LEASE_SECONDS):
     """Atomically claim available work; repeating the same claim is harmless."""
     worker_id = string_field({"worker": worker_id}, "worker", required=True, min_len=1, max_len=120)
+    if not isinstance(lease_seconds, int) or not 1 <= lease_seconds <= MAX_LEASE_SECONDS:
+        raise APIError("validation_failed", "lease_seconds must be between 1 and 3600.", 422)
     now = utcnow()
     if task.status in {"completed", "failed", "cancelled"}:
         raise APIError("task_unavailable", "Task is already terminal.", 409)
@@ -62,6 +65,23 @@ def claim_task(task, worker_id, lease_seconds=LEASE_SECONDS):
     task.lease_expires_at = now + timedelta(seconds=lease_seconds)
     task.updated_at = now
     record_event(task, "claimed", {"workerId": worker_id})
+    db.session.commit()
+    return task
+
+
+def renew_task(task, worker_id, lease_seconds=LEASE_SECONDS):
+    """Extend a live lease without changing ownership or task state."""
+    worker_id = string_field({"worker": worker_id}, "worker", required=True, min_len=1, max_len=120)
+    if not isinstance(lease_seconds, int) or not 1 <= lease_seconds <= MAX_LEASE_SECONDS:
+        raise APIError("validation_failed", "lease_seconds must be between 1 and 3600.", 422)
+    now = utcnow()
+    if task.status != "running" or task.worker_id != worker_id:
+        raise APIError("task_not_claimed", "Worker does not hold the task lease.", 409)
+    if task.lease_expires_at and task.lease_expires_at <= now:
+        raise APIError("lease_expired", "Task lease has expired.", 409)
+    task.lease_expires_at = now + timedelta(seconds=lease_seconds)
+    task.updated_at = now
+    record_event(task, "lease_renewed", {"workerId": worker_id})
     db.session.commit()
     return task
 

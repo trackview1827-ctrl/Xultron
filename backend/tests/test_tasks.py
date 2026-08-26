@@ -46,3 +46,14 @@ def test_claim_rejects_other_worker_and_recovers_expired_lease(user_client, app)
         db.session.commit()
         assert [x.id for x in recover_expired_tasks()] == [task["id"]]
         assert row.status == "pending" and row.worker_id is None
+
+
+def test_lease_can_be_renewed_only_by_current_worker(user_client):
+    task = post_json(user_client, "/api/v1/tasks", {"title": "Plan", "instruction": "renew"}).get_json()["task"]
+    post_json(user_client, f"/api/v1/tasks/{task['id']}/claim", {"workerId": "worker-a"})
+    renewed = post_json(user_client, f"/api/v1/tasks/{task['id']}/renew", {"workerId": "worker-a", "leaseSeconds": 120})
+    assert renewed.status_code == 200
+    assert renewed.get_json()["task"]["workerId"] == "worker-a"
+    assert any(event["type"] == "lease_renewed" for event in renewed.get_json()["task"]["result"]["events"])
+    assert post_json(user_client, f"/api/v1/tasks/{task['id']}/renew", {"workerId": "worker-b"}).status_code == 409
+    assert post_json(user_client, f"/api/v1/tasks/{task['id']}/renew", {"workerId": "worker-a", "leaseSeconds": 3601}).status_code == 422
