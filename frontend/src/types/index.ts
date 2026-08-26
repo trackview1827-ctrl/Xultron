@@ -30,4 +30,8 @@ export interface AppSettings {
   theme: 'dark' | 'darker'; accent: 'cyan' | 'violet'; textScale: 'compact' | 'standard' | 'large';
 }
 export interface DataUsage { downloaded: number; uploaded: number }
+export interface TaskStep { id: string; action: string; status: string }
+export interface AgentTask { id: string; title: string; instruction: string; status: string; result: unknown; error: string | null; workerId: string | null; leaseExpiresAt: string | null }
+export interface ToolDescription { name: string; description: string; requiredPermissions: string[]; sideEffect: boolean; riskLevel: string; available: boolean }
+export interface Attachment { name: string; contentType: string; size: number; sha256: string; text: string | null; extraction?: string }
 export type PageId = 'home' | 'memory' | 'settings'
