@@ -15,7 +15,7 @@ from app.services.providers import adapter_call, create_provider, default_provid
 from app.services.openai_oauth import callback as openai_oauth_callback, start as start_openai_oauth
 from app.services.settings import get_settings, patch_settings
 from app.services.verification import tool_descriptions
-from app.services.tasks import create_task, owned_task, update_task
+from app.services.tasks import claim_task, create_task, execute_task, owned_task, update_task
 
 api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 MEMORY_CATEGORIES = {"personal", "preferences", "important", "temporary"}
@@ -227,6 +227,20 @@ def get_task(task_id):
 def patch_task(task_id):
     task = owned_task(task_id, require_user().id)
     return ok({"task": update_task(task, require_json()).to_public()})
+
+
+@api_bp.post("/tasks/<task_id>/claim")
+def claim_task_route(task_id):
+    task = owned_task(task_id, require_user().id)
+    data = require_json()
+    return ok({"task": claim_task(task, data.get("workerId")).to_public()})
+
+
+@api_bp.post("/tasks/<task_id>/execute")
+def execute_task_route(task_id):
+    task = owned_task(task_id, require_user().id)
+    data = require_json()
+    return ok({"task": execute_task(task, data.get("workerId")).to_public()})
 
 
 @api_bp.post("/providers")

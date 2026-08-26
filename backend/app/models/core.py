@@ -123,10 +123,14 @@ class Task(TimestampMixin, db.Model):
     status = db.Column(db.String(20), nullable=False, default="pending", index=True)
     result = db.Column(db.JSON, nullable=True)
     error = db.Column(db.String(1000), nullable=True)
+    worker_id = db.Column(db.String(120), nullable=True, index=True)
+    lease_expires_at = db.Column(db.DateTime, nullable=True, index=True)
 
     def to_public(self):
         return {"id": self.id, "title": self.title, "instruction": self.instruction,
                 "status": self.status, "result": self.result, "error": self.error,
+                "workerId": self.worker_id,
+                "leaseExpiresAt": self.lease_expires_at.isoformat() + "Z" if self.lease_expires_at else None,
                 "createdAt": self.created_at.isoformat() + "Z", "updatedAt": self.updated_at.isoformat() + "Z"}
 
 
