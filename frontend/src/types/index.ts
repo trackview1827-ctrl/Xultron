@@ -10,7 +10,7 @@ export interface LogoutResponse { ok: boolean; csrfToken: string }
 export interface SessionDevice { id: string; current: boolean; createdAt: string; lastSeenAt: string; expiresAt: string }
 export interface Conversation { id: string; title: string; createdAt: string; updatedAt: string }
 export interface Message { id: string; conversationId: string; role: 'user' | 'assistant' | 'system'; content: string; createdAt: string; pending?: boolean; failed?: boolean; cancelled?: boolean }
-export interface ProviderCredential { configured: boolean; masked: string | null }
+export interface ProviderCredential { configured: boolean; masked: string | null; authMethod?: 'api_key' | 'codex_oauth' | null; accountId?: string | null; expiresAt?: number | null }
 export interface Provider {
   id: string; name: string; kind: ProviderKind; adapter: string; baseUrl: string | null; model: string | null;
   temperature: number | null; maxTokens: number | null; streaming: boolean; enabled: boolean; isDefault: boolean;

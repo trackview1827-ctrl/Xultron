@@ -12,6 +12,7 @@ from app.security.validation import enum_field, string_field
 from app.services.auth import cleanup_expired, create_guest, ensure_csrf, login, logout, register
 from app.services.chat import create_conversation, handle_message, owned_conversation
 from app.services.providers import adapter_call, create_provider, default_provider, update_provider, _owned as owned_provider
+from app.services.openai_oauth import callback as openai_oauth_callback, start as start_openai_oauth
 from app.services.settings import get_settings, patch_settings
 from app.services.verification import tool_descriptions
 
@@ -243,6 +244,20 @@ def providers_models(provider_id):
     user = require_user()
     provider = owned_provider(provider_id, user.id)
     return ok({"models": adapter_call(provider, "models")})
+
+
+@api_bp.post("/providers/<provider_id>/oauth/openai/start")
+def providers_openai_oauth_start(provider_id):
+    user = require_user()
+    provider = owned_provider(provider_id, user.id)
+    if provider.kind != "ai" or provider.adapter != "openai_codex_oauth":
+        raise APIError("oauth_not_supported", "This provider is not configured for Codex OAuth.", 422)
+    return ok(start_openai_oauth(provider))
+
+
+@api_bp.get("/providers/oauth/openai/callback")
+def providers_openai_oauth_callback():
+    return openai_oauth_callback()
 
 
 @api_bp.post("/voice/transcribe")

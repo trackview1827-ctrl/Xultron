@@ -15,6 +15,10 @@ class ProviderConfig:
     max_tokens: int | None
     streaming: bool
     config: dict
+    access_token: str | None = None
+    refresh_token: str | None = None
+    account_id: str | None = None
+    auth_mode: str = "api_key"
 
 
 class ProviderFailure(Exception):

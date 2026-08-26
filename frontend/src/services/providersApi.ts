@@ -15,4 +15,5 @@ export const providersApi = {
   remove: (id: string) => apiRequest<void>(`/providers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   test: (id: string) => apiRequest<ProviderTest>(`/providers/${encodeURIComponent(id)}/test`, { method: 'POST', body: '{}' }),
   models: (id: string) => apiRequest<{ models: ModelOption[] }>(`/providers/${encodeURIComponent(id)}/models`, { method: 'POST', body: '{}' }),
+  startOpenAIOAuth: (id: string) => apiRequest<{ authorizationUrl: string; redirectUri: string }>(`/providers/${encodeURIComponent(id)}/oauth/openai/start`, { method: 'POST', body: '{}' }),
 }

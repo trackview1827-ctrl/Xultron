@@ -125,7 +125,13 @@ function ProviderEditor({ kind, online, provider, confirmationOpen, deleteButton
   }
   const selectAdapter = (adapter: string) => {
     setPresetId('')
-    setForm(current => adapter === 'gemini' ? {
+    setForm(current => adapter === 'openai_codex_oauth' ? {
+      ...current,
+      adapter,
+      name: current.name || 'ChatGPT (Codex OAuth)',
+      baseUrl: 'https://chatgpt.com/backend-api/codex',
+      model: current.model || 'gpt-5-codex',
+    } : adapter === 'gemini' ? {
       ...current,
       adapter,
       name: current.name || 'Google Gemini',
@@ -202,15 +208,27 @@ function ProviderEditor({ kind, online, provider, confirmationOpen, deleteButton
     }
   }
 
+  const connectOpenAIOAuth = async () => {
+    if (!provider || !online) { setError('Save the ChatGPT provider before connecting.'); return }
+    setBusy('oauth'); setError('')
+    try {
+      const result = await providersApi.startOpenAIOAuth(provider.id)
+      window.location.assign(result.authorizationUrl)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'ChatGPT OAuth could not be started.')
+      setBusy('')
+    }
+  }
+
   return <div className="modal-layer"><div ref={panelRef} className="modal-panel provider-editor" role="dialog" aria-modal="true" aria-labelledby="provider-title">
     <header><div><span className="section-index">{kind.toUpperCase()} LINK CONFIGURATION</span><h2 id="provider-title">{provider ? provider.name : 'New provider'}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close provider editor"><Icon name="close" /></button></header>
     <form onSubmit={event => void save(event)} autoComplete="off"><fieldset className="provider-editor-fields" disabled={!online}>
       <div className="form-grid">
         {kind === 'ai' && <Field label={t('Provider preset', 'Hazır sağlayıcı')} hint={selectedPreset?.note || t('Choose a service to fill its safe API defaults.', 'Güvenli API ayarlarını doldurmak için bir servis seç.')}><select className="field" aria-label={t('Provider preset', 'Hazır sağlayıcı')} value={presetId} onChange={event => applyPreset(event.target.value)}><option value="">{t('Manual configuration', 'Elle yapılandırma')}</option>{AI_PROVIDER_PRESET_GROUPS.map(group => <optgroup label={group.label} key={group.id}>{AI_PROVIDER_PRESETS.filter(preset => preset.group === group.id).map(preset => <option value={preset.id} key={preset.id}>{preset.label}</option>)}</optgroup>)}</select></Field>}
         <Field label="Provider name"><Input value={form.name} onChange={event => update('name', event.target.value)} required autoFocus /></Field>
-        <Field label={t('Adapter', 'Adaptör')}><select className="field" value={form.adapter} onChange={event => selectAdapter(event.target.value)}><option value="openai_compatible">OpenAI compatible</option>{kind === 'ai' && <><option value="anthropic">Anthropic Claude</option><option value="gemini">Google Gemini</option></>}<option value="custom_http">Custom HTTP</option><option value="local_http">Local endpoint</option></select></Field>
-        <Field label="Base URL" hint="Credentials are sent only to Xultron's backend."><Input value={form.baseUrl} onChange={event => update('baseUrl', event.target.value)} type="url" placeholder="https://api.example.com/v1" required /></Field>
-        <Field label="API key" hint={provider?.credential.configured ? `Stored securely: ${provider.credential.masked || 'masked credential'}. Leave blank to keep it.` : 'Never saved in browser storage.'}><Input value={form.apiKey ?? ''} onChange={event => update('apiKey', event.target.value)} type="password" placeholder={provider?.credential.configured ? 'Leave blank to keep existing key' : 'Enter secret once'} autoComplete="new-password" /></Field>
+        <Field label={t('Adapter', 'Adaptör')}><select className="field" value={form.adapter} onChange={event => selectAdapter(event.target.value)}><option value="openai_compatible">OpenAI compatible</option>{kind === 'ai' && <><option value="openai_codex_oauth">ChatGPT account (Codex OAuth)</option><option value="anthropic">Anthropic Claude</option><option value="gemini">Google Gemini</option></>}<option value="custom_http">Custom HTTP</option><option value="local_http">Local endpoint</option></select></Field>
+        <Field label="Base URL" hint={form.adapter === 'openai_codex_oauth' ? 'Codex OAuth uses the official ChatGPT backend endpoint.' : "Credentials are sent only to Xultron's backend."}><Input value={form.baseUrl} onChange={event => update('baseUrl', event.target.value)} type="url" placeholder="https://api.example.com/v1" readOnly={form.adapter === 'openai_codex_oauth'} required /></Field>
+        {form.adapter === 'openai_codex_oauth' ? <Field label="ChatGPT account" hint="Save this provider, then open the official ChatGPT authorization screen. Xultron never asks for your password or verification code."><div className="saved-config-note">The browser will return to Xultron after you approve Codex OAuth.</div></Field> : <Field label="API key" hint={provider?.credential.configured ? `Stored securely: ${provider.credential.masked || 'masked credential'}. Leave blank to keep it.` : 'Never saved in browser storage.'}><Input value={form.apiKey ?? ''} onChange={event => update('apiKey', event.target.value)} type="password" placeholder={provider?.credential.configured ? 'Leave blank to keep existing key' : 'Enter secret once'} autoComplete="new-password" /></Field>}
         <Field label="Model ID" hint="Enter manually or use model discovery."><div className="compound-field"><Input value={form.model} onChange={event => update('model', event.target.value)} list="provider-models" /><button type="button" onClick={() => void refreshModels()} disabled={!!busy} aria-label="Refresh models"><Icon name="refresh" /></button></div><datalist id="provider-models">{models.map(model => <option value={model.id} key={model.id}>{model.label}</option>)}</datalist></Field>
         {kind === 'ai' && <><Field label="Temperature"><Input value={form.temperature ?? .3} onChange={event => update('temperature', Number(event.target.value))} type="number" min="0" max="2" step="0.1" /></Field><Field label="Max output tokens"><Input value={form.maxTokens ?? 4096} onChange={event => update('maxTokens', Number(event.target.value))} type="number" min="1" max="32000" /></Field></>}
         {kind === 'stt' && <Field label="Language override"><Input value={String(form.config.language ?? '')} onChange={event => update('config', { ...form.config, language: event.target.value })} placeholder="auto" /></Field>}
@@ -220,7 +238,7 @@ function ProviderEditor({ kind, online, provider, confirmationOpen, deleteButton
       {status && <div className={`test-status ${status.ok ? 'success' : 'failure'}`} role="status"><Icon name={status.ok ? 'check' : 'close'} />{status.message}</div>}
       {error && <div className="inline-error" role="alert">{error}</div>}
       {provider && <small className="saved-config-note">Connection tests use the last saved server configuration. Save edits before testing them.</small>}
-      <div className="provider-form-actions">{provider && <Button ref={deleteButtonRef} type="button" variant="danger" onClick={() => onDelete(provider)}><Icon name="trash" /> DELETE</Button>}<span /><Button type="button" variant="secondary" onClick={() => void test()} disabled={!!busy}>{busy === 'test' ? <Spinner /> : 'TEST SAVED CONFIG'}</Button><Button type="submit" disabled={!!busy}>{busy === 'save' ? <Spinner /> : 'SAVE PROVIDER'}</Button></div>
+      <div className="provider-form-actions">{provider && <Button ref={deleteButtonRef} type="button" variant="danger" onClick={() => onDelete(provider)}><Icon name="trash" /> DELETE</Button>}<span />{provider?.adapter === 'openai_codex_oauth' && <Button type="button" variant="secondary" onClick={() => void connectOpenAIOAuth()} disabled={!!busy}>{busy === 'oauth' ? <Spinner /> : 'CONNECT CHATGPT ACCOUNT'}</Button>}<Button type="button" variant="secondary" onClick={() => void test()} disabled={!!busy}>{busy === 'test' ? <Spinner /> : 'TEST SAVED CONFIG'}</Button><Button type="submit" disabled={!!busy}>{busy === 'save' ? <Spinner /> : 'SAVE PROVIDER'}</Button></div>
     </fieldset></form>
   </div></div>
 }

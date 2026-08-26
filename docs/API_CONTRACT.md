@@ -71,6 +71,12 @@ or credential material.
 - `DELETE /providers/{id}`
 - `POST /providers/{id}/test`
 - `POST /providers/{id}/models`
+- `POST /providers/{id}/oauth/openai/start`
+  - Returns `{ "authorizationUrl": "https://auth.openai.com/...", "redirectUri": "..." }`.
+  - Uses the official Codex OAuth authorization-code + PKCE flow.
+- `GET /providers/oauth/openai/callback`
+  - Validates the one-time state, exchanges the code, encrypts access/refresh/id tokens,
+    and redirects the browser back to Xultron.
 
 Provider write shape:
 
@@ -100,6 +106,10 @@ Provider read shape replaces `apiKey` with:
 Model discovery returns `{ "models": [{ "id": "...", "label": "..." }] }`.
 Connection testing returns `{ "ok": true, "latencyMs": 143, "message": "..." }`
 or the common safe error envelope.
+
+The Codex OAuth provider uses `https://chatgpt.com/backend-api/codex` only after a
+successful user-authorized flow. Passwords, verification codes and raw OAuth
+tokens are never accepted from the browser or returned by the API.
 
 ## Agent tools
 

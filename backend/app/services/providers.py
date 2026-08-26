@@ -15,8 +15,8 @@ from app.security.validation import (
     validate_base_url,
 )
 
-ADAPTERS = {"openai_compatible", "anthropic", "gemini", "custom_http", "local_http", "mock"}
-AI_ONLY_ADAPTERS = {"anthropic", "gemini"}
+ADAPTERS = {"openai_compatible", "openai_codex_oauth", "anthropic", "gemini", "custom_http", "local_http", "mock"}
+AI_ONLY_ADAPTERS = {"openai_codex_oauth", "anthropic", "gemini"}
 PUBLIC_CONFIG_KEYS = {
     "reply",
     "transcript",
@@ -147,6 +147,9 @@ def default_provider(user_id, kind):
 
 def adapter_call(provider, method, *args):
     try:
+        if provider.adapter == "openai_codex_oauth":
+            from app.services.openai_oauth import refresh_if_needed
+            refresh_if_needed(provider)
         adapter = build(provider)
         return getattr(adapter, method)(*args)
     except ProviderFailure as exc:

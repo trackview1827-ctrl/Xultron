@@ -212,6 +212,13 @@ açıklayıcı bir sistem durumu olarak gösterilir.
 Aynı akış STT ve TTS sağlayıcıları için de geçerlidir. Saklanan anahtar hiçbir
 listeleme veya ayar yanıtında tarayıcıya geri gönderilmez.
 
+ChatGPT hesabı ile Codex OAuth kullanmak için AI Providers ekranında adaptör
+olarak **ChatGPT account (Codex OAuth)** seç, sağlayıcıyı kaydet ve **CONNECT
+CHATGPT ACCOUNT** düğmesine bas. Xultron resmi OpenAI OAuth linkini açar; giriş
+ve onayı sen ChatGPT ekranında yaparsın. Başarılı olunca tarayıcı Xultron'a geri
+döner ve tokenlar backend'de şifreli saklanır. Şifre veya doğrulama kodu Xultron'a
+girilmez.
+
 AI ekranında 30'dan fazla hazır sağlayıcı seçeneği bulunur. Google Gemini ve
 Anthropic Claude native REST adaptörleriyle; OpenAI, xAI/Grok, NVIDIA NIM, Hugging
 Face, Groq, OpenRouter, Mistral, Cohere, DeepSeek, Together, Fireworks, Cerebras,

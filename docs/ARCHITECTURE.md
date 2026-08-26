@@ -64,6 +64,13 @@ The registry resolves a stored provider by `kind` and `adapter`:
 Initial adapters support OpenAI-compatible HTTP APIs and local/custom endpoints.
 Adding a provider is a registry change, not a route or UI rewrite.
 
+The OpenAI Codex OAuth adapter is a separate transport from the OpenAI-compatible
+API-key adapter. It opens `auth.openai.com` with PKCE, receives the callback on
+the local Xultron origin, stores encrypted OAuth credentials, refreshes expired
+access tokens, and sends only the Codex-required authorization headers to the
+ChatGPT Responses backend. The browser handles the account login and consent;
+Xultron never receives a password or verification code.
+
 ## Agent tool registry
 
 Agent capabilities are declared as `ToolSpec` records in the shared

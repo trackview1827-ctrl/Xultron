@@ -234,6 +234,111 @@ class OpenAICompatibleAdapter:
         return audio, media_type
 
 
+class CodexOAuthAdapter(OpenAICompatibleAdapter):
+    """OpenAI Codex OAuth transport for ChatGPT subscription accounts."""
+
+    @property
+    def base(self):
+        if self.cfg.auth_mode != "codex_oauth" or not self.cfg.access_token:
+            raise ProviderFailure("provider_authentication_failed", "Codex OAuth bağlantısı kurulmamış.", 422)
+        return "https://chatgpt.com/backend-api/codex"
+
+    def headers(self):
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.cfg.access_token}",
+            "originator": "codex_cli_rs",
+        }
+        if self.cfg.account_id:
+            headers["chatgpt-account-id"] = self.cfg.account_id
+        return headers
+
+    def _json_response(self, response, failure_code="provider_request_failed"):
+        body = self._read_bounded(response)
+        if response.status_code in {401, 403}:
+            raise ProviderFailure("provider_authentication_failed", "ChatGPT OAuth oturumu reddedildi.", 502)
+        if response.status_code == 429:
+            raise ProviderFailure("provider_rate_limited", "ChatGPT rate limit reached.", 502, True)
+        if response.status_code >= 400:
+            raise ProviderFailure(failure_code, f"ChatGPT returned HTTP {response.status_code}.", 502, response.status_code >= 500)
+        try:
+            data = json.loads(body.decode(getattr(response, "encoding", None) or "utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, LookupError):
+            raise ProviderFailure("provider_malformed_response", "ChatGPT returned malformed response.", 502, True)
+        if not isinstance(data, dict):
+            raise ProviderFailure("provider_malformed_response", "ChatGPT returned malformed response.", 502, True)
+        return data
+
+    def models(self):
+        try:
+            response = requests.get(
+                f"{self.base}/models?client_version=1.0.0",
+                headers=self.headers(), timeout=self.timeout, allow_redirects=False, stream=True,
+            )
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "ChatGPT request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc, "provider_model_discovery_failed")
+        data = self._json_response(response, "provider_model_discovery_failed")
+        raw = data.get("data", data.get("models", []))
+        if not isinstance(raw, list):
+            raise ProviderFailure("provider_malformed_response", "ChatGPT returned malformed model data.", 502, True)
+        models = []
+        for item in raw[:500]:
+            model_id = item.get("id") or item.get("slug") or item.get("model") if isinstance(item, dict) else item
+            if isinstance(model_id, str) and model_id.strip():
+                model_id = model_id.strip()[:160]
+                models.append({"id": model_id, "label": model_id})
+        return models
+
+    def test(self):
+        start = time.monotonic()
+        self.models()
+        return {"ok": True, "latencyMs": int((time.monotonic() - start) * 1000), "message": "ChatGPT OAuth bağlantısı başarılı."}
+
+    def complete(self, messages):
+        input_items = []
+        instructions = []
+        for message in messages:
+            if not isinstance(message, dict) or not isinstance(message.get("content"), str):
+                continue
+            content = message["content"].strip()
+            if not content:
+                continue
+            if message.get("role") == "system":
+                instructions.append(content)
+            else:
+                input_items.append({"role": "assistant" if message.get("role") == "assistant" else "user", "content": content})
+        if not input_items:
+            raise ProviderFailure("provider_invalid", "ChatGPT requires at least one user message.", 422)
+        payload = {
+            "model": self.cfg.model or "gpt-5-codex",
+            "instructions": "\n\n".join(instructions),
+            "input": input_items,
+            "stream": False,
+            "store": False,
+        }
+        try:
+            response = requests.post(
+                f"{self.base}/responses", headers=self.headers(), json=payload,
+                timeout=self.timeout, allow_redirects=False, stream=True,
+            )
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "ChatGPT request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc)
+        data = self._json_response(response)
+        output_text = data.get("output_text")
+        if not isinstance(output_text, str):
+            parts = []
+            for item in data.get("output", []) if isinstance(data.get("output"), list) else []:
+                for block in item.get("content", []) if isinstance(item, dict) and isinstance(item.get("content"), list) else []:
+                    if isinstance(block, dict) and isinstance(block.get("text"), str):
+                        parts.append(block["text"])
+            output_text = "".join(parts)
+        return self._bound_text(output_text)
+
+
 class AnthropicAdapter(OpenAICompatibleAdapter):
     """Anthropic Messages REST adapter for Claude models."""
 

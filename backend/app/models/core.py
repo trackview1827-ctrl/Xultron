@@ -161,7 +161,8 @@ class Provider(TimestampMixin, db.Model):
     credential = relationship("ProviderCredential", back_populates="provider", uselist=False, cascade="all, delete-orphan")
 
     def to_public(self):
-        masked = self.credential.masked_hint if self.credential else None
+        credential = self.credential
+        masked = credential.masked_hint if credential else None
         return {
             "id": self.id,
             "name": self.name,
@@ -175,7 +176,13 @@ class Provider(TimestampMixin, db.Model):
             "enabled": self.enabled,
             "isDefault": self.is_default,
             "config": self.config or {},
-            "credential": {"configured": bool(self.credential), "masked": masked},
+            "credential": {
+                "configured": bool(credential and (credential.encrypted_api_key or credential.encrypted_access_token)),
+                "masked": masked,
+                "authMethod": "codex_oauth" if credential and credential.encrypted_access_token else "api_key" if credential and credential.encrypted_api_key else None,
+                "accountId": credential.oauth_account_id if credential and credential.encrypted_access_token else None,
+                "expiresAt": credential.oauth_expires_at if credential and credential.encrypted_access_token else None,
+            },
             "createdAt": self.created_at.isoformat() + "Z",
             "updatedAt": self.updated_at.isoformat() + "Z",
         }
@@ -186,6 +193,12 @@ class ProviderCredential(TimestampMixin, db.Model):
     id = db.Column(db.String(40), primary_key=True, default=lambda: new_id("cred"))
     provider_id = db.Column(db.String(40), db.ForeignKey("providers.id", ondelete="CASCADE"), nullable=False, unique=True)
     encrypted_api_key = db.Column(db.LargeBinary, nullable=True)
+    encrypted_access_token = db.Column(db.LargeBinary, nullable=True)
+    encrypted_refresh_token = db.Column(db.LargeBinary, nullable=True)
+    encrypted_id_token = db.Column(db.LargeBinary, nullable=True)
+    oauth_account_id = db.Column(db.String(160), nullable=True)
+    oauth_expires_at = db.Column(db.BigInteger, nullable=True)
+    oauth_scopes = db.Column(db.JSON, default=list, nullable=False)
     masked_hint = db.Column(db.String(80), nullable=True)
     provider = relationship("Provider", back_populates="credential")
 
