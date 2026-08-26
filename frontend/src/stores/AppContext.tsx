@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type ReactNode } from 'react'
-import type { AppSettings, CoreState, PageId, User } from '../types'
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import type { AppSettings, CoreState, PageId, User, Conversation, Message } from '../types'
 import { authApi } from '../services/authApi'
 import { DEFAULT_SETTINGS, settingsApi } from '../services/settingsApi'
 import { coreReducer, type CoreEvent } from '../features/core/coreMachine'
@@ -9,6 +9,10 @@ interface AppContextValue {
   user: User | null; sessionReady: boolean; sessionReachable: boolean; setUser: (user: User | null) => void; refreshSession: () => Promise<boolean>; retryConnection: () => void
   settings: AppSettings; updateSettings: (patch: Partial<AppSettings>) => Promise<void>
   coreState: CoreState; dispatchCore: Dispatch<CoreEvent>; online: boolean; networkOnline: boolean; page: PageId; setPage: (page: PageId) => void
+  activeConversationId: string | undefined; setActiveConversationId: (id: string | undefined) => void
+  activeMessages: Message[]; setActiveMessages: Dispatch<SetStateAction<Message[]>>
+  activeDraft: string; setActiveDraft: (draft: string) => void
+  activeConversation: Conversation | undefined; setActiveConversation: (conversation: Conversation | undefined) => void
 }
 const AppContext = createContext<AppContextValue | null>(null)
 
@@ -27,6 +31,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUserState(next)
   }, [])
   const [coreState, dispatchCore] = useReducer(coreReducer, 'BOOTING'); const [page, setPage] = useState<PageId>('home')
+  const [activeConversationId, setActiveConversationId] = useState<string>(); const [activeMessages, setActiveMessages] = useState<Message[]>([]); const [activeDraft, setActiveDraft] = useState(''); const [activeConversation, setActiveConversation] = useState<Conversation>()
   const refreshSession = useCallback(async () => {
     try { const session = await authApi.session(); setUser(session.user); setSessionReachable(true); return true }
     catch { setSessionReachable(false); setUser(null); return false }
@@ -69,7 +74,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     document.documentElement.dataset.locale = settings.locale
     document.documentElement.lang = settings.locale
   }, [settings])
-  const value = useMemo(() => ({ user, sessionReady, sessionReachable, setUser, refreshSession, retryConnection, settings, updateSettings, coreState, dispatchCore, online, networkOnline: browserOnline, page, setPage }), [user, sessionReady, sessionReachable, refreshSession, retryConnection, settings, updateSettings, coreState, online, browserOnline, page])
+  const value = useMemo(() => ({ user, sessionReady, sessionReachable, setUser, refreshSession, retryConnection, settings, updateSettings, coreState, dispatchCore, online, networkOnline: browserOnline, page, setPage, activeConversationId, setActiveConversationId, activeMessages, setActiveMessages, activeDraft, setActiveDraft, activeConversation, setActiveConversation }), [user, sessionReady, sessionReachable, refreshSession, retryConnection, settings, updateSettings, coreState, online, browserOnline, page, activeConversationId, activeMessages, activeDraft, activeConversation])
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }
 export function useApp(): AppContextValue { const value = useContext(AppContext); if (!value) throw new Error('useApp must be used inside AppProvider'); return value }
