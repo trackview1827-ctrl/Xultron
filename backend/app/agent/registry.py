@@ -89,6 +89,7 @@ class ToolRegistry:
         allow_side_effects: bool = False,
         granted_permissions: set[str] | frozenset[str] = frozenset(),
         approved_risk_levels: set[str] | frozenset[str] = frozenset(),
+        enforce_timeout: bool = True,
     ) -> Any:
         spec = self.get(name)
         if spec is None:
@@ -100,10 +101,12 @@ class ToolRegistry:
         missing = set(spec.required_permissions) - set(granted_permissions)
         if missing:
             raise PermissionError(f"missing tool permissions: {', '.join(sorted(missing))}")
-        if spec.risk_level in {"high", "critical"} and spec.risk_level not in approved_risk_levels:
+        if spec.side_effect and spec.risk_level in {"high", "critical"} and spec.risk_level not in approved_risk_levels:
             raise PermissionError(f"risk approval required for {spec.risk_level} tool: {name}")
         if spec.handler is None:
             raise RuntimeError(f"tool has no handler: {name}")
+        if not enforce_timeout:
+            return spec.handler(payload)
         executor = ThreadPoolExecutor(max_workers=1)
         future = executor.submit(spec.handler, payload)
         try:

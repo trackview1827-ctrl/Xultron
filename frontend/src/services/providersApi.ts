@@ -16,4 +16,6 @@ export const providersApi = {
   test: (id: string) => apiRequest<ProviderTest>(`/providers/${encodeURIComponent(id)}/test`, { method: 'POST', body: '{}' }),
   models: (id: string) => apiRequest<{ models: ModelOption[] }>(`/providers/${encodeURIComponent(id)}/models`, { method: 'POST', body: '{}' }),
   startOpenAIOAuth: (id: string) => apiRequest<{ authorizationUrl: string; redirectUri: string }>(`/providers/${encodeURIComponent(id)}/oauth/openai/start`, { method: 'POST', body: '{}' }),
+  oauthStatus: (id: string) => apiRequest<{ supported: boolean; connected: boolean; authMethod: string | null; accountId: string | null; expiresAt: number | null }>(`/providers/${encodeURIComponent(id)}/oauth/status`),
+  disconnectOAuth: (id: string) => apiRequest<{ ok: boolean }>(`/providers/${encodeURIComponent(id)}/oauth`, { method: 'DELETE' }),
 }

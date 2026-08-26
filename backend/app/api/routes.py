@@ -13,7 +13,7 @@ from app.security.validation import enum_field, string_field
 from app.services.auth import cleanup_expired, create_guest, ensure_csrf, login, logout, register
 from app.services.chat import create_conversation, handle_message, owned_conversation
 from app.services.providers import adapter_call, create_provider, default_provider, update_provider, _owned as owned_provider
-from app.services.openai_oauth import callback as openai_oauth_callback, start as start_openai_oauth
+from app.services.openai_oauth import callback as openai_oauth_callback, clear as clear_openai_oauth, start as start_openai_oauth
 from app.services.settings import get_settings, patch_settings
 from app.services.verification import tool_descriptions
 from app.services.tasks import claim_task, create_task, execute_task, owned_task, record_event, renew_task, retry_task, update_task
@@ -378,6 +378,26 @@ def providers_openai_oauth_start(provider_id):
     if provider.kind != "ai" or provider.adapter != "openai_codex_oauth":
         raise APIError("oauth_not_supported", "This provider is not configured for Codex OAuth.", 422)
     return ok(start_openai_oauth(provider))
+
+
+@api_bp.get("/providers/<provider_id>/oauth/status")
+def provider_oauth_status(provider_id):
+    user = require_user()
+    provider = owned_provider(provider_id, user.id)
+    supported = provider.adapter == "openai_codex_oauth" and provider.kind == "ai"
+    credential = provider.credential
+    connected = bool(supported and credential and credential.encrypted_access_token)
+    return ok({"supported": supported, "connected": connected, "authMethod": "codex_oauth" if connected else None, "accountId": credential.oauth_account_id if connected else None, "expiresAt": credential.oauth_expires_at if connected else None})
+
+
+@api_bp.delete("/providers/<provider_id>/oauth")
+def provider_oauth_disconnect(provider_id):
+    user = require_user()
+    provider = owned_provider(provider_id, user.id)
+    if provider.adapter != "openai_codex_oauth" or provider.kind != "ai":
+        raise APIError("oauth_not_supported", "OAuth disconnect is not supported for this provider.", 422)
+    clear_openai_oauth(provider)
+    return ok({"ok": True})
 
 
 @api_bp.get("/providers/oauth/openai/callback")

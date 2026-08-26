@@ -128,6 +128,8 @@ def execute(plan: VerificationPlan, question: str, settings: dict | None = None)
         return _verification_registry().execute(
             plan.tool,
             {"operation": plan.operation, "query": plan.query, "question": question, "reason": plan.reason, "settings": settings or {}},
+            granted_permissions={"runtime", "web", "project", "calculate", "reasoning"},
+            enforce_timeout=False,
         )
     except (ArithmeticError, OSError, SyntaxError, ValueError, KeyError, RuntimeError, PermissionError, requests.RequestException) as exc:
         current_app.logger.warning("Verification failed tool=%s error_type=%s", plan.tool, type(exc).__name__)
@@ -207,8 +209,6 @@ def _runtime_status(question: str = "", operation: str | None = None, settings: 
     now_utc = datetime.now(UTC)
     if operation == "clock" or _is_clock_question(question.casefold()):
         timezone_name = str((settings or {}).get("timeZone") or "UTC")
-        if timezone_name not in TIME_ZONE_COUNTRIES:
-            timezone_name = "UTC"
         try:
             local = now_utc.astimezone(ZoneInfo(timezone_name))
         except ZoneInfoNotFoundError:
@@ -220,7 +220,7 @@ def _runtime_status(question: str = "", operation: str | None = None, settings: 
             "date": local.date().isoformat(),
             "time": local.strftime("%H:%M:%S"),
             "timezone": timezone_name,
-            "country": TIME_ZONE_COUNTRIES[timezone_name],
+            "country": TIME_ZONE_COUNTRIES.get(timezone_name, "Unknown"),
             "utcOffset": local.strftime("%z"),
         }
         return VerificationResult(True, "runtime:clock", "GMT/UTC time was converted to the configured country time zone.", json.dumps(evidence, ensure_ascii=False, indent=2))
