@@ -225,6 +225,8 @@ class ProviderCredential(TimestampMixin, db.Model):
 
 
 DEFAULT_SETTINGS = {
+    "personaName": "Xultron",
+    "customInstructions": "",
     "locale": "en",
     "lowDataMode": False,
     "memoryEnabled": True,

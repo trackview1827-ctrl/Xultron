@@ -42,7 +42,7 @@ BOOLEAN_SETTINGS = {
     "analytics",
     "reducedMotion",
 }
-STRING_SETTINGS = {"preferredVoice"}
+STRING_SETTINGS = {"preferredVoice", "personaName", "customInstructions"}
 ENUM_SETTINGS = {
     "locale": LOCALES,
     "sttLanguage": STT_LANGUAGES,
@@ -87,7 +87,7 @@ def _validate_patch(data: dict) -> dict:
             patch[key] = bool_field(data, key)
     for key in STRING_SETTINGS:
         if key in data:
-            patch[key] = string_field(data, key, max_len=120, default="") or ""
+            patch[key] = string_field(data, key, max_len=120 if key == "personaName" else 4000, default="") or ""
     for key, allowed in ENUM_SETTINGS.items():
         if key in data:
             patch[key] = enum_field(data, key, allowed, required=True)

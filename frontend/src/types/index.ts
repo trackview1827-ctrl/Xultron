@@ -25,6 +25,7 @@ export interface ProviderTest { ok: boolean; latencyMs: number; message: string 
 export interface MemoryItem { id: string; title: string; content: string; category: MemoryCategory; createdAt: string; updatedAt: string }
 export interface Device { id: string; name: string; deviceType: string; status: string; metadata: Record<string, unknown>; createdAt: string; updatedAt: string }
 export interface AppSettings {
+  personaName: string; customInstructions: string;
   locale: string; lowDataMode: boolean; memoryEnabled: boolean; conversationHistory: boolean; voiceHistory: boolean;
   saveAudio: boolean; analytics: boolean; reducedMotion: boolean; preferredVoice: string; sttLanguage: string; timeZone: string;
   theme: 'dark' | 'darker'; accent: 'cyan' | 'violet'; textScale: 'compact' | 'standard' | 'large';

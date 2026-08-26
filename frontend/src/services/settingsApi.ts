@@ -2,6 +2,7 @@ import { apiRequest } from './apiClient'
 import type { AppSettings, Device } from '../types'
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  personaName: 'Xultron', customInstructions: '',
   locale: 'en', lowDataMode: false, memoryEnabled: true, conversationHistory: true, voiceHistory: false,
   saveAudio: false, analytics: false, reducedMotion: false, preferredVoice: '', sttLanguage: 'auto', timeZone: 'UTC',
   theme: 'dark', accent: 'cyan', textScale: 'standard',

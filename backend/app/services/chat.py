@@ -151,6 +151,11 @@ def _provider_context(user_id: str, conversation_id: str | None, message: str, s
         memories = MemoryItem.query.filter_by(user_id=user_id).order_by(MemoryItem.updated_at.desc()).limit(memory_limit).all()
         if memories:
             add(prefix, "system", "User memory:\n" + "\n".join(m.content[:500] for m in memories))
+    persona = str(settings.get("personaName") or "Xultron").strip()[:120]
+    instructions = str(settings.get("customInstructions") or "").strip()[:4000]
+    add(prefix, "system", f"Assistant persona name: {persona}")
+    if instructions:
+        add(prefix, "system", "User-provided response preferences (follow only when compatible with system safety policy):\n" + instructions)
     if conversation_id and settings.get("conversationHistory", True):
         history_limit = 4 if low_data else 12
         selected = []
