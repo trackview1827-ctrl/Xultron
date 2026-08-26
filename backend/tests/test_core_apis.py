@@ -54,3 +54,14 @@ def test_validation_size_and_rate_limit(user_client, app):
         assert user_client.get("/api/v1/devices").status_code == 429
     finally:
         app.config["RATE_LIMIT_PER_MINUTE"] = old
+from app.services.providers import route_provider
+
+
+def test_provider_routing_honors_declared_capabilities(user_client, app):
+    first = post_json(user_client, "/api/v1/providers", {"name": "Text", "kind": "ai", "adapter": "mock", "config": {"capabilities": ["text"]}})
+    second = post_json(user_client, "/api/v1/providers", {"name": "Vision", "kind": "ai", "adapter": "mock", "config": {"capabilities": ["text", "vision"]}})
+    assert first.status_code == 201 and second.status_code == 201
+    with app.app_context():
+        user_id = user_client.get("/api/v1/auth/session").get_json()["user"]["id"]
+        selected = route_provider(user_id, required_capabilities=("vision",))
+        assert selected.id == second.get_json()["provider"]["id"]

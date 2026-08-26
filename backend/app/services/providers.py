@@ -18,6 +18,7 @@ from app.security.validation import (
 ADAPTERS = {"openai_compatible", "openai_codex_oauth", "anthropic", "gemini", "custom_http", "local_http", "mock"}
 AI_ONLY_ADAPTERS = {"openai_codex_oauth", "anthropic", "gemini"}
 PUBLIC_CONFIG_KEYS = {
+    "capabilities",
     "reply",
     "transcript",
     "voice",
@@ -86,6 +87,9 @@ def validate_payload(data, partial=False):
 
 
 def _validate_public_config(config: dict):
+    if "capabilities" in config:
+        if not isinstance(config["capabilities"], list) or any(not isinstance(item, str) or len(item) > 80 for item in config["capabilities"]):
+            raise APIError("validation_failed", "config.capabilities must be a list of bounded strings.", 422)
     for key in {"reply", "transcript", "voice", "voiceId", "language", "responsePath", "textPath"} & set(config):
         if not isinstance(config[key], str) or len(config[key]) > 2000:
             raise APIError("validation_failed", f"config.{key} must be a bounded string.", 422)
@@ -143,6 +147,39 @@ def _clear_other_defaults(provider):
 
 def default_provider(user_id, kind):
     return Provider.query.filter_by(user_id=user_id, kind=kind, enabled=True, is_default=True).first() or Provider.query.filter_by(user_id=user_id, kind=kind, enabled=True).order_by(Provider.created_at.asc()).first()
+
+
+def route_provider(user_id, kind="ai", required_capabilities=()):
+    """Choose an enabled provider matching declared capabilities, preferring default."""
+    required = set(required_capabilities)
+    candidates = Provider.query.filter_by(user_id=user_id, kind=kind, enabled=True).order_by(Provider.is_default.desc(), Provider.created_at.asc()).all()
+    for provider in candidates:
+        capabilities = set((provider.config or {}).get("capabilities", []))
+        if required <= capabilities:
+            return provider
+    return None
+
+
+def routed_call(user_id, kind, method, *args, required_capabilities=()):
+    """Call the best matching provider, falling back to other enabled providers on transient failure."""
+    required = set(required_capabilities)
+    candidates = Provider.query.filter_by(user_id=user_id, kind=kind, enabled=True).order_by(Provider.is_default.desc(), Provider.created_at.asc()).all()
+    if not candidates:
+        raise APIError("provider_unavailable", "No enabled provider is configured.", 503, True)
+    last_error = None
+    for provider in candidates:
+        capabilities = set((provider.config or {}).get("capabilities", []))
+        if not required <= capabilities:
+            continue
+        try:
+            return adapter_call(provider, method, *args), provider
+        except APIError as exc:
+            last_error = exc
+            if not exc.retryable:
+                raise
+    if last_error:
+        raise last_error
+    raise APIError("provider_unavailable", "No provider supports the requested capabilities.", 503, False)
 
 
 def adapter_call(provider, method, *args):
