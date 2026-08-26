@@ -39,8 +39,10 @@ def approve_plan(task, user_id):
         raise APIError("plan_required", "Generate a plan before approving it.", 409)
     if task.status in {"completed", "failed", "cancelled"}:
         raise APIError("task_unavailable", "Terminal tasks cannot be approved.", 409)
+    plan = dict(plan)
     plan["status"] = "approved"
     plan["requiresApproval"] = False
+    plan["steps"] = [dict(step) for step in plan.get("steps", [])]
     result = dict(task.result or {}) if isinstance(task.result, dict) else {}
     result["plan"] = plan
     task.result = result

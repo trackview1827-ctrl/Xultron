@@ -57,3 +57,18 @@ def test_lease_can_be_renewed_only_by_current_worker(user_client):
     assert any(event["type"] == "lease_renewed" for event in renewed.get_json()["task"]["result"]["events"])
     assert post_json(user_client, f"/api/v1/tasks/{task['id']}/renew", {"workerId": "worker-b"}).status_code == 409
     assert post_json(user_client, f"/api/v1/tasks/{task['id']}/renew", {"workerId": "worker-a", "leaseSeconds": 3601}).status_code == 422
+
+
+def test_worker_executes_only_approved_plan_and_marks_steps_complete(user_client):
+    task = post_json(user_client, "/api/v1/tasks", {"title": "Plan", "instruction": "planned work"}).get_json()["task"]
+    assert post_json(user_client, f"/api/v1/tasks/{task['id']}/plan", {}).status_code == 200
+    post_json(user_client, f"/api/v1/tasks/{task['id']}/claim", {"workerId": "worker-a"})
+    blocked = post_json(user_client, f"/api/v1/tasks/{task['id']}/execute", {"workerId": "worker-a"})
+    assert blocked.status_code == 409
+    assert blocked.get_json()["error"]["code"] == "plan_not_approved"
+    assert post_json(user_client, f"/api/v1/tasks/{task['id']}/plan/approve", {}).status_code == 200
+    done = post_json(user_client, f"/api/v1/tasks/{task['id']}/execute", {"workerId": "worker-a"})
+    assert done.status_code == 200, done.get_json()
+    result = done.get_json()["task"]["result"]
+    assert result["plan"]["status"] == "completed"
+    assert all(step["status"] == "completed" for step in result["plan"]["steps"])

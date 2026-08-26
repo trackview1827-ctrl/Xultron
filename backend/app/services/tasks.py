@@ -92,8 +92,22 @@ def execute_task(task, worker_id):
         raise APIError("task_not_claimed", "Worker does not hold the task lease.", 409)
     if task.lease_expires_at and task.lease_expires_at <= utcnow():
         raise APIError("lease_expired", "Task lease has expired.", 409)
+    plan = (task.result or {}).get("plan") if isinstance(task.result, dict) else None
+    if plan and plan.get("status") != "approved":
+        raise APIError("plan_not_approved", "The task plan must be approved before execution.", 409)
     task.status = "completed"
-    task.result = {"workerId": worker_id, "instruction": task.instruction, "deterministic": True}
+    result = dict(task.result or {}) if isinstance(task.result, dict) else {}
+    result.update({"workerId": worker_id, "instruction": task.instruction, "deterministic": True})
+    if plan:
+        plan["status"] = "completed"
+        for step in plan.get("steps", []):
+            step["status"] = "completed"
+        result["plan"] = plan
+    if plan:
+        task.result = result
+        record_event(task, "execution_completed", {"workerId": worker_id, "planApproved": True})
+    else:
+        task.result = {"workerId": worker_id, "instruction": task.instruction, "deterministic": True}
     task.lease_expires_at = None
     task.updated_at = utcnow()
     db.session.commit()
