@@ -1,6 +1,6 @@
 # Xultron validation report
 
-Date: 2026-08-25
+Date: 2026-08-26
 
 ## Release result
 
@@ -14,16 +14,17 @@ then exercises the public HTTP interface with sentinel credentials.
 make check
 ```
 
-This command completed all eight stages:
+This command completed all nine stages:
 
 1. Clean tracked-source profile check.
-2. Backend pytest suite.
-3. Backend bytecode compilation.
-4. Strict frontend TypeScript checking.
-5. Frontend Vitest suite.
-6. Vite production build.
-7. Manifest, service worker and icon artifact checks.
-8. Isolated production HTTP smoke test.
+2. Xultron CLI unit tests and npm package dry run.
+3. Backend pytest suite.
+4. Backend bytecode compilation.
+5. Strict frontend TypeScript checking.
+6. Frontend Vitest suite.
+7. Vite production build.
+8. Manifest, service worker and icon artifact checks.
+9. Isolated production HTTP smoke test.
 
 Additional targeted checks included `git diff --check`, tracked-secret scans,
 frontend storage/raw-HTML scans, production sourcemap inspection and fresh/upgrade
@@ -31,6 +32,10 @@ Alembic migration tests.
 
 ## Passed evidence
 
+- Xultron CLI: **3 Node tests passed** covering argument parsing, runtime doctor,
+  isolated install/update, dirty worktrees, unrelated directories and non-main branches.
+- npm package: dry-run contains only the intended CLI, README and package metadata. A
+  packed tarball installed into a fresh consumer project exposes `xultron 1.0.0`.
 - Backend: **56 tests passed**.
 - Frontend: **61 tests passed across 16 files**.
 - Strict TypeScript: passed.
@@ -72,6 +77,10 @@ Alembic migration tests.
   prevent prior operations from overwriting current state.
 - The PWA initially cached only stable shell paths. The Vite build now injects exact
   hashed bundles into the install-time service worker manifest.
+- A standard `#!/usr/bin/env node` package launcher failed on Termux because Android
+  does not provide `/usr/bin/env`. The package now uses a zero-network postinstall step
+  that rewrites only the installed launcher to the active `process.execPath`; a fresh
+  npm consumer install and direct binary execution pass on Termux.
 - Direct shell-script execution failed under Termux because Android lacks the
   conventional `/usr/bin/env` path. Make targets now invoke the scripts through
   `bash` and the complete gate passes on Termux.

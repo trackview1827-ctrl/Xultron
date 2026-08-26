@@ -96,6 +96,54 @@ Geliştirme ortamında uygulama sırları yoksa backend, Git dışında kalan
 `backend/instance` dizininde kalıcı ve rastgele yerel sırlar üretir. Üretimde
 `SECRET_KEY` ve `ENCRYPTION_KEY` açıkça sağlanmalıdır.
 
+## NPM ve npx ile tek komut kurulum
+
+Xultron CLI, npm paketini GitHub deposundan indirip gerçek uygulamayı varsayılan
+olarak `~/.xultron/app` dizinine kurar. NPM Registry yayını beklenmeden doğrudan
+GitHub üzerinden kullanılabilir:
+
+```bash
+# Gereksinimleri kontrol et
+npx --yes github:trackview1827-ctrl/Xultron doctor
+
+# Xultron'u kur
+npx --yes github:trackview1827-ctrl/Xultron install
+
+# Tek-origin arayüzü http://127.0.0.1:5000 üzerinde başlat
+npx --yes github:trackview1827-ctrl/Xultron start
+
+# Daha sonra güvenli fast-forward güncellemesi yap
+npx --yes github:trackview1827-ctrl/Xultron update
+```
+
+Farklı bir kurulum klasörü için her komuta `--dir` verilebilir:
+
+```bash
+npx --yes github:trackview1827-ctrl/Xultron install --dir "$HOME/apps/Xultron"
+```
+
+CLI, dolu ve ilgisiz bir klasörün üzerine yazmaz. `update`, commit edilmemiş yerel
+değişiklik varsa durur ve yalnızca `origin/main` dalına fast-forward uygular. Normal
+kurulum Python sanal ortamını, backend paketlerini, frontend paketlerini ve veritabanı
+migrasyonlarını hazırlar. Termux'ta önce şu komutu çalıştır:
+
+```bash
+pkg install git nodejs python python-cryptography
+```
+
+Kök npm paketi NPM Registry'ye `npm publish` ile ayrıca yayımlandıktan sonra daha kısa
+komutlar kullanılabilir:
+
+```bash
+npx xultron-ai-cli install
+npm install --global xultron-ai-cli
+xultron start
+```
+
+Registry yayını GitHub kurulumundan ayrıdır ve npm hesabı ile paket yayınlama yetkisi
+gerektirir. Paket henüz Registry'ye yüklenmediyse GitHub tabanlı `npx` komutlarını
+kullan.
+
 ## Geliştirme sunucuları
 
 İki terminal kullan:

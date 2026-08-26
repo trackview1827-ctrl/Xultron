@@ -8,6 +8,7 @@ not complete until its applicable checks have been executed and recorded.
 | Area | Acceptance behavior | Primary check |
 | --- | --- | --- |
 | Startup | Backend and frontend start from documented clean setup | install, migration, build and smoke commands |
+| CLI install | GitHub-hosted npm package exposes `xultron`, clones only the expected repository and fails closed on dirty, unrelated or non-main updates | Node tests, packed-package consumer install and public `npx` check |
 | Authentication | Register, login, logout and guest mode work | backend API tests plus frontend flow test |
 | Session invalidation | A logged-out or expired session cannot be reused | backend integration test |
 | Isolation | User B and Guest cannot read or mutate User A resources | direct API IDOR matrix |
@@ -20,6 +21,17 @@ not complete until its applicable checks have been executed and recorded.
 | Voice | Permission, empty/large audio, STT and TTS success/failure have recoverable UX | API tests plus browser/manual checks |
 | PWA | Manifest, service worker, offline shell and standalone metadata are valid | build artifact checks plus browser/manual checks |
 | Mobile | Small phone layout, safe areas, keyboard and touch targets work | responsive browser/manual checks |
+
+## CLI installation and updates
+
+- `xultron doctor` requires supported Git, Node.js, npm and Python versions.
+- The default install location is `~/.xultron/app`; `--dir` selects an explicit path.
+- Install never overwrites a non-empty directory that is not the expected Xultron checkout.
+- The repository remote must match the canonical Xultron GitHub repository.
+- Update requires the `main` branch, a clean worktree and a fast-forward-only merge.
+- The npm package contains only the CLI, package metadata and public README.
+- The installed binary runs on Termux and standard Node.js environments.
+- A packed-package consumer test and the public GitHub `npx` command must both pass.
 
 ## Authentication edge cases
 

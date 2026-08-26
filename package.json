@@ -1,0 +1,39 @@
+{
+  "name": "xultron-ai-cli",
+  "version": "1.0.0",
+  "description": "Zero-dependency installer and launcher for Xultron",
+  "type": "module",
+  "bin": {
+    "xultron": "cli/xultron.mjs"
+  },
+  "files": [
+    "cli/xultron.mjs",
+    "cli/xultron-lib.mjs",
+    "cli/patch-shebang.mjs",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node cli/patch-shebang.mjs",
+    "test": "node --test cli/*.test.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trackview1827-ctrl/Xultron.git"
+  },
+  "homepage": "https://github.com/trackview1827-ctrl/Xultron",
+  "bugs": {
+    "url": "https://github.com/trackview1827-ctrl/Xultron/issues"
+  },
+  "keywords": [
+    "xultron",
+    "personal-ai",
+    "pwa",
+    "installer",
+    "termux"
+  ],
+  "license": "UNLICENSED"
+}
