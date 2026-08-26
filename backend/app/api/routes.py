@@ -5,7 +5,7 @@ from flask import Blueprint, Response, current_app, g, jsonify, request, session
 from werkzeug.utils import secure_filename
 
 from app.extensions import db
-from app.models import Conversation, Device, DeviceCommand, DeviceEvent, MemoryItem, Message, Provider, Session, User, utcnow
+from app.models import Conversation, Device, DeviceCommand, DeviceEvent, MemoryItem, Message, Provider, Session, Task, User, utcnow
 from app.security.errors import APIError
 from app.security.guards import require_json, require_user
 from app.security.validation import enum_field, string_field
@@ -15,6 +15,7 @@ from app.services.providers import adapter_call, create_provider, default_provid
 from app.services.openai_oauth import callback as openai_oauth_callback, start as start_openai_oauth
 from app.services.settings import get_settings, patch_settings
 from app.services.verification import tool_descriptions
+from app.services.tasks import create_task, owned_task, update_task
 
 api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 MEMORY_CATEGORIES = {"personal", "preferences", "important", "temporary"}
@@ -202,6 +203,30 @@ def list_tools():
     """Expose capability metadata without exposing credentials or handlers."""
     require_user()
     return ok({"tools": tool_descriptions()})
+
+
+@api_bp.get("/tasks")
+def list_tasks():
+    user = require_user()
+    limit = query_limit(20, 100)
+    rows = Task.query.filter_by(user_id=user.id).order_by(Task.updated_at.desc()).limit(limit).all()
+    return ok({"tasks": [task.to_public() for task in rows]})
+
+
+@api_bp.post("/tasks")
+def post_task():
+    return ok({"task": create_task(require_user().id, require_json()).to_public()}, 201)
+
+
+@api_bp.get("/tasks/<task_id>")
+def get_task(task_id):
+    return ok({"task": owned_task(task_id, require_user().id).to_public()})
+
+
+@api_bp.patch("/tasks/<task_id>")
+def patch_task(task_id):
+    task = owned_task(task_id, require_user().id)
+    return ok({"task": update_task(task, require_json()).to_public()})
 
 
 @api_bp.post("/providers")

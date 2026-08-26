@@ -10,6 +10,7 @@ from .core import (
     Provider,
     ProviderCredential,
     Session,
+    Task,
     User,
     UserSettings,
     new_id,
@@ -19,6 +20,7 @@ from .core import (
 __all__ = [
     "User",
     "Session",
+    "Task",
     "Conversation",
     "Message",
     "IdempotencyKey",

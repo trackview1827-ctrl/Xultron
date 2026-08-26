@@ -113,6 +113,23 @@ class Message(TimestampMixin, db.Model):
         }
 
 
+class Task(TimestampMixin, db.Model):
+    """Durable unit of agent work and its observable lifecycle state."""
+    __tablename__ = "tasks"
+    id = db.Column(db.String(40), primary_key=True, default=lambda: new_id("tsk"))
+    user_id = db.Column(db.String(40), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = db.Column(db.String(160), nullable=False)
+    instruction = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="pending", index=True)
+    result = db.Column(db.JSON, nullable=True)
+    error = db.Column(db.String(1000), nullable=True)
+
+    def to_public(self):
+        return {"id": self.id, "title": self.title, "instruction": self.instruction,
+                "status": self.status, "result": self.result, "error": self.error,
+                "createdAt": self.created_at.isoformat() + "Z", "updatedAt": self.updated_at.isoformat() + "Z"}
+
+
 class IdempotencyKey(db.Model):
     __tablename__ = "idempotency_keys"
     id = db.Column(db.String(40), primary_key=True, default=lambda: new_id("idem"))
