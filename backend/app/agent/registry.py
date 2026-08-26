@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Any, Callable, Mapping
 
 
@@ -103,4 +104,12 @@ class ToolRegistry:
             raise PermissionError(f"risk approval required for {spec.risk_level} tool: {name}")
         if spec.handler is None:
             raise RuntimeError(f"tool has no handler: {name}")
-        return spec.handler(payload)
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(spec.handler, payload)
+        try:
+            return future.result(timeout=spec.timeout_seconds)
+        except FutureTimeoutError as exc:
+            future.cancel()
+            raise TimeoutError(f"tool execution timed out after {spec.timeout_seconds}s: {name}") from exc
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)

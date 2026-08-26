@@ -1,5 +1,6 @@
 from app.agent.registry import ToolRegistry, ToolSpec
 from app.services.verification import VerificationPlan, _verification_registry, execute
+import time
 
 
 def test_registry_exposes_metadata_for_read_only_capabilities(app):
@@ -57,6 +58,19 @@ def test_registry_requires_declared_permissions_and_risk_approval():
     else:
         raise AssertionError("high-risk tools must require explicit risk approval")
     assert registry.execute("files.delete", {}, granted_permissions={"filesystem.write"}, approved_risk_levels={"high"}, **kwargs) == {"deleted": True}
+
+
+def test_registry_enforces_tool_timeout():
+    registry = ToolRegistry()
+    registry.register(ToolSpec(name="slow", description="Slow", input_schema={}, output_schema={}, timeout_seconds=1, handler=lambda payload: time.sleep(2)))
+    started = time.monotonic()
+    try:
+        registry.execute("slow", {})
+    except TimeoutError as exc:
+        assert "timed out" in str(exc)
+    else:
+        raise AssertionError("slow tools must be interrupted at their declared timeout")
+    assert time.monotonic() - started < 1.5
 
 
 def test_verification_dispatches_through_registered_calculator(app):
