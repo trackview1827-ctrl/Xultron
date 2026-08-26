@@ -72,3 +72,12 @@ def test_worker_executes_only_approved_plan_and_marks_steps_complete(user_client
     result = done.get_json()["task"]["result"]
     assert result["plan"]["status"] == "completed"
     assert all(step["status"] == "completed" for step in result["plan"]["steps"])
+
+
+def test_task_events_can_be_streamed_as_sse(user_client):
+    task = post_json(user_client, "/api/v1/tasks", {"title": "Events", "instruction": "observe"}).get_json()["task"]
+    response = user_client.get(f"/api/v1/tasks/{task['id']}/events/stream")
+    assert response.status_code == 200
+    assert response.mimetype == "text/event-stream"
+    assert "event: task_event" in response.get_data(as_text=True)
+    assert "event: done" in response.get_data(as_text=True)

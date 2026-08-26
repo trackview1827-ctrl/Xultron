@@ -287,6 +287,23 @@ def task_events_route(task_id):
     return ok({"events": (task.result or {}).get("events", [])})
 
 
+@api_bp.get("/tasks/<task_id>/events/stream")
+def task_events_stream_route(task_id):
+    """Stream the currently recorded task observations as server-sent events."""
+    task = owned_task(task_id, require_user().id)
+    events = (task.result or {}).get("events", []) if isinstance(task.result, dict) else []
+
+    def events_stream():
+        for item in events:
+            yield _sse("task_event", item)
+        yield _sse("done", {"taskId": task.id, "count": len(events)})
+
+    response = Response(stream_with_context(events_stream()), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache, no-transform"
+    response.headers["X-Accel-Buffering"] = "no"
+    return response
+
+
 @api_bp.post("/providers")
 def providers_create():
     user = require_user()
