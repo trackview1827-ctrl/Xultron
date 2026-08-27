@@ -75,7 +75,8 @@ def test_minor_typos_still_select_the_expected_safe_intent(app):
         finally:
             app.config["TESTING"] = True
 
-    assert clock == VerificationPlan("runtime", "clock_disabled", reason="Automatic clock automation is disabled")
+    assert clock.tool == "web"
+    assert clock.query == "Saaat kac?"
     assert battery == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
     assert network == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
     assert terminal == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
@@ -208,13 +209,32 @@ def test_terminal_capability_is_bounded_read_only(app, monkeypatch):
     assert "bounded" in denied.summary.lower() or "unsupported" in denied.summary.lower()
 
 
-def test_clock_automation_is_disabled_and_current_questions_do_not_use_web(app):
+def test_current_clock_questions_use_web_and_legacy_runtime_clock_stays_disabled(app, monkeypatch):
+    page = b'<a class="result__a" href="https://time.is/">Time.is</a><div class="result__snippet">Current local time and date.</div>'
+
+    class Response:
+        status_code = 200
+        headers = {"Content-Length": str(len(page))}
+        encoding = "utf-8"
+
+        def iter_content(self, chunk_size=32768):
+            yield page
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("app.services.verification.requests.get", lambda *args, **kwargs: Response())
     with app.app_context():
         app.config["TESTING"] = False
+        app.config["VERIFICATION_WEB_ENABLED"] = True
         try:
             plan = deterministic_plan("Şu an saat kaç?")
-            result = execute(VerificationPlan("runtime", operation="clock"), "Şu an saat kaç?")
+            result = execute(plan, "Şu an saat kaç?")
+            legacy = execute(VerificationPlan("runtime", operation="clock"), "Şu an saat kaç?")
         finally:
             app.config["TESTING"] = True
-    assert plan == VerificationPlan("runtime", "clock_disabled", reason="Automatic clock automation is disabled")
-    assert result.verified is False
+    assert plan.tool == "web"
+    assert plan.query == "Şu an saat kaç?"
+    assert result.verified is True
+    assert result.tool == "web"
+    assert legacy.verified is False

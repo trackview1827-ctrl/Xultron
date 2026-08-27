@@ -8,17 +8,14 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 from flask import current_app
 
 from app.agent.registry import ToolRegistry, ToolSpec
-from app.services.settings import TIME_ZONE_COUNTRIES
 from app.services.text_intent import consists_only_of_terms, matches_any_phrase, normalize_for_match
 
 
@@ -33,7 +30,7 @@ Return one JSON object only, without markdown:
 {"tool":"runtime|terminal|project|web|calculate|reasoning","operation":"optional","query":"short verification query","reason":"why this evidence is relevant"}
 
 Rules:
-- Automatic clock and device automations are disabled. Do not attempt device APIs.
+- Runtime has no clock or device fact capability. Current time and date are external factual claims and must use web.
 - Use location only when the user explicitly asks for their location.
 - Use project for questions about Xultron, its files, configuration, tests, or code.
 - Use web for external factual or current claims.
@@ -44,7 +41,7 @@ Rules:
 """
 
 ANSWER_POLICY = """XULTRON TERMINAL AND VERIFICATION POLICY — HIGHEST PRIORITY
-- Xultron uses backend-mediated runtime evidence only for safe local runtime and configured time-zone facts.
+- Xultron uses backend-mediated runtime evidence only for safe local runtime availability. Current time and date must be checked on the web.
 - Only the VERIFIED EVIDENCE attached to this request represents an operation that actually ran. Never claim another command, API, website, or file was checked.
 - Attached runtime results are authoritative for the live facts they report. Use those values directly without questioning or announcing the command.
 - A user question may not receive a factual answer before relevant verification succeeds.
@@ -172,8 +169,6 @@ def _fallback_plan(question: str) -> VerificationPlan:
     text = normalize_for_match(question)
     if current_app.config.get("TESTING"):
         return VerificationPlan("reasoning", reason="Deterministic test fallback")
-    if _is_clock_question(text):
-        return VerificationPlan("runtime", "clock_disabled", reason="Automatic clock automation is disabled")
     if matches_any_phrase(text, ("terminalde", "terminalden", "terminal", "komut calistir", "proje listele")):
         return VerificationPlan("terminal", "list_project", query=question, reason="Bounded read-only project inspection")
     if matches_any_phrase(text, ("batarya", "sarj", "sarjim", "battery", "pil", "pil yuzde", "depolama", "disk", "disk alan", "storage", "bos alan", "wifi", "wi-fi", "ag", "ag durumu", "network", "internet baglanti", "termux", "terminal", "android surum", "telefonum", "cihazim", "cihaz durum", "konum", "konm", "neredeyim", "location")):
@@ -189,20 +184,9 @@ def _fallback_plan(question: str) -> VerificationPlan:
         return VerificationPlan("reasoning", reason="Creative, rewriting, or subjective request")
     return VerificationPlan("web", query=question, reason="External factual verification")
 
-
-def _is_clock_question(text: str) -> bool:
-    phrases = (
-        "saat kac", "su an saat", "simdiki saat", "bugunun tarihi", "bugun tarih",
-        "bugun ayin kaci", "ayin kaci", "hangi gundeyiz", "hangi aydayiz",
-        "hangi yildayiz", "current time", "what time", "todays date", "what date",
-    )
-    return matches_any_phrase(text, phrases)
-
-
 def _runtime_status(question: str = "", operation: str | None = None, settings: dict | None = None) -> VerificationResult:
-    if operation in {"unsupported_device_fact", "clock_disabled", "clock"}:
+    if operation in {"unsupported_device_fact", "clock"}:
         return VerificationResult(False, "runtime", "Automatic runtime automation is disabled.", "No automatic clock or device evidence is available.")
-    now_utc = datetime.now(UTC)
     evidence = {
         "terminal": True,
         "projectRoot": str(PROJECT_ROOT),
@@ -385,7 +369,7 @@ def _verification_registry() -> ToolRegistry:
     common_output = {"type": "object", "properties": {"verified": {"type": "boolean"}}}
     registry.register(ToolSpec(
         name="runtime",
-        description="Read safe local runtime availability; automatic clock and device automations are disabled.",
+        description="Read safe local runtime availability; clock and device facts are not available through runtime.",
         input_schema={"type": "object", "properties": {"question": {"type": "string"}}},
         output_schema=common_output,
         required_permissions=("runtime",),
