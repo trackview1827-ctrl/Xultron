@@ -1,5 +1,6 @@
 import base64
 import json
+import requests
 from urllib.parse import parse_qs, urlparse
 
 from app.models import Provider
@@ -37,15 +38,24 @@ def test_codex_oauth_start_returns_pkce_authorization_link(user_client):
 
     assert response.status_code == 200
     body = response.get_json()
-    assert body["redirectUri"].endswith("/api/v1/providers/oauth/openai/callback")
+    assert body["redirectUri"].endswith("/auth/callback")
     assert body["authorizationUrl"].startswith("https://auth.openai.com/oauth/authorize?")
     assert "code_challenge=" in body["authorizationUrl"]
     assert "state=" in body["authorizationUrl"]
     params = parse_qs(urlparse(body["authorizationUrl"]).query)
     assert params["response_type"] == ["code"]
+    assert params["redirect_uri"] == [body["redirectUri"]]
+    assert urlparse(body["redirectUri"]).hostname == "localhost"
+    assert urlparse(body["redirectUri"]).port in {1455, 1457}
     assert params["code_challenge_method"] == ["S256"]
-    assert params["scope"] == ["openid profile email offline_access"]
-    assert "connector" not in params["scope"][0]
+    assert params["scope"] == ["openid profile email offline_access api.connectors.read api.connectors.invoke"]
+    relay = requests.get(
+        body["redirectUri"].replace("localhost", "127.0.0.1") + "?code=relay-code&state=relay-state",
+        allow_redirects=False,
+        timeout=5,
+    )
+    assert relay.status_code == 302
+    assert relay.headers["Location"].endswith("/api/v1/providers/oauth/openai/callback?code=relay-code&state=relay-state")
 
 
 def test_codex_oauth_callback_encrypts_tokens_and_redirects(app, user_client, monkeypatch):
@@ -67,13 +77,20 @@ def test_codex_oauth_callback_encrypts_tokens_and_redirects(app, user_client, mo
                 "scope": "openid profile email offline_access",
             }
 
-    monkeypatch.setattr("app.services.openai_oauth.requests.post", lambda *args, **kwargs: FakeResponse())
+    exchange = {}
+
+    def fake_post(*args, **kwargs):
+        exchange.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.openai_oauth.requests.post", fake_post)
     response = user_client.get(
         f"/api/v1/providers/oauth/openai/callback?code=auth-code&state={pending['state']}"
     )
 
     assert response.status_code == 302
     assert "oauth=openai_success" in response.headers["Location"]
+    assert exchange["data"]["redirect_uri"] == pending["redirectUri"]
     with app.app_context():
         record = Provider.query.filter_by(id=provider["id"]).one()
         assert record.credential.encrypted_access_token

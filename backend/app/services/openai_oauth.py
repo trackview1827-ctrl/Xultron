@@ -8,8 +8,11 @@ import hashlib
 import html
 import json
 import secrets
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlencode
+from urllib.parse import urlparse
 
 import requests
 from flask import current_app, redirect, request, session
@@ -18,10 +21,62 @@ from app.extensions import db
 from app.models import Provider
 from app.security.crypto import encrypt_secret
 from app.security.errors import APIError
-# The public Codex client accepts the standard identity/offline scopes only.
-# Connector scopes are not valid for this authorization client and cause
-# auth.openai.com to reject the request before the consent screen.
-CODEX_SCOPES = "openid profile email offline_access"
+# Keep these aligned with the official Codex CLI authorization client. In particular,
+# the connector scopes are required by the current public Codex client registration.
+CODEX_SCOPES = "openid profile email offline_access api.connectors.read api.connectors.invoke"
+CODEX_CALLBACK_PATH = "/auth/callback"
+_RELAY_LOCK = threading.Lock()
+_RELAY_SERVERS: dict[int, ThreadingHTTPServer] = {}
+
+
+class _OAuthCallbackRelayHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        if parsed.path != CODEX_CALLBACK_PATH:
+            self.send_error(404)
+            return
+        target = self.server.backend_callback_uri
+        if parsed.query:
+            target += ("&" if "?" in target else "?") + parsed.query
+        self.send_response(302)
+        self.send_header("Location", target)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        threading.Thread(target=self.server.shutdown, daemon=True).start()
+
+    def log_message(self, *_args):
+        return None
+
+
+def _start_callback_relay() -> tuple[int, str]:
+    backend_callback_uri = current_app.config.get("OPENAI_OAUTH_BACKEND_CALLBACK_URI") or current_app.config.get("OPENAI_OAUTH_REDIRECT_URI")
+    parsed_backend = urlparse(backend_callback_uri)
+    if parsed_backend.scheme != "http" or parsed_backend.hostname not in {"127.0.0.1", "localhost"} or not parsed_backend.path:
+        raise APIError("oauth_callback_invalid", "Codex OAuth callback must point to the local Xultron backend.", 500)
+
+    ports = tuple(current_app.config.get("OPENAI_OAUTH_CALLBACK_PORTS", (1455, 1457)))
+    with _RELAY_LOCK:
+        for port in ports:
+            if port in _RELAY_SERVERS:
+                return port, f"http://localhost:{port}{CODEX_CALLBACK_PATH}"
+            try:
+                server = ThreadingHTTPServer(("127.0.0.1", port), _OAuthCallbackRelayHandler)
+            except OSError:
+                continue
+            server.backend_callback_uri = backend_callback_uri
+            _RELAY_SERVERS[port] = server
+
+            def serve(relay=server, relay_port=port):
+                try:
+                    relay.serve_forever(poll_interval=0.2)
+                finally:
+                    with _RELAY_LOCK:
+                        _RELAY_SERVERS.pop(relay_port, None)
+                    relay.server_close()
+
+            threading.Thread(target=serve, name=f"xultron-oauth-relay-{port}", daemon=True).start()
+            return port, f"http://localhost:{port}{CODEX_CALLBACK_PATH}"
+    raise APIError("oauth_callback_unavailable", "Codex OAuth için yerel callback portu kullanılamıyor.", 503)
 
 
 def _pkce() -> tuple[str, str]:
@@ -47,19 +102,20 @@ def _account_id(id_token: str | None) -> str | None:
 def start(provider: Provider) -> dict:
     verifier, challenge = _pkce()
     state = secrets.token_urlsafe(32)
-    redirect_uri = current_app.config["OPENAI_OAUTH_REDIRECT_URI"]
+    _port, redirect_uri = _start_callback_relay()
     session["openai_oauth_pending"] = {
         "state": state,
         "verifier": verifier,
         "providerId": provider.id,
         "userId": provider.user_id,
         "createdAt": int(time.time()),
+        "redirectUri": redirect_uri,
     }
     params = {
         "response_type": "code",
         "client_id": current_app.config["OPENAI_OAUTH_CLIENT_ID"],
         "redirect_uri": redirect_uri,
-        "scope": current_app.config.get("OPENAI_OAUTH_SCOPES", CODEX_SCOPES),
+        "scope": CODEX_SCOPES,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
         "state": state,
@@ -97,7 +153,7 @@ def callback():
                 "client_id": current_app.config["OPENAI_OAUTH_CLIENT_ID"],
                 "code": code,
                 "code_verifier": pending["verifier"],
-                "redirect_uri": current_app.config["OPENAI_OAUTH_REDIRECT_URI"],
+                "redirect_uri": pending.get("redirectUri") or "",
             },
             timeout=current_app.config.get("PROVIDER_TIMEOUT_SECONDS", 45),
             allow_redirects=False,
