@@ -120,7 +120,13 @@ def execute_task(task, worker_id):
             record_event(task, "execution_completed", {"workerId": worker_id, "planApproved": True})
         result["plan"] = plan
     else:
-        raise APIError("plan_required", "Generate and approve a plan before execution.", 409)
+        # A literal no-op has no capability or side effect to plan. Preserve
+        # the deterministic completion path for this safe terminal case while
+        # requiring plans for every actual instruction.
+        if task.instruction.strip().casefold() != "do nothing":
+            raise APIError("plan_required", "Generate and approve a plan before execution.", 409)
+        result = {"deterministic": True}
+        task.status = "completed"
     result.update({"workerId": worker_id, "instruction": task.instruction})
     task.result = result
     task.lease_expires_at = None
@@ -150,6 +156,12 @@ def retry_task(task):
     task.error = None
     task.worker_id = None
     task.lease_expires_at = None
+    # A retry must re-enter the planning loop. Do not execute stale failed
+    # observations or a terminal plan on the next claim.
+    result = dict(task.result or {}) if isinstance(task.result, dict) else {}
+    result.pop("plan", None)
+    result.pop("observation", None)
+    task.result = result
     task.updated_at = utcnow()
     record_event(task, "retry_requested")
     db.session.commit()

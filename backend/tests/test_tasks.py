@@ -74,6 +74,23 @@ def test_worker_executes_only_approved_plan_and_marks_steps_complete(user_client
     assert all(step["status"] == "completed" for step in result["plan"]["steps"])
 
 
+def test_retry_clears_stale_plan_and_observation_for_replanning(user_client, app):
+    task = post_json(user_client, "/api/v1/tasks", {"title": "Retry", "instruction": "2 + 3"}).get_json()["task"]
+    with app.app_context():
+        row = db.session.get(Task, task["id"])
+        row.status = "failed"
+        row.error = "temporary failure"
+        row.result = {"plan": {"status": "failed", "tool": "calculate"}, "observation": {"verified": False}}
+        db.session.commit()
+    retried = post_json(user_client, f"/api/v1/tasks/{task['id']}/retry", {})
+    assert retried.status_code == 200
+    assert "plan" not in retried.get_json()["task"]["result"]
+    assert "observation" not in retried.get_json()["task"]["result"]
+    replanned = post_json(user_client, f"/api/v1/tasks/{task['id']}/plan", {})
+    assert replanned.status_code == 200
+    assert replanned.get_json()["task"]["result"]["plan"]["status"] == "proposed"
+
+
 def test_task_events_can_be_streamed_as_sse(user_client):
     task = post_json(user_client, "/api/v1/tasks", {"title": "Events", "instruction": "observe"}).get_json()["task"]
     response = user_client.get(f"/api/v1/tasks/{task['id']}/events/stream")
