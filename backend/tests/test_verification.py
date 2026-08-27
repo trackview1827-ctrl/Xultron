@@ -2,7 +2,8 @@ import json
 from types import SimpleNamespace
 
 from app.services import chat
-from app.services.verification import VerificationPlan, deterministic_plan, execute, parse_plan
+from app.services.verification import VerificationPlan, deterministic_plan, direct_answer, execute, parse_plan
+from tests.conftest import patch_json, post_json
 
 
 def test_planner_rejects_removed_device_automation_tools(app):
@@ -76,7 +77,8 @@ def test_minor_typos_still_select_the_expected_safe_intent(app):
             app.config["TESTING"] = True
 
     assert clock.tool == "web"
-    assert clock.query == "Saaat kac?"
+    assert clock.operation == "saatkac_country"
+    assert clock.query == "Türkiye"
     assert battery == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
     assert network == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
     assert terminal == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
@@ -209,8 +211,144 @@ def test_terminal_capability_is_bounded_read_only(app, monkeypatch):
     assert "bounded" in denied.summary.lower() or "unsupported" in denied.summary.lower()
 
 
-def test_current_clock_questions_use_web_and_legacy_runtime_clock_stays_disabled(app, monkeypatch):
-    page = b'<a class="result__a" href="https://time.is/">Time.is</a><div class="result__snippet">Current local time and date.</div>'
+def test_country_clock_questions_use_saatkac_and_legacy_runtime_clock_stays_disabled(app, monkeypatch):
+    page = b'''<title>Almanya'da saat ka\xc3\xa7 - SaatKac.info.tr</title>
+    <time id="clock">19:03:03</time><script>uT="Almanya: "; zone_id='Europe/Berlin';</script>'''
+    requested = []
+
+    class Response:
+        encoding = "utf-8"
+
+        def __init__(self, status_code, body=b"", location=None):
+            self.status_code = status_code
+            self.body = body
+            self.headers = {"Content-Length": str(len(body))}
+            if location:
+                self.headers["Location"] = location
+
+        def iter_content(self, chunk_size=32768):
+            yield self.body
+
+        def close(self):
+            return None
+
+    def get(url, *args, **kwargs):
+        requested.append(url)
+        if len(requested) == 1:
+            return Response(302, location="/Germany")
+        return Response(200, page)
+
+    monkeypatch.setattr("app.services.verification.requests.get", get)
+    with app.app_context():
+        app.config["TESTING"] = False
+        app.config["VERIFICATION_WEB_ENABLED"] = True
+        try:
+            plan = deterministic_plan("Almanya'da saat kaç?")
+            result = execute(plan, "Almanya'da saat kaç?")
+            legacy = execute(VerificationPlan("runtime", operation="clock"), "Şu an saat kaç?")
+        finally:
+            app.config["TESTING"] = True
+    assert plan == VerificationPlan("web", "saatkac_country", query="almanya", reason="Country time from SaatKac.info.tr")
+    assert result.verified is True
+    assert result.tool == "web:saatkac"
+    evidence = json.loads(result.evidence)
+    assert evidence["source"] == "saatkac.info.tr"
+    assert evidence["sourceUrl"] == "https://saatkac.info.tr/Germany"
+    assert evidence["location"] == "Almanya"
+    assert evidence["currentTime"] == "19:03:03"
+    assert evidence["timeZone"] == "Europe/Berlin"
+    assert direct_answer(result, "tr") == "Almanya için saat 19:03:03."
+    assert requested == ["https://saatkac.info.tr/?q=almanya", "https://saatkac.info.tr/Germany"]
+    assert legacy.verified is False
+
+
+def test_country_clock_plans_extract_aliases_typos_and_default_country(app):
+    with app.app_context():
+        app.config["TESTING"] = False
+        try:
+            default = deterministic_plan("Şu an saat kaç?")
+            typo = deterministic_plan("Saaat kac Almnya?")
+            us = deterministic_plan("ABD'de saat kaç?")
+            korea = deterministic_plan("Güney Kore'de şu an saat kaç?")
+            date = deterministic_plan("Bugünün tarihi ne?")
+        finally:
+            app.config["TESTING"] = True
+    assert default == VerificationPlan("web", "saatkac_country", query="Türkiye", reason="Country time from SaatKac.info.tr")
+    assert typo.operation == "saatkac_country" and typo.query == "almnya"
+    assert us.query == "Amerika Birleşik Devletleri"
+    assert korea.query == "Güney Kore"
+    assert date.tool == "web" and date.operation is None
+
+
+def test_saatkac_country_source_fails_closed_on_unsafe_or_wrong_resolution(app, monkeypatch):
+    class Response:
+        encoding = "utf-8"
+
+        def __init__(self, status_code, body=b"", location=None):
+            self.status_code = status_code
+            self.body = body
+            self.headers = {"Content-Length": str(len(body))}
+            if location:
+                self.headers["Location"] = location
+
+        def iter_content(self, chunk_size=32768):
+            yield self.body
+
+        def close(self):
+            return None
+
+    with app.app_context():
+        app.config["VERIFICATION_WEB_ENABLED"] = True
+        monkeypatch.setattr("app.services.verification.requests.get", lambda *args, **kwargs: Response(302, location="https://evil.example/time"))
+        unsafe = execute(VerificationPlan("web", "saatkac_country", query="Almanya"), "Almanya'da saat kaç?")
+
+        page = b'''<title>Marshall Adalari'nda saat kac - SaatKac.info.tr</title>
+        <time id="clock">05:08:27</time><script>uT="Marshall Adalari: "; zone_id='Pacific/Kwajalein';</script>'''
+        responses = iter((Response(302, location="/Marshall_Islands"), Response(200, page)))
+        monkeypatch.setattr("app.services.verification.requests.get", lambda *args, **kwargs: next(responses))
+        wrong = execute(VerificationPlan("web", "saatkac_country", query="mars"), "Mars'ta saat kaç?")
+
+    assert unsafe.verified is False
+    assert "unsafe redirect" in unsafe.summary.lower()
+    assert wrong.verified is False
+    assert "different location" in wrong.summary.lower()
+
+
+def test_saatkac_accepts_equivalent_country_alias_returned_by_source(app, monkeypatch):
+    page = b'''<title>Ingiltere'de saat kac - SaatKac.info.tr</title>
+    <time id="clock">18:42:10</time><script>uT="Ingiltere: "; zone_id='Europe/London';</script>'''
+
+    class Response:
+        encoding = "utf-8"
+
+        def __init__(self, status_code, body=b"", location=None):
+            self.status_code = status_code
+            self.body = body
+            self.headers = {"Content-Length": str(len(body))}
+            if location:
+                self.headers["Location"] = location
+
+        def iter_content(self, chunk_size=32768):
+            yield self.body
+
+        def close(self):
+            return None
+
+    responses = iter((Response(302, location="/United_Kingdom"), Response(200, page)))
+    monkeypatch.setattr("app.services.verification.requests.get", lambda *args, **kwargs: next(responses))
+    with app.app_context():
+        app.config["VERIFICATION_WEB_ENABLED"] = True
+        result = execute(VerificationPlan("web", "saatkac_country", query="Birleşik Krallık"), "İngiltere'de saat kaç?")
+
+    assert result.verified is True
+    evidence = json.loads(result.evidence)
+    assert evidence["location"] == "Ingiltere"
+    assert evidence["sourceUrl"] == "https://saatkac.info.tr/United_Kingdom"
+
+
+def test_verified_chat_answers_country_clock_directly_without_provider(app, monkeypatch):
+    page = b'''<title>Fransa'da saat ka\xc3\xa7 - SaatKac.info.tr</title>
+    <time id="clock">18:42:10</time><script>uT="Fransa: "; zone_id='Europe/Paris';</script>'''
 
     class Response:
         status_code = 200
@@ -223,18 +361,61 @@ def test_current_clock_questions_use_web_and_legacy_runtime_clock_stays_disabled
         def close(self):
             return None
 
+    calls = []
     monkeypatch.setattr("app.services.verification.requests.get", lambda *args, **kwargs: Response())
+    monkeypatch.setattr(chat, "adapter_call", lambda *args, **kwargs: calls.append((args, kwargs)))
     with app.app_context():
         app.config["TESTING"] = False
         app.config["VERIFICATION_WEB_ENABLED"] = True
         try:
-            plan = deterministic_plan("Şu an saat kaç?")
-            result = execute(plan, "Şu an saat kaç?")
-            legacy = execute(VerificationPlan("runtime", operation="clock"), "Şu an saat kaç?")
+            answer = chat._verified_complete(SimpleNamespace(id="provider"), [{"role": "user", "content": "Fransa'da saat kaç?"}], "Fransa'da saat kaç?", "tr")
         finally:
             app.config["TESTING"] = True
-    assert plan.tool == "web"
-    assert plan.query == "Şu an saat kaç?"
-    assert result.verified is True
-    assert result.tool == "web"
-    assert legacy.verified is False
+    assert answer == "Fransa için saat 18:42:10."
+    assert calls == []
+
+
+def test_public_chat_api_answers_named_country_from_saatkac(user_client, app, monkeypatch):
+    page = b'''<title>Japonya'da saat ka\xc3\xa7 - SaatKac.info.tr</title>
+    <time id="clock">02:42:10</time><script>uT="Japonya: "; zone_id='Asia/Tokyo';</script>'''
+
+    class Response:
+        status_code = 200
+        headers = {"Content-Length": str(len(page))}
+        encoding = "utf-8"
+
+        def iter_content(self, chunk_size=32768):
+            yield page
+
+        def close(self):
+            return None
+
+    requested = []
+
+    def get(url, *args, **kwargs):
+        requested.append(url)
+        return Response()
+
+    post_json(user_client, "/api/v1/providers", {
+        "name": "Mock AI",
+        "kind": "ai",
+        "adapter": "mock",
+        "apiKey": "sk-secret1234567890abcd",
+        "model": "mock-1",
+        "enabled": True,
+        "isDefault": True,
+        "config": {"reply": "provider output must not replace sourced time"},
+    })
+    patch_json(user_client, "/api/v1/settings", {"locale": "tr"})
+    monkeypatch.setattr("app.services.verification.requests.get", get)
+    monkeypatch.setattr(chat, "adapter_call", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("provider must not be called")))
+    app.config["TESTING"] = False
+    app.config["VERIFICATION_WEB_ENABLED"] = True
+    try:
+        response = post_json(user_client, "/api/v1/chat/messages", {"message": "Japonya'da saat kaç?", "requestId": "saatkac-japan"})
+    finally:
+        app.config["TESTING"] = True
+
+    assert response.status_code == 201
+    assert response.get_json()["messages"][-1]["content"] == "Japonya için saat 02:42:10."
+    assert requested == ["https://saatkac.info.tr/?q=japonya"]

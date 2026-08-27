@@ -10,13 +10,13 @@ import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import requests
 from flask import current_app
 
 from app.agent.registry import ToolRegistry, ToolSpec
-from app.services.text_intent import consists_only_of_terms, matches_any_phrase, normalize_for_match
+from app.services.text_intent import bounded_levenshtein, consists_only_of_terms, matches_any_phrase, normalize_for_match
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -31,6 +31,7 @@ Return one JSON object only, without markdown:
 
 Rules:
 - Runtime has no clock or device fact capability. Current time and date are external factual claims and must use web.
+- For country clock questions, use web with operation saatkac_country and put only the requested country in query.
 - Use location only when the user explicitly asks for their location.
 - Use project for questions about Xultron, its files, configuration, tests, or code.
 - Use web for external factual or current claims.
@@ -144,6 +145,12 @@ def direct_answer(result: VerificationResult, locale: str = "tr") -> str | None:
     try:
         if result.tool == "calculate":
             return result.evidence.strip()
+        if result.tool == "web:saatkac":
+            evidence = json.loads(result.evidence)
+            location = str(evidence["location"]).strip()
+            current_time = str(evidence["currentTime"]).strip()
+            if location and current_time:
+                return f"{location} için saat {current_time}." if locale == "tr" else f"The time in {location} is {current_time}."
         if result.tool == "reasoning:greeting":
             return "Selam! İyiyim, nasıl yardımcı olabilirim?" if locale == "tr" else "Hello! I am doing well. How can I help?"
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
@@ -169,6 +176,9 @@ def _fallback_plan(question: str) -> VerificationPlan:
     text = normalize_for_match(question)
     if current_app.config.get("TESTING"):
         return VerificationPlan("reasoning", reason="Deterministic test fallback")
+    clock_country = _clock_country_query(question)
+    if clock_country:
+        return VerificationPlan("web", "saatkac_country", query=clock_country, reason="Country time from SaatKac.info.tr")
     if matches_any_phrase(text, ("terminalde", "terminalden", "terminal", "komut calistir", "proje listele")):
         return VerificationPlan("terminal", "list_project", query=question, reason="Bounded read-only project inspection")
     if matches_any_phrase(text, ("batarya", "sarj", "sarjim", "battery", "pil", "pil yuzde", "depolama", "disk", "disk alan", "storage", "bos alan", "wifi", "wi-fi", "ag", "ag durumu", "network", "internet baglanti", "termux", "terminal", "android surum", "telefonum", "cihazim", "cihaz durum", "konum", "konm", "neredeyim", "location")):
@@ -183,6 +193,57 @@ def _fallback_plan(question: str) -> VerificationPlan:
     if any(phrase in text for phrase in ("şiir yaz", "hikaye yaz", "yeniden yaz", "metni düzelt", "özetle", "fikir ver", "tavsiye ver", "ne yapmalıyım", "brainstorm")):
         return VerificationPlan("reasoning", reason="Creative, rewriting, or subjective request")
     return VerificationPlan("web", query=question, reason="External factual verification")
+
+
+_CLOCK_COUNTRY_ALIASES = (
+    (("amerika birlesik devletleri", "united states", "usa", "abd", "amerika"), "Amerika Birleşik Devletleri"),
+    (("birlesik krallik", "united kingdom", "ingiltere", "uk"), "Birleşik Krallık"),
+    (("kuzey kibris turk cumhuriyeti", "kuzey kibris", "kktc"), "Kuzey Kıbrıs Türk Cumhuriyeti"),
+    (("birlesik arap emirlikleri", "united arab emirates", "bae", "uae"), "Birleşik Arap Emirlikleri"),
+    (("guney kore", "south korea"), "Güney Kore"),
+    (("kuzey kore", "north korea"), "Kuzey Kore"),
+    (("turkiye", "turkey"), "Türkiye"),
+)
+
+
+def _clock_country_query(question: str) -> str | None:
+    text = normalize_for_match(question)
+    if not matches_any_phrase(text, ("saat kac", "su an saat", "simdiki saat", "current time", "what time")):
+        return None
+
+    alias = _clock_country_alias(text)
+    if alias:
+        return alias
+
+    noise = {
+        "su", "an", "simdi", "saat", "saati", "kac", "nedir", "ne", "hangi",
+        "ulkede", "ulkesinde", "what", "time", "current", "is", "it", "the", "in", "now",
+        "da", "de", "ta", "te", "nin", "nun",
+    }
+    country_tokens = []
+    for token in text.split():
+        if token in noise or re.fullmatch(r"sa+t[i]?", token) or re.fullmatch(r"ka+c", token):
+            continue
+        for suffix in ("nda", "nde", "dan", "den", "nin", "nun", "da", "de", "ta", "te"):
+            if token.endswith(suffix) and len(token) - len(suffix) >= 3:
+                token = token[:-len(suffix)]
+                break
+        if token and token not in noise:
+            country_tokens.append(token)
+
+    country = " ".join(country_tokens[:8]).strip(" -")
+    if not country:
+        return "Türkiye"
+    return _clock_country_alias(country) or country[:80]
+
+
+def _clock_country_alias(text: str) -> str | None:
+    normalized = normalize_for_match(text)
+    for aliases, canonical in _CLOCK_COUNTRY_ALIASES:
+        for alias in aliases:
+            if re.search(rf"(?:^|\s){re.escape(alias)}(?:$|\s)", normalized):
+                return canonical
+    return None
 
 def _runtime_status(question: str = "", operation: str | None = None, settings: dict | None = None) -> VerificationResult:
     if operation in {"unsupported_device_fact", "clock"}:
@@ -269,6 +330,33 @@ class _SearchParser(HTMLParser):
             self.parts.append(html.unescape(data.strip()))
 
 
+class _SaatKacParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.capture: str | None = None
+        self.title_parts: list[str] = []
+        self.clock_parts: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == "title":
+            self.capture = "title"
+        elif tag == "time" and attributes.get("id") == "clock":
+            self.capture = "clock"
+
+    def handle_endtag(self, tag):
+        if tag == "title" and self.capture == "title":
+            self.capture = None
+        elif tag == "time" and self.capture == "clock":
+            self.capture = None
+
+    def handle_data(self, data):
+        if self.capture == "title":
+            self.title_parts.append(data)
+        elif self.capture == "clock":
+            self.clock_parts.append(data)
+
+
 def _public_result_url(href: str) -> str | None:
     if not href:
         return None
@@ -319,6 +407,106 @@ def _web_search(query: str) -> VerificationResult:
     evidence = "Public source domains and URLs:\n" + ("\n".join(source_lines) if source_lines else "- No result URL was exposed by the search page.")
     evidence += "\n\nSearch result titles and snippets:\n" + "\n".join(lines)
     return VerificationResult(True, "web", "Current public web evidence with named sources was collected.", evidence[:MAX_EVIDENCE_CHARS])
+
+
+def _saatkac_country_time(country: str) -> VerificationResult:
+    normalized = normalize_for_match(country)
+    if not re.fullmatch(r"[a-z][a-z\s-]{1,79}", normalized):
+        return VerificationResult(False, "web:saatkac", "A valid country name is required.", "No country query was sent to SaatKac.info.tr.")
+    if not current_app.config.get("VERIFICATION_WEB_ENABLED", True):
+        return VerificationResult(False, "web:saatkac", "Web verification is disabled.", "SaatKac.info.tr was not queried.")
+
+    current_url = f"https://saatkac.info.tr/?q={quote_plus(country[:80])}"
+    body = b""
+    encoding = "utf-8"
+    for _ in range(5):
+        response = requests.get(
+            current_url,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; Xultron-Verification/1.0)"},
+            timeout=current_app.config.get("VERIFICATION_TIMEOUT_SECONDS", 8),
+            allow_redirects=False,
+            stream=True,
+        )
+        try:
+            if response.status_code in {301, 302, 303, 307, 308}:
+                target = urljoin(current_url, response.headers.get("Location", ""))
+                parsed = urlparse(target)
+                if parsed.scheme != "https" or parsed.hostname not in {"saatkac.info.tr", "www.saatkac.info.tr"}:
+                    return VerificationResult(False, "web:saatkac", "SaatKac.info.tr returned an unsafe redirect.", "The redirect left the allowed source domain.")
+                current_url = target
+                continue
+            if response.status_code != 200:
+                return VerificationResult(False, "web:saatkac", "SaatKac.info.tr did not return a successful response.", f"HTTP {response.status_code}")
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > 250000:
+                return VerificationResult(False, "web:saatkac", "SaatKac.info.tr response exceeded the size limit.", "Response exceeded 250000 bytes.")
+            chunks = bytearray()
+            for chunk in response.iter_content(chunk_size=32768):
+                if chunk:
+                    chunks.extend(chunk)
+                if len(chunks) > 250000:
+                    return VerificationResult(False, "web:saatkac", "SaatKac.info.tr response exceeded the size limit.", "Response exceeded 250000 bytes.")
+            body = bytes(chunks)
+            encoding = response.encoding or "utf-8"
+            break
+        finally:
+            response.close()
+    else:
+        return VerificationResult(False, "web:saatkac", "SaatKac.info.tr redirected too many times.", "The redirect limit was exceeded.")
+
+    text = body.decode(encoding, errors="replace")
+    parser = _SaatKacParser()
+    parser.feed(text)
+    title = html.unescape(" ".join(parser.title_parts)).strip()
+    current_time = " ".join(parser.clock_parts).strip()
+    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?", current_time):
+        return VerificationResult(False, "web:saatkac", "SaatKac.info.tr returned no usable clock value.", "The expected bounded clock field was not found.")
+
+    location_match = re.search(r'\buT="([^"<>]{1,100}):\s*"', text)
+    location = html.unescape(location_match.group(1)).strip() if location_match else ""
+    if not location:
+        location = re.sub(r"['’]?(?:da|de|ta|te)\s+saat\s+kaç.*$", "", title, flags=re.I).strip()
+    if not location or title.casefold() == "saat kaç? - saatkac.info.tr":
+        return VerificationResult(False, "web:saatkac", "SaatKac.info.tr could not resolve the requested country.", "The source returned no country-specific page.")
+    if normalize_for_match(country) == "turkiye" and normalize_for_match(location).startswith("turkiye "):
+        location = "Türkiye"
+    if not _country_resolution_matches(country, location, current_url):
+        return VerificationResult(False, "web:saatkac", "SaatKac.info.tr resolved a different location.", f"Requested {country!r}, resolved {location!r}.")
+    zone_match = re.search(r"\bzone_id='([^'<>]{1,100})'", text)
+    evidence = {
+        "source": "saatkac.info.tr",
+        "sourceUrl": current_url,
+        "requestedCountry": country,
+        "location": location,
+        "currentTime": current_time,
+        "timeZone": zone_match.group(1) if zone_match else None,
+        "title": title[:200],
+    }
+    return VerificationResult(True, "web:saatkac", "Current country time was collected from SaatKac.info.tr.", json.dumps(evidence, ensure_ascii=False, indent=2))
+
+
+def _country_resolution_matches(requested: str, location: str, source_url: str) -> bool:
+    expected = normalize_for_match(requested)
+    expected_alias = _clock_country_alias(expected) or expected
+    path_name = unquote(urlparse(source_url).path).strip("/").replace("_", " ")
+    candidates = (normalize_for_match(location), normalize_for_match(path_name))
+    for candidate in candidates:
+        if not candidate:
+            continue
+        candidate_alias = _clock_country_alias(candidate) or candidate
+        if expected_alias == candidate_alias:
+            return True
+        maximum = 1 if max(len(expected_alias), len(candidate_alias)) <= 8 else 2
+        if bounded_levenshtein(expected_alias, candidate_alias, maximum) is not None:
+            return True
+    return False
+
+
+def _execute_web(payload: dict) -> VerificationResult:
+    query = str(payload.get("query") or payload.get("question") or "")
+    if payload.get("operation") == "saatkac_country":
+        return _saatkac_country_time(query)
+    return _web_search(query)
 
 
 _OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv, ast.Mod: operator.mod, ast.Pow: operator.pow, ast.USub: operator.neg, ast.UAdd: operator.pos}
@@ -399,11 +587,11 @@ def _verification_registry() -> ToolRegistry:
     ))
     registry.register(ToolSpec(
         name="web",
-        description="Collect bounded public web evidence while applying the privacy filter.",
+        description="Collect bounded public web evidence; country clock questions use SaatKac.info.tr.",
         input_schema={"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}},
         output_schema=common_output,
         verification_strategy="return_named_public_sources",
-        handler=lambda payload: _web_search(str(payload.get("query") or payload.get("question") or "")),
+        handler=_execute_web,
     ))
     registry.register(ToolSpec(
         name="calculate",
