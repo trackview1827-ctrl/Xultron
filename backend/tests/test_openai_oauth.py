@@ -4,6 +4,7 @@ import requests
 from urllib.parse import parse_qs, urlparse
 
 from app.models import Provider
+from app.services.openai_oauth import _backend_callback_uri
 from conftest import delete_json, post_json
 
 
@@ -56,6 +57,15 @@ def test_codex_oauth_start_returns_pkce_authorization_link(user_client):
     )
     assert relay.status_code == 302
     assert relay.headers["Location"].endswith("/api/v1/providers/oauth/openai/callback?code=relay-code&state=relay-state")
+    relay_target = urlparse(relay.headers["Location"])
+    assert relay_target.scheme == "http" and relay_target.hostname == "localhost"
+
+
+def test_oauth_backend_callback_keeps_loopback_cookie_host(app):
+    with app.test_request_context("/", base_url="http://localhost:5000"):
+        assert _backend_callback_uri() == "http://localhost:5000/api/v1/providers/oauth/openai/callback"
+    with app.test_request_context("/", base_url="http://127.0.0.1:5000"):
+        assert _backend_callback_uri() == "http://127.0.0.1:5000/api/v1/providers/oauth/openai/callback"
 
 
 def test_codex_oauth_callback_encrypts_tokens_and_redirects(app, user_client, monkeypatch):

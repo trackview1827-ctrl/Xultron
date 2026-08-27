@@ -48,8 +48,24 @@ class _OAuthCallbackRelayHandler(BaseHTTPRequestHandler):
         return None
 
 
+def _backend_callback_uri() -> str:
+    configured = current_app.config.get("OPENAI_OAUTH_BACKEND_CALLBACK_URI") or current_app.config.get("OPENAI_OAUTH_REDIRECT_URI")
+    parsed = urlparse(configured)
+    request_host = urlparse(f"//{request.host}")
+    # Keep the signed Flask session on the same loopback host the user opened.
+    # Browsers do not send a localhost cookie to 127.0.0.1 (or vice versa).
+    if (
+        parsed.scheme == "http"
+        and parsed.hostname in {"127.0.0.1", "localhost"}
+        and request.scheme == "http"
+        and request_host.hostname in {"127.0.0.1", "localhost"}
+    ):
+        return f"http://{request_host.netloc}{parsed.path}"
+    return configured
+
+
 def _start_callback_relay() -> tuple[int, str]:
-    backend_callback_uri = current_app.config.get("OPENAI_OAUTH_BACKEND_CALLBACK_URI") or current_app.config.get("OPENAI_OAUTH_REDIRECT_URI")
+    backend_callback_uri = _backend_callback_uri()
     parsed_backend = urlparse(backend_callback_uri)
     if parsed_backend.scheme != "http" or parsed_backend.hostname not in {"127.0.0.1", "localhost"} or not parsed_backend.path:
         raise APIError("oauth_callback_invalid", "Codex OAuth callback must point to the local Xultron backend.", 500)
