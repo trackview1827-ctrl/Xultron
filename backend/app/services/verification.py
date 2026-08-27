@@ -4,6 +4,7 @@ import json
 import math
 import operator
 import re
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
@@ -23,22 +24,22 @@ from app.services.text_intent import consists_only_of_terms, matches_any_phrase,
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MAX_EVIDENCE_CHARS = 6000
-ALLOWED_TOOLS = {"runtime", "project", "web", "calculate", "reasoning"}
+ALLOWED_TOOLS = {"runtime", "terminal", "project", "web", "calculate", "reasoning"}
 _CAPABILITY_CACHE = {"expires": 0.0, "result": None}
 _CAPABILITY_LOCK = threading.Lock()
 
 PLANNER_PROMPT = """You are Xultron's verification planner. Every user question must be checked before an answer is allowed.
 Return one JSON object only, without markdown:
-{"tool":"runtime|project|web|calculate|reasoning","operation":"optional","query":"short verification query","reason":"why this evidence is relevant"}
+{"tool":"runtime|terminal|project|web|calculate|reasoning","operation":"optional","query":"short verification query","reason":"why this evidence is relevant"}
 
 Rules:
-- Device battery, network, storage, and location automations are disabled. Do not attempt device APIs.
+- Automatic clock and device automations are disabled. Do not attempt device APIs.
 - Use location only when the user explicitly asks for their location.
 - Use project for questions about Xultron, its files, configuration, tests, or code.
 - Use web for external factual or current claims.
 - Use calculate for arithmetic expressions.
 - Use reasoning only for greetings, subjective advice, brainstorming, rewriting, or creative work where no factual claim needs an external source.
-- Never propose shell commands. The backend exposes only fixed read-only operations.
+- Never propose arbitrary shell commands. The backend exposes only fixed read-only terminal operations.
 - Never select a destructive or side-effecting action.
 """
 
@@ -128,7 +129,7 @@ def execute(plan: VerificationPlan, question: str, settings: dict | None = None)
         return _verification_registry().execute(
             plan.tool,
             {"operation": plan.operation, "query": plan.query, "question": question, "reason": plan.reason, "settings": settings or {}},
-            granted_permissions={"runtime", "web", "project", "calculate", "reasoning"},
+            granted_permissions={"runtime", "terminal.read", "web", "project", "calculate", "reasoning"},
             enforce_timeout=False,
         )
     except (ArithmeticError, OSError, SyntaxError, ValueError, KeyError, RuntimeError, PermissionError, requests.RequestException) as exc:
@@ -137,20 +138,13 @@ def execute(plan: VerificationPlan, question: str, settings: dict | None = None)
 
 
 def refusal(result: VerificationResult, locale: str = "tr") -> str:
-    if locale == "tr":
-        return "Şu anda güvenilir bir cevap üretemiyorum. Lütfen biraz sonra tekrar dene."
-    return "I cannot produce a reliable answer right now. Please try again shortly."
+    return "Bu istek için doğrulanmış bir sonuç bulunamadı." if locale == "tr" else "No verified result is available for this request."
 
 
 def direct_answer(result: VerificationResult, locale: str = "tr") -> str | None:
     if not result.verified:
         return None
     try:
-        if result.tool == "runtime:clock":
-            data = json.loads(result.evidence)
-            if locale == "tr":
-                return f"Şu an saat {str(data['time'])[:5]}; tarih {data['date']}. Ülke: {data['country']}. Saat dilimi: {data['timezone']}."
-            return f"The time is {str(data['time'])[:5]} on {data['date']}. Country: {data['country']}. Time zone: {data['timezone']}."
         if result.tool == "calculate":
             return result.evidence.strip()
         if result.tool == "reasoning:greeting":
@@ -178,8 +172,8 @@ def _fallback_plan(question: str) -> VerificationPlan:
     text = normalize_for_match(question)
     if current_app.config.get("TESTING"):
         return VerificationPlan("reasoning", reason="Deterministic test fallback")
-    if _is_clock_question(text):
-        return VerificationPlan("runtime", "clock", reason="Live local date and time evidence")
+    if matches_any_phrase(text, ("terminalde", "terminalden", "terminal", "komut calistir", "proje listele")):
+        return VerificationPlan("terminal", "list_project", query=question, reason="Bounded read-only project inspection")
     if matches_any_phrase(text, ("batarya", "sarj", "sarjim", "battery", "pil", "pil yuzde", "depolama", "disk", "disk alan", "storage", "bos alan", "wifi", "wi-fi", "ag", "ag durumu", "network", "internet baglanti", "termux", "terminal", "android surum", "telefonum", "cihazim", "cihaz durum", "konum", "konm", "neredeyim", "location")):
         return VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
     if matches_any_phrase(text, ("xultron", "backend", "frontend", "commit", "dosya", "kod", "kaynak kod", "test", "testler")):
@@ -204,31 +198,33 @@ def _is_clock_question(text: str) -> bool:
 
 
 def _runtime_status(question: str = "", operation: str | None = None, settings: dict | None = None) -> VerificationResult:
-    if operation == "unsupported_device_fact":
-        return VerificationResult(False, "runtime", "Device API automations are disabled.", "No device API evidence is available.")
+    if operation in {"unsupported_device_fact", "clock_disabled", "clock"}:
+        return VerificationResult(False, "runtime", "Automatic runtime automation is disabled.", "No automatic clock or device evidence is available.")
     now_utc = datetime.now(UTC)
-    if operation == "clock" or _is_clock_question(question.casefold()):
-        timezone_name = str((settings or {}).get("timeZone") or "UTC")
-        try:
-            local = now_utc.astimezone(ZoneInfo(timezone_name))
-        except ZoneInfoNotFoundError:
-            timezone_name = "UTC"
-            local = now_utc
-        evidence = {
-            "gmtDateTime": now_utc.isoformat(timespec="seconds").replace("+00:00", "Z"),
-            "localDateTime": local.isoformat(timespec="seconds"),
-            "date": local.date().isoformat(),
-            "time": local.strftime("%H:%M:%S"),
-            "timezone": timezone_name,
-            "country": TIME_ZONE_COUNTRIES.get(timezone_name, "Unknown"),
-            "utcOffset": local.strftime("%z"),
-        }
-        return VerificationResult(True, "runtime:clock", "GMT/UTC time was converted to the configured country time zone.", json.dumps(evidence, ensure_ascii=False, indent=2))
     evidence = {
         "terminal": True,
         "projectRoot": str(PROJECT_ROOT),
     }
     return VerificationResult(True, "runtime", "Terminal runtime was checked successfully.", json.dumps(evidence, ensure_ascii=False, indent=2))
+
+
+def _terminal_read(operation: str) -> VerificationResult:
+    commands = {
+        "pwd": ["pwd"],
+        "list_project": ["find", ".", "-maxdepth", "2", "-type", "f", "-print"],
+        "git_status": ["git", "status", "--short"],
+        "git_log": ["git", "log", "-5", "--oneline"],
+    }
+    command = commands.get(operation)
+    if command is None:
+        return VerificationResult(False, "terminal", "Unsupported terminal operation.", "Only bounded read-only operations are available.")
+    try:
+        completed = subprocess.run(command, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=5, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return VerificationResult(False, "terminal", "Terminal operation could not be completed.", "No reliable terminal evidence was produced.")
+    if completed.returncode != 0:
+        return VerificationResult(False, "terminal", "Terminal operation failed.", completed.stderr[-2000:])
+    return VerificationResult(True, f"terminal:{operation}", "Bounded read-only terminal operation completed.", completed.stdout[-6000:])
 
 
 def _project_search(query: str) -> VerificationResult:
@@ -387,7 +383,7 @@ def _verification_registry() -> ToolRegistry:
     common_output = {"type": "object", "properties": {"verified": {"type": "boolean"}}}
     registry.register(ToolSpec(
         name="runtime",
-        description="Read safe local runtime facts such as device time and platform.",
+        description="Read safe local runtime availability; automatic clock and device automations are disabled.",
         input_schema={"type": "object", "properties": {"question": {"type": "string"}}},
         output_schema=common_output,
         required_permissions=("runtime",),
@@ -397,6 +393,15 @@ def _verification_registry() -> ToolRegistry:
             str(payload.get("operation") or "") or None,
             payload.get("settings") if isinstance(payload.get("settings"), dict) else {},
         ),
+    ))
+    registry.register(ToolSpec(
+        name="terminal",
+        description="Run bounded, read-only project inspection operations; arbitrary shell is disabled.",
+        input_schema={"type": "object", "required": ["operation"], "properties": {"operation": {"enum": ["pwd", "list_project", "git_status", "git_log"]}}},
+        output_schema=common_output,
+        required_permissions=("terminal.read",),
+        verification_strategy="bounded_read_only_terminal",
+        handler=lambda payload: _terminal_read(str(payload.get("operation") or "")),
     ))
     registry.register(ToolSpec(
         name="project",

@@ -7,7 +7,7 @@ def test_registry_exposes_metadata_for_read_only_capabilities(app):
     with app.app_context():
         descriptions = {item["name"]: item for item in _verification_registry().describe()}
 
-    assert {"runtime", "project", "web", "calculate", "reasoning"} <= descriptions.keys()
+    assert {"runtime", "terminal", "project", "web", "calculate", "reasoning"} <= descriptions.keys()
     assert all(item["sideEffect"] is False for item in descriptions.values())
     assert all(item["verificationStrategy"] for item in descriptions.values())
 

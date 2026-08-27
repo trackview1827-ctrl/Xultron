@@ -61,22 +61,6 @@ def test_safe_calculation_and_location_explicitness(app):
         assert nested_power.verified is False
 
 
-def test_live_clock_questions_use_runtime_evidence(app):
-    with app.app_context():
-        app.config["TESTING"] = False
-        try:
-            plan = parse_plan('{"tool":"web","query":"time"}', "Şu an saat kaç?")
-            result = execute(plan, "Şu an saat kaç?")
-        finally:
-            app.config["TESTING"] = True
-    assert plan == VerificationPlan("runtime", "clock", reason="Live local date and time evidence")
-    assert result.verified is True
-    assert result.tool == "runtime:clock"
-    assert '"date"' in result.evidence
-    assert '"time"' in result.evidence
-    assert '"timezone"' in result.evidence
-
-
 def test_minor_typos_still_select_the_expected_safe_intent(app):
     with app.app_context():
         app.config["TESTING"] = False
@@ -91,7 +75,7 @@ def test_minor_typos_still_select_the_expected_safe_intent(app):
         finally:
             app.config["TESTING"] = True
 
-    assert clock == VerificationPlan("runtime", "clock", reason="Live local date and time evidence")
+    assert clock.tool == "web"
     assert battery == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
     assert network == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
     assert terminal == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
@@ -177,23 +161,8 @@ def test_failed_verification_returns_no_model_answer(app, monkeypatch):
             app.config["TESTING"] = True
 
     assert len(calls) == 0
-    assert answer == "Şu anda güvenilir bir cevap üretemiyorum. Lütfen biraz sonra tekrar dene."
+    assert answer == "Bu istek için doğrulanmış bir sonuç bulunamadı."
     assert "Doğrulama" not in answer
-
-
-def test_clock_answer_does_not_call_rate_limited_provider(app, monkeypatch):
-    calls = []
-    monkeypatch.setattr(chat, "adapter_call", lambda *args, **kwargs: calls.append((args, kwargs)))
-    with app.app_context():
-        app.config["TESTING"] = False
-        try:
-            answer = chat._verified_complete(SimpleNamespace(id="provider"), [{"role": "user", "content": "Şu an saat kaç?"}], "Şu an saat kaç?", "tr")
-        finally:
-            app.config["TESTING"] = True
-    assert answer.startswith("Şu an saat ")
-    assert "tarih" in answer
-    assert "Doğrulama" not in answer
-    assert calls == []
 
 
 def test_typo_greeting_is_answered_locally_without_provider(app, monkeypatch):
@@ -225,12 +194,27 @@ def test_removed_device_automation_never_calls_termux_api(app):
     assert result.verified is False
 
 
-def test_clock_uses_gmt_as_base_and_selected_time_zone(app):
+def test_terminal_capability_is_bounded_read_only(app, monkeypatch):
     with app.app_context():
-        result = execute(VerificationPlan("runtime", operation="clock"), "Şu an saat kaç?", settings={"timeZone": "Asia/Tokyo"})
-    data = json.loads(result.evidence)
+        app.config["TESTING"] = False
+        plan = deterministic_plan("Terminalden projeyi listele")
+        result = execute(plan, "Terminalden projeyi listele")
+        denied = execute(VerificationPlan("terminal", operation="shell"), "rm -rf /")
+        app.config["TESTING"] = True
+    assert plan.tool == "terminal"
     assert result.verified is True
-    assert data["timezone"] == "Asia/Tokyo"
-    assert data["country"] == "Japonya"
-    assert data["gmtDateTime"].endswith("Z")
-    assert data["localDateTime"].endswith("+09:00")
+    assert result.tool == "terminal:list_project"
+    assert denied.verified is False
+    assert "bounded" in denied.summary.lower() or "unsupported" in denied.summary.lower()
+
+
+def test_clock_automation_is_disabled_and_current_questions_use_web(app):
+    with app.app_context():
+        app.config["TESTING"] = False
+        try:
+            plan = deterministic_plan("Şu an saat kaç?")
+            result = execute(VerificationPlan("runtime", operation="clock"), "Şu an saat kaç?")
+        finally:
+            app.config["TESTING"] = True
+    assert plan.tool == "web"
+    assert result.verified is False

@@ -99,7 +99,7 @@ def execute_task(task, worker_id):
     if plan:
         from app.services.verification import VerificationPlan, VerificationResult, execute as execute_verification
         tool = plan.get("tool")
-        if tool not in {"runtime", "project", "web", "calculate", "reasoning"}:
+        if tool not in {"runtime", "terminal", "project", "web", "calculate", "reasoning"}:
             raise APIError("unsupported_tool", "The approved plan contains no executable registered tool.", 409)
         observed = execute_verification(VerificationPlan(
             tool=tool, operation=plan.get("operation"), query=plan.get("query", task.instruction), reason=plan.get("reason", "")
