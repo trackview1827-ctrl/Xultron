@@ -75,7 +75,7 @@ def test_minor_typos_still_select_the_expected_safe_intent(app):
         finally:
             app.config["TESTING"] = True
 
-    assert clock.tool == "web"
+    assert clock == VerificationPlan("runtime", "clock_disabled", reason="Automatic clock automation is disabled")
     assert battery == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
     assert network == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
     assert terminal == VerificationPlan("runtime", "unsupported_device_fact", reason="Device API automations are disabled")
@@ -208,7 +208,7 @@ def test_terminal_capability_is_bounded_read_only(app, monkeypatch):
     assert "bounded" in denied.summary.lower() or "unsupported" in denied.summary.lower()
 
 
-def test_clock_automation_is_disabled_and_current_questions_use_web(app):
+def test_clock_automation_is_disabled_and_current_questions_do_not_use_web(app):
     with app.app_context():
         app.config["TESTING"] = False
         try:
@@ -216,5 +216,5 @@ def test_clock_automation_is_disabled_and_current_questions_use_web(app):
             result = execute(VerificationPlan("runtime", operation="clock"), "Şu an saat kaç?")
         finally:
             app.config["TESTING"] = True
-    assert plan.tool == "web"
+    assert plan == VerificationPlan("runtime", "clock_disabled", reason="Automatic clock automation is disabled")
     assert result.verified is False

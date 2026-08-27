@@ -172,6 +172,8 @@ def _fallback_plan(question: str) -> VerificationPlan:
     text = normalize_for_match(question)
     if current_app.config.get("TESTING"):
         return VerificationPlan("reasoning", reason="Deterministic test fallback")
+    if _is_clock_question(text):
+        return VerificationPlan("runtime", "clock_disabled", reason="Automatic clock automation is disabled")
     if matches_any_phrase(text, ("terminalde", "terminalden", "terminal", "komut calistir", "proje listele")):
         return VerificationPlan("terminal", "list_project", query=question, reason="Bounded read-only project inspection")
     if matches_any_phrase(text, ("batarya", "sarj", "sarjim", "battery", "pil", "pil yuzde", "depolama", "disk", "disk alan", "storage", "bos alan", "wifi", "wi-fi", "ag", "ag durumu", "network", "internet baglanti", "termux", "terminal", "android surum", "telefonum", "cihazim", "cihaz durum", "konum", "konm", "neredeyim", "location")):
