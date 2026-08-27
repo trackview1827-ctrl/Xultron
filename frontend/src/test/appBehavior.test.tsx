@@ -6,7 +6,7 @@ const auth = vi.hoisted(() => ({ session: vi.fn() }))
 const settingsApiMock = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), devices: vi.fn() }))
 vi.mock('../services/authApi', () => ({ authApi: auth }))
 vi.mock('../services/settingsApi', async original => { const actual = await original<typeof import('../services/settingsApi')>(); return { ...actual, settingsApi: settingsApiMock } })
-function Probe() { const { coreState, settings, sessionReachable, updateSettings, setUser } = useApp(); return <div><span data-testid="core">{coreState}</span><span data-testid="reachable">{String(sessionReachable)}</span><span data-testid="low">{String(settings.lowDataMode)}</span><span data-testid="locale">{settings.locale}</span><button onClick={() => void updateSettings({ lowDataMode: true, reducedMotion: true })}>conserve</button><button onClick={() => void updateSettings({ locale: 'tr' })}>turkish</button><button onClick={() => setUser({ id: 'u2', username: 'orbit', email: null, isGuest: false, createdAt: '' })}>switch user</button><button onClick={() => setUser(null)}>logout</button></div> }
+function Probe() { const { coreState, settings, sessionReachable, updateSettings, setUser, activeConversationId, activeDraft, setActiveConversationId, setActiveDraft } = useApp(); return <div><span data-testid="core">{coreState}</span><span data-testid="reachable">{String(sessionReachable)}</span><span data-testid="low">{String(settings.lowDataMode)}</span><span data-testid="locale">{settings.locale}</span><span data-testid="conversation">{activeConversationId ?? ''}</span><span data-testid="draft">{activeDraft}</span><button onClick={() => void updateSettings({ lowDataMode: true, reducedMotion: true })}>conserve</button><button onClick={() => void updateSettings({ locale: 'tr' })}>turkish</button><button onClick={() => setUser({ id: 'u2', username: 'orbit', email: null, isGuest: false, createdAt: '' })}>switch user</button><button onClick={() => setUser(null)}>logout</button><button onClick={() => { setActiveConversationId('conversation-1'); setActiveDraft('unfinished') }}>open conversation</button></div> }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(next => { resolve = next }); return { promise, resolve } }
 describe('offline recovery and conservation behavior', () => {
   beforeEach(() => { Object.defineProperty(navigator, 'onLine', { configurable: true, value: true }); auth.session.mockResolvedValue({ user: { id: 'u1', username: 'nova', email: 'n@x.test', isGuest: false, createdAt: '' }, csrfToken: 'c', expiresAt: null }); settingsApiMock.get.mockResolvedValue({ settings: {} }); settingsApiMock.update.mockResolvedValue({ settings: { lowDataMode: true, reducedMotion: true } }) })
@@ -53,5 +53,13 @@ describe('offline recovery and conservation behavior', () => {
     await Promise.resolve()
     expect(screen.getByTestId('locale')).not.toHaveTextContent('fr')
     expect(screen.getByTestId('low')).toHaveTextContent('false')
+  })
+  it('keeps the active conversation and draft while settings change', async () => {
+    render(<AppProvider><Probe /></AppProvider>)
+    await waitFor(() => expect(screen.getByTestId('core')).toHaveTextContent('ONLINE'), { timeout: 1800 })
+    fireEvent.click(screen.getByText('open conversation'))
+    fireEvent.click(screen.getByText('turkish'))
+    expect(screen.getByTestId('conversation')).toHaveTextContent('conversation-1')
+    expect(screen.getByTestId('draft')).toHaveTextContent('unfinished')
   })
 })
