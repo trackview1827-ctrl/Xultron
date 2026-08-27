@@ -269,6 +269,7 @@ def test_country_clock_plans_extract_aliases_typos_and_default_country(app):
             default = deterministic_plan("Şu an saat kaç?")
             typo = deterministic_plan("Saaat kac Almnya?")
             us = deterministic_plan("ABD'de saat kaç?")
+            uk = deterministic_plan("İngiltere'de saat kaç?")
             korea = deterministic_plan("Güney Kore'de şu an saat kaç?")
             date = deterministic_plan("Bugünün tarihi ne?")
         finally:
@@ -276,6 +277,7 @@ def test_country_clock_plans_extract_aliases_typos_and_default_country(app):
     assert default == VerificationPlan("web", "saatkac_country", query="Türkiye", reason="Country time from SaatKac.info.tr")
     assert typo.operation == "saatkac_country" and typo.query == "almnya"
     assert us.query == "Amerika Birleşik Devletleri"
+    assert uk.query == "Birleşik Krallık"
     assert korea.query == "Güney Kore"
     assert date.tool == "web" and date.operation is None
 
@@ -315,8 +317,8 @@ def test_saatkac_country_source_fails_closed_on_unsafe_or_wrong_resolution(app, 
 
 
 def test_saatkac_accepts_equivalent_country_alias_returned_by_source(app, monkeypatch):
-    page = b'''<title>Ingiltere'de saat kac - SaatKac.info.tr</title>
-    <time id="clock">18:42:10</time><script>uT="Ingiltere: "; zone_id='Europe/London';</script>'''
+    page = '''<title>İngiltere'de saat kaç - SaatKac.info.tr</title>
+    <time id="clock">18:42:10</time><script>uT="İngiltere: "; zone_id='Europe/London';</script>'''.encode()
 
     class Response:
         encoding = "utf-8"
@@ -342,7 +344,7 @@ def test_saatkac_accepts_equivalent_country_alias_returned_by_source(app, monkey
 
     assert result.verified is True
     evidence = json.loads(result.evidence)
-    assert evidence["location"] == "Ingiltere"
+    assert evidence["location"] == "İngiltere"
     assert evidence["sourceUrl"] == "https://saatkac.info.tr/United_Kingdom"
 
 

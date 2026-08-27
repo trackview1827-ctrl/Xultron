@@ -206,8 +206,12 @@ _CLOCK_COUNTRY_ALIASES = (
 )
 
 
+def _normalize_country_for_match(value: str) -> str:
+    return normalize_for_match(value.replace("İ", "I").replace("ı", "i"))
+
+
 def _clock_country_query(question: str) -> str | None:
-    text = normalize_for_match(question)
+    text = _normalize_country_for_match(question)
     if not matches_any_phrase(text, ("saat kac", "su an saat", "simdiki saat", "current time", "what time")):
         return None
 
@@ -238,7 +242,7 @@ def _clock_country_query(question: str) -> str | None:
 
 
 def _clock_country_alias(text: str) -> str | None:
-    normalized = normalize_for_match(text)
+    normalized = _normalize_country_for_match(text)
     for aliases, canonical in _CLOCK_COUNTRY_ALIASES:
         for alias in aliases:
             if re.search(rf"(?:^|\s){re.escape(alias)}(?:$|\s)", normalized):
@@ -410,7 +414,7 @@ def _web_search(query: str) -> VerificationResult:
 
 
 def _saatkac_country_time(country: str) -> VerificationResult:
-    normalized = normalize_for_match(country)
+    normalized = _normalize_country_for_match(country)
     if not re.fullmatch(r"[a-z][a-z\s-]{1,79}", normalized):
         return VerificationResult(False, "web:saatkac", "A valid country name is required.", "No country query was sent to SaatKac.info.tr.")
     if not current_app.config.get("VERIFICATION_WEB_ENABLED", True):
@@ -468,7 +472,7 @@ def _saatkac_country_time(country: str) -> VerificationResult:
         location = re.sub(r"['’]?(?:da|de|ta|te)\s+saat\s+kaç.*$", "", title, flags=re.I).strip()
     if not location or title.casefold() == "saat kaç? - saatkac.info.tr":
         return VerificationResult(False, "web:saatkac", "SaatKac.info.tr could not resolve the requested country.", "The source returned no country-specific page.")
-    if normalize_for_match(country) == "turkiye" and normalize_for_match(location).startswith("turkiye "):
+    if _normalize_country_for_match(country) == "turkiye" and _normalize_country_for_match(location).startswith("turkiye "):
         location = "Türkiye"
     if not _country_resolution_matches(country, location, current_url):
         return VerificationResult(False, "web:saatkac", "SaatKac.info.tr resolved a different location.", f"Requested {country!r}, resolved {location!r}.")
@@ -486,10 +490,10 @@ def _saatkac_country_time(country: str) -> VerificationResult:
 
 
 def _country_resolution_matches(requested: str, location: str, source_url: str) -> bool:
-    expected = normalize_for_match(requested)
+    expected = _normalize_country_for_match(requested)
     expected_alias = _clock_country_alias(expected) or expected
     path_name = unquote(urlparse(source_url).path).strip("/").replace("_", " ")
-    candidates = (normalize_for_match(location), normalize_for_match(path_name))
+    candidates = (_normalize_country_for_match(location), _normalize_country_for_match(path_name))
     for candidate in candidates:
         if not candidate:
             continue
