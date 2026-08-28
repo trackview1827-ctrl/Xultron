@@ -212,6 +212,18 @@ açıklayıcı bir sistem durumu olarak gösterilir.
 Aynı akış STT ve TTS sağlayıcıları için de geçerlidir. Saklanan anahtar hiçbir
 listeleme veya ayar yanıtında tarayıcıya geri gönderilmez.
 
+Termux/Android üzerinde düşük kaynaklı yerel STT için `whisper.cpp` kurulabilir.
+Bu projede tiny multilingual model yaklaşık 75 MiB diskte ve yaklaşık 273 MiB
+RAM kullanır. Kurulu binary ve model ile `scripts/local-voice.sh start` komutu
+localhost:8765 üzerinde yalnızca cihaz içi STT servisini başlatır. Web sitesiyle
+birlikte otomatik başlatmak için `XULTRON_LOCAL_STT_AUTOSTART=1 xultron start`
+kullanılır; varsayılan kapalıdır, böylece telefon boşuna RAM tüketmez. Xultron
+ayarlarında STT adaptörü olarak **whisper.cpp (local)** seçilebilir.
+
+Kokoro-82M'nin resmi ses listesinde Türkçe veya Azerice ses paketi yoktur. Bu
+nedenle Kokoro'yu telefonda zorla kurup RAM tüketmek yerine Türkçe/Azerice TTS
+ElevenLabs üzerinden, yerel STT ise whisper.cpp üzerinden çalıştırılır.
+
 ChatGPT hesabı ile Codex OAuth kullanmak için AI Providers ekranında adaptör
 olarak **ChatGPT account (Codex OAuth)** seç, sağlayıcıyı kaydet ve **CONNECT
 CHATGPT ACCOUNT** düğmesine bas. Xultron resmi OpenAI OAuth linkini açar; giriş

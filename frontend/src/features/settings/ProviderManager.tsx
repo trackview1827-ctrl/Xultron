@@ -137,13 +137,25 @@ function ProviderEditor({ kind, online, provider, confirmationOpen, deleteButton
       name: current.name || 'Google Gemini',
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
       model: current.model || 'gemini-2.5-flash',
-    } : adapter === 'anthropic' ? {
+      } : adapter === 'anthropic' ? {
       ...current,
       adapter,
       name: current.name || 'Anthropic Claude',
       baseUrl: 'https://api.anthropic.com',
       model: current.model || 'claude-sonnet-5',
-    } : { ...current, adapter })
+      } : adapter === 'elevenlabs' ? {
+        ...current,
+        adapter,
+        name: current.name || 'ElevenLabs',
+        baseUrl: 'https://api.elevenlabs.io/v1',
+        model: current.model || (kind === 'stt' ? 'scribe_v2' : 'eleven_multilingual_v2'),
+      } : adapter === 'whisper_cpp' ? {
+        ...current,
+        adapter,
+        name: current.name || 'whisper.cpp (local)',
+        baseUrl: 'http://127.0.0.1:8765',
+        model: current.model || 'tiny',
+      } : { ...current, adapter })
   }
   const selectedPreset = AI_PROVIDER_PRESETS.find(item => item.id === presetId)
 
@@ -226,13 +238,13 @@ function ProviderEditor({ kind, online, provider, confirmationOpen, deleteButton
       <div className="form-grid">
         {kind === 'ai' && <Field label={t('Provider preset', 'Hazır sağlayıcı')} hint={selectedPreset?.note || t('Choose a service to fill its safe API defaults.', 'Güvenli API ayarlarını doldurmak için bir servis seç.')}><select className="field" aria-label={t('Provider preset', 'Hazır sağlayıcı')} value={presetId} onChange={event => applyPreset(event.target.value)}><option value="">{t('Manual configuration', 'Elle yapılandırma')}</option>{AI_PROVIDER_PRESET_GROUPS.map(group => <optgroup label={group.label} key={group.id}>{AI_PROVIDER_PRESETS.filter(preset => preset.group === group.id).map(preset => <option value={preset.id} key={preset.id}>{preset.label}</option>)}</optgroup>)}</select></Field>}
         <Field label="Provider name"><Input value={form.name} onChange={event => update('name', event.target.value)} required autoFocus /></Field>
-        <Field label={t('Adapter', 'Adaptör')}><select className="field" value={form.adapter} onChange={event => selectAdapter(event.target.value)}><option value="openai_compatible">OpenAI compatible</option>{kind === 'ai' && <><option value="openai_codex_oauth">ChatGPT account (Codex OAuth)</option><option value="anthropic">Anthropic Claude</option><option value="gemini">Google Gemini</option></>}<option value="custom_http">Custom HTTP</option><option value="local_http">Local endpoint</option></select></Field>
-        <Field label="Base URL" hint={form.adapter === 'openai_codex_oauth' ? 'Codex OAuth uses the official ChatGPT backend endpoint.' : "Credentials are sent only to Xultron's backend."}><Input value={form.baseUrl} onChange={event => update('baseUrl', event.target.value)} type="url" placeholder="https://api.example.com/v1" readOnly={form.adapter === 'openai_codex_oauth'} required /></Field>
+        <Field label={t('Adapter', 'Adaptör')}><select className="field" value={form.adapter} onChange={event => selectAdapter(event.target.value)}><option value="openai_compatible">OpenAI compatible</option>{kind === 'ai' && <><option value="openai_codex_oauth">ChatGPT account (Codex OAuth)</option><option value="anthropic">Anthropic Claude</option><option value="gemini">Google Gemini</option></>} {kind === 'stt' && <><option value="elevenlabs">ElevenLabs</option><option value="whisper_cpp">whisper.cpp (local)</option></>} {kind === 'tts' && <option value="elevenlabs">ElevenLabs</option>}<option value="custom_http">Custom HTTP</option><option value="local_http">Local endpoint</option></select></Field>
+        <Field label="Base URL" hint={form.adapter === 'openai_codex_oauth' ? 'Codex OAuth uses the official ChatGPT backend endpoint.' : form.adapter === 'elevenlabs' ? 'ElevenLabs uses its official HTTPS API endpoint.' : form.adapter === 'whisper_cpp' ? 'Local-only whisper.cpp server. No audio leaves this device.' : "Credentials are sent only to Xultron's backend."}><Input value={form.baseUrl} onChange={event => update('baseUrl', event.target.value)} type="url" placeholder="https://api.example.com/v1" readOnly={form.adapter === 'openai_codex_oauth' || form.adapter === 'elevenlabs' || form.adapter === 'whisper_cpp'} required /></Field>
         {form.adapter === 'openai_codex_oauth' ? <Field label="ChatGPT account" hint="Save this provider, then open the official ChatGPT authorization screen. Xultron never asks for your password or verification code."><div className="saved-config-note">The browser will return to Xultron after you approve Codex OAuth.</div></Field> : <Field label="API key" hint={provider?.credential.configured ? `Stored securely: ${provider.credential.masked || 'masked credential'}. Leave blank to keep it.` : 'Never saved in browser storage.'}><Input value={form.apiKey ?? ''} onChange={event => update('apiKey', event.target.value)} type="password" placeholder={provider?.credential.configured ? 'Leave blank to keep existing key' : 'Enter secret once'} autoComplete="new-password" /></Field>}
         <Field label="Model ID" hint="Enter manually or use model discovery."><div className="compound-field"><Input value={form.model} onChange={event => update('model', event.target.value)} list="provider-models" /><button type="button" onClick={() => void refreshModels()} disabled={!!busy} aria-label="Refresh models"><Icon name="refresh" /></button></div><datalist id="provider-models">{models.map(model => <option value={model.id} key={model.id}>{model.label}</option>)}</datalist></Field>
         {kind === 'ai' && <><Field label="Temperature"><Input value={form.temperature ?? .3} onChange={event => update('temperature', Number(event.target.value))} type="number" min="0" max="2" step="0.1" /></Field><Field label="Max output tokens"><Input value={form.maxTokens ?? 4096} onChange={event => update('maxTokens', Number(event.target.value))} type="number" min="1" max="32000" /></Field></>}
         {kind === 'stt' && <Field label="Language override"><Input value={String(form.config.language ?? '')} onChange={event => update('config', { ...form.config, language: event.target.value })} placeholder="auto" /></Field>}
-        {kind === 'tts' && <><Field label="Voice"><Input value={String(form.config.voice ?? '')} onChange={event => update('config', { ...form.config, voice: event.target.value })} /></Field><Field label="Speed"><Input type="number" min="0.5" max="2" step="0.1" value={Number(form.config.speed ?? 1)} onChange={event => update('config', { ...form.config, speed: Number(event.target.value) })} /></Field></>}
+        {kind === 'tts' && <><Field label="Voice"><Input value={String(form.config.voice ?? '')} onChange={event => update('config', { ...form.config, voice: event.target.value })} /></Field><Field label="Speed" hint={form.adapter === 'elevenlabs' ? 'ElevenLabs supports 0.7–1.2.' : undefined}><Input type="number" min={form.adapter === 'elevenlabs' ? '0.7' : '0.5'} max={form.adapter === 'elevenlabs' ? '1.2' : '2'} step="0.1" value={Number(form.config.speed ?? 1)} onChange={event => update('config', { ...form.config, speed: Number(event.target.value) })} /></Field></>}
       </div>
       <div className="toggle-group"><Switch label="Enabled" description="Allow Xultron to use this provider." checked={form.enabled} onChange={value => update('enabled', value)} /><Switch label="Default provider" description="Prefer this link for new operations." checked={form.isDefault} onChange={value => update('isDefault', value)} />{kind === 'ai' && <Switch label="Streaming" description="Receive response output progressively." checked={form.streaming ?? true} onChange={value => update('streaming', value)} />}</div>
       {status && <div className={`test-status ${status.ok ? 'success' : 'failure'}`} role="status"><Icon name={status.ok ? 'check' : 'close'} />{status.message}</div>}

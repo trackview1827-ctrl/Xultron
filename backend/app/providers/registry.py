@@ -1,5 +1,5 @@
 from app.models import Provider
-from app.providers.adapters import AnthropicAdapter, CodexOAuthAdapter, CustomHTTPAdapter, GeminiAdapter, MockAdapter, OpenAICompatibleAdapter
+from app.providers.adapters import AnthropicAdapter, CodexOAuthAdapter, CustomHTTPAdapter, ElevenLabsAdapter, GeminiAdapter, MockAdapter, OpenAICompatibleAdapter, WhisperCppAdapter
 from app.providers.base import ProviderConfig, ProviderFailure
 from app.security.crypto import decrypt_secret
 
@@ -11,6 +11,8 @@ ADAPTERS = {
     "custom_http": CustomHTTPAdapter,
     "mock": MockAdapter,
     "openai_codex_oauth": CodexOAuthAdapter,
+    "elevenlabs": ElevenLabsAdapter,
+    "whisper_cpp": WhisperCppAdapter,
 }
 
 KINDS = {"ai", "stt", "tts"}

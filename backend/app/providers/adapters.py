@@ -234,6 +234,195 @@ class OpenAICompatibleAdapter:
         return audio, media_type
 
 
+class ElevenLabsAdapter(OpenAICompatibleAdapter):
+    """Official ElevenLabs REST adapter for speech-to-text and text-to-speech."""
+
+    _DEFAULT_BASE = "https://api.elevenlabs.io/v1"
+    _STT_MODELS = ("scribe_v2", "scribe_v1")
+
+    @property
+    def base(self):
+        configured = (self.cfg.base_url or self._DEFAULT_BASE).rstrip("/")
+        parsed = urlparse(configured)
+        if parsed.scheme != "https" or parsed.netloc != "api.elevenlabs.io" or parsed.username or parsed.password:
+            raise ProviderFailure("provider_invalid", "ElevenLabs base URL must be https://api.elevenlabs.io/v1.", 422)
+        if parsed.path in {"", "/"}:
+            return self._DEFAULT_BASE
+        if parsed.path.rstrip("/") != "/v1" or parsed.query or parsed.fragment:
+            raise ProviderFailure("provider_invalid", "ElevenLabs base URL must be https://api.elevenlabs.io/v1.", 422)
+        return configured
+
+    def headers(self):
+        if not self.cfg.api_key:
+            raise ProviderFailure("provider_authentication_failed", "ElevenLabs API key is required.", 422)
+        return {"xi-api-key": self.cfg.api_key}
+
+    def _json_response(self, response, failure_code="provider_request_failed"):
+        body = self._read_bounded(response)
+        if response.status_code in {401, 403}:
+            raise ProviderFailure("provider_authentication_failed", "Authentication was rejected by ElevenLabs.", 502)
+        if response.status_code == 429:
+            raise ProviderFailure("provider_rate_limited", "ElevenLabs rate limit reached.", 502, True)
+        if response.status_code >= 400:
+            raise ProviderFailure(failure_code, f"ElevenLabs returned HTTP {response.status_code}.", 502, response.status_code >= 500)
+        try:
+            data = json.loads(body.decode(getattr(response, "encoding", None) or "utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, LookupError):
+            raise ProviderFailure("provider_malformed_response", "ElevenLabs returned malformed response.", 502, True)
+        if not isinstance(data, (dict, list)):
+            raise ProviderFailure("provider_malformed_response", "ElevenLabs returned malformed response.", 502, True)
+        return data
+
+    def test(self):
+        start = time.monotonic()
+        self._list_remote_models()
+        return {"ok": True, "latencyMs": int((time.monotonic() - start) * 1000), "message": "ElevenLabs bağlantısı başarılı."}
+
+    def _list_remote_models(self):
+        try:
+            response = requests.get(f"{self.base}/models", headers=self.headers(), timeout=self.timeout, allow_redirects=False, stream=True)
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "ElevenLabs request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc, "provider_model_discovery_failed")
+        return self._json_response(response, "provider_model_discovery_failed")
+
+    def models(self):
+        if self.cfg.kind == "stt":
+            return [{"id": model, "label": f"ElevenLabs {model}"} for model in self._STT_MODELS]
+        raw = self._list_remote_models()
+        if not isinstance(raw, list):
+            raise ProviderFailure("provider_malformed_response", "ElevenLabs returned malformed model data.", 502, True)
+        models = []
+        for item in raw[:500]:
+            if not isinstance(item, dict) or not isinstance(item.get("model_id"), str):
+                continue
+            if self.cfg.kind == "tts" and item.get("can_do_text_to_speech") is False:
+                continue
+            model_id = item["model_id"].strip()[:160]
+            if model_id:
+                label = item.get("name") if isinstance(item.get("name"), str) else model_id
+                models.append({"id": model_id, "label": label[:160]})
+        return models
+
+    def transcribe(self, audio: bytes, filename: str, language: str | None):
+        if not audio:
+            raise ProviderFailure("invalid_audio", "Audio is empty.", 422)
+        data = {"model_id": self.cfg.model or "scribe_v2"}
+        language_code = language or self.cfg.config.get("language")
+        if language_code and language_code != "auto":
+            data["language_code"] = language_code
+        files = {"file": (filename or "audio.webm", audio)}
+        try:
+            response = requests.post(f"{self.base}/speech-to-text", headers=self.headers(), files=files, data=data, timeout=self.timeout, allow_redirects=False, stream=True)
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "ElevenLabs request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc)
+        payload = self._json_response(response)
+        if not isinstance(payload, dict):
+            raise ProviderFailure("provider_malformed_response", "ElevenLabs returned malformed transcript data.", 502, True)
+        text = self._bound_text(payload.get("text"))
+        detected = payload.get("language_code") or language
+        return {"text": text, "language": detected if isinstance(detected, str) else None}
+
+    def synthesize(self, text: str, voice: str | None):
+        voice_id = voice or self.cfg.config.get("voice") or self.cfg.config.get("voiceId")
+        if not isinstance(voice_id, str) or not voice_id.strip():
+            raise ProviderFailure("provider_invalid", "ElevenLabs voice ID is required for synthesis.", 422)
+        payload = {"text": text, "model_id": self.cfg.model or "eleven_multilingual_v2"}
+        language_code = self.cfg.config.get("language")
+        if isinstance(language_code, str) and language_code and language_code != "auto":
+            payload["language_code"] = language_code
+        speed = self.cfg.config.get("speed")
+        if speed is not None:
+            if not isinstance(speed, (int, float)) or isinstance(speed, bool) or not 0.7 <= float(speed) <= 1.2:
+                raise ProviderFailure("provider_invalid", "ElevenLabs speed must be between 0.7 and 1.2.", 422)
+            payload["voice_settings"] = {"speed": float(speed)}
+        output_format = self.cfg.config.get("outputFormat", "mp3_44100_128")
+        if not isinstance(output_format, str) or len(output_format) > 40:
+            raise ProviderFailure("provider_invalid", "ElevenLabs output format is invalid.", 422)
+        try:
+            response = requests.post(
+                f"{self.base}/text-to-speech/{quote(voice_id.strip(), safe='')}",
+                params={"output_format": output_format},
+                headers={**self.headers(), "Content-Type": "application/json"},
+                json=payload,
+                timeout=self.timeout,
+                allow_redirects=False,
+                stream=True,
+            )
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "ElevenLabs request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc)
+        audio = self._read_bounded(response, current_app.config.get("MAX_AUDIO_BYTES", 5242880))
+        if response.status_code in {401, 403}:
+            raise ProviderFailure("provider_authentication_failed", "Authentication was rejected by ElevenLabs.", 502)
+        if response.status_code == 429:
+            raise ProviderFailure("provider_rate_limited", "ElevenLabs rate limit reached.", 502, True)
+        if response.status_code >= 400:
+            raise ProviderFailure("provider_request_failed", f"ElevenLabs returned HTTP {response.status_code}.", 502, response.status_code >= 500)
+        if not audio:
+            raise ProviderFailure("provider_empty_response", "ElevenLabs returned empty audio.", 502, True)
+        media_type = (response.headers.get("Content-Type") or "audio/mpeg").split(";", 1)[0]
+        return audio, media_type if media_type.startswith("audio/") else "audio/mpeg"
+
+
+class WhisperCppAdapter(OpenAICompatibleAdapter):
+    """Local whisper.cpp HTTP server adapter for low-data STT."""
+
+    @property
+    def base(self):
+        configured = (self.cfg.base_url or "http://127.0.0.1:8765").rstrip("/")
+        parsed = urlparse(configured)
+        if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ProviderFailure("provider_invalid", "whisper.cpp base URL must point to localhost.", 422)
+        return configured
+
+    def headers(self):
+        return {}
+
+    def test(self):
+        start = time.monotonic()
+        try:
+            response = requests.get(self.base, timeout=self.timeout, allow_redirects=False, stream=True)
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "whisper.cpp request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc)
+        self._read_bounded(response, 65536)
+        if response.status_code >= 400:
+            raise ProviderFailure("provider_request_failed", f"whisper.cpp returned HTTP {response.status_code}.", 502, True)
+        return {"ok": True, "latencyMs": int((time.monotonic() - start) * 1000), "message": "whisper.cpp bağlantısı başarılı."}
+
+    def models(self):
+        return [{"id": self.cfg.model or "tiny", "label": f"whisper.cpp {self.cfg.model or 'tiny'}"}]
+
+    def transcribe(self, audio: bytes, filename: str, language: str | None):
+        if not audio:
+            raise ProviderFailure("invalid_audio", "Audio is empty.", 422)
+        data = {"response_format": "json"}
+        if language and language != "auto":
+            data["language"] = language
+        try:
+            response = requests.post(f"{self.base}/inference", headers=self.headers(), files={"file": (filename or "audio.webm", audio)}, data=data, timeout=self.timeout, allow_redirects=False, stream=True)
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "whisper.cpp request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc)
+        body = self._read_bounded(response)
+        if response.status_code >= 400:
+            raise ProviderFailure("provider_request_failed", f"whisper.cpp returned HTTP {response.status_code}.", 502, response.status_code >= 500)
+        try:
+            payload = json.loads(body.decode(getattr(response, "encoding", None) or "utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, LookupError):
+            raise ProviderFailure("provider_malformed_response", "whisper.cpp returned malformed transcript data.", 502, True)
+        if not isinstance(payload, dict):
+            raise ProviderFailure("provider_malformed_response", "whisper.cpp returned malformed transcript data.", 502, True)
+        return {"text": self._bound_text(payload.get("text")), "language": language}
+
+
 class CodexOAuthAdapter(OpenAICompatibleAdapter):
     """OpenAI Codex OAuth transport for ChatGPT subscription accounts."""
 

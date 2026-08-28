@@ -15,8 +15,10 @@ from app.security.validation import (
     validate_base_url,
 )
 
-ADAPTERS = {"openai_compatible", "openai_codex_oauth", "anthropic", "gemini", "custom_http", "local_http", "mock"}
+ADAPTERS = {"openai_compatible", "openai_codex_oauth", "anthropic", "gemini", "elevenlabs", "whisper_cpp", "custom_http", "local_http", "mock"}
 AI_ONLY_ADAPTERS = {"openai_codex_oauth", "anthropic", "gemini"}
+VOICE_ONLY_ADAPTERS = {"elevenlabs", "whisper_cpp"}
+STT_ONLY_ADAPTERS = {"whisper_cpp"}
 PUBLIC_CONFIG_KEYS = {
     "capabilities",
     "reply",
@@ -27,6 +29,7 @@ PUBLIC_CONFIG_KEYS = {
     "language",
     "responsePath",
     "textPath",
+    "outputFormat",
     "fail",
 }
 
@@ -56,6 +59,10 @@ def validate_payload(data, partial=False):
         effective_kind = data.get("kind")
         if out["adapter"] in AI_ONLY_ADAPTERS and effective_kind not in {None, "ai"}:
             raise APIError("validation_failed", f"{out['adapter']} adapter is available only for AI providers.", 422)
+        if out["adapter"] in VOICE_ONLY_ADAPTERS and effective_kind not in {None, "stt", "tts"}:
+            raise APIError("validation_failed", f"{out['adapter']} adapter is available only for voice providers.", 422)
+        if out["adapter"] in STT_ONLY_ADAPTERS and effective_kind not in {None, "stt"}:
+            raise APIError("validation_failed", f"{out['adapter']} adapter is available only for STT providers.", 422)
     if "baseUrl" in data:
         out["base_url"] = validate_base_url(data.get("baseUrl"))
     if "model" in data:
@@ -90,7 +97,7 @@ def _validate_public_config(config: dict):
     if "capabilities" in config:
         if not isinstance(config["capabilities"], list) or any(not isinstance(item, str) or len(item) > 80 for item in config["capabilities"]):
             raise APIError("validation_failed", "config.capabilities must be a list of bounded strings.", 422)
-    for key in {"reply", "transcript", "voice", "voiceId", "language", "responsePath", "textPath"} & set(config):
+    for key in {"reply", "transcript", "voice", "voiceId", "language", "responsePath", "textPath", "outputFormat"} & set(config):
         if not isinstance(config[key], str) or len(config[key]) > 2000:
             raise APIError("validation_failed", f"config.{key} must be a bounded string.", 422)
     if "speed" in config:
@@ -107,6 +114,10 @@ def create_provider(user_id, data):
     attrs = validate_payload(data)
     if attrs.get("adapter") in AI_ONLY_ADAPTERS and attrs.get("kind") != "ai":
         raise APIError("validation_failed", f"{attrs['adapter']} adapter is available only for AI providers.", 422)
+    if attrs.get("adapter") in VOICE_ONLY_ADAPTERS and attrs.get("kind") not in {"stt", "tts"}:
+        raise APIError("validation_failed", f"{attrs['adapter']} adapter is available only for voice providers.", 422)
+    if attrs.get("adapter") in STT_ONLY_ADAPTERS and attrs.get("kind") != "stt":
+        raise APIError("validation_failed", f"{attrs['adapter']} adapter is available only for STT providers.", 422)
     provider = Provider(user_id=user_id, **attrs)
     db.session.add(provider)
     db.session.flush()
@@ -125,6 +136,10 @@ def update_provider(provider_id, user_id, data):
     next_kind = attrs.get("kind", provider.kind)
     if next_adapter in AI_ONLY_ADAPTERS and next_kind != "ai":
         raise APIError("validation_failed", f"{next_adapter} adapter is available only for AI providers.", 422)
+    if next_adapter in VOICE_ONLY_ADAPTERS and next_kind not in {"stt", "tts"}:
+        raise APIError("validation_failed", f"{next_adapter} adapter is available only for voice providers.", 422)
+    if next_adapter in STT_ONLY_ADAPTERS and next_kind != "stt":
+        raise APIError("validation_failed", f"{next_adapter} adapter is available only for STT providers.", 422)
     for key, value in attrs.items():
         setattr(provider, key, value)
     if "apiKey" in data:

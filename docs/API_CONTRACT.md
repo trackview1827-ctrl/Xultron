@@ -133,6 +133,11 @@ credentials are never included.
 This release never persists raw audio. `saveAudio` is an explicit consent
 preference reserved for a future persistence implementation and defaults off.
 
+The `elevenlabs` adapter is available for `stt` and `tts` providers. It uses the
+official `https://api.elevenlabs.io/v1` host, sends credentials only in the
+`xi-api-key` header, uses `scribe_v2`/`scribe_v1` for transcription, and uses
+`eleven_multilingual_v2` plus a configured ElevenLabs voice ID for synthesis.
+
 ## Memory
 
 - `GET /memory?query=...&category=personal|preferences|important|temporary`

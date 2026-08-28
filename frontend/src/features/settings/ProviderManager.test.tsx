@@ -39,6 +39,13 @@ describe('ProviderManager', () => {
     await user.selectOptions(presets, 'anthropic')
     expect(screen.getByLabelText('Adapter')).toHaveValue('anthropic')
   })
+  it('offers ElevenLabs for voice providers with safe defaults', async () => {
+    const user = userEvent.setup(); render(<ProviderManager kind="tts" online />); await screen.findByText('No TTS provider configured'); await user.click(screen.getByRole('button', { name: 'CONFIGURE PROVIDER' }))
+    await user.selectOptions(screen.getByLabelText('Adapter'), 'elevenlabs')
+    expect(screen.getByLabelText('Provider name')).toHaveValue('ElevenLabs')
+    expect(screen.getByPlaceholderText('https://api.example.com/v1')).toHaveValue('https://api.elevenlabs.io/v1')
+    expect(screen.getByRole('combobox', { name: /Model ID/ })).toHaveValue('eleven_multilingual_v2')
+  })
   it('supports connection testing and model discovery on saved providers', async () => {
     api.list.mockResolvedValue({ providers: [provider] }); const user = userEvent.setup(); render(<ProviderManager kind="ai" online />); await user.click(await screen.findByText('Primary Mind')); await user.click(screen.getByRole('button', { name: 'Refresh models' })); expect(await screen.findByText('1 models discovered.')).toBeInTheDocument(); expect(screen.getByText(/last saved server configuration/i)).toBeInTheDocument(); await user.click(screen.getByRole('button', { name: 'TEST SAVED CONFIG' })); expect(await screen.findByText(/Connected · 42 ms/)).toBeInTheDocument()
   })

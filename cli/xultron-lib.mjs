@@ -291,6 +291,14 @@ export async function start(options) {
     env: options.env,
     stdio: options.stdio,
   });
+  if (options.env.XULTRON_LOCAL_STT_AUTOSTART === "1") {
+    io.stdout("Yerel whisper.cpp STT hazırlanıyor...");
+    await runProcess("bash", [path.join(target, "scripts", "local-voice.sh"), "start"], {
+      cwd: target,
+      env: options.env,
+      stdio: options.stdio,
+    });
+  }
   await runProcess(path.join(target, "backend", ".venv", "bin", "flask"), ["--app", "run.py", "db", "upgrade"], {
     cwd: path.join(target, "backend"),
     env: options.env,

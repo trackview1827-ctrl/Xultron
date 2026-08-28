@@ -56,6 +56,17 @@ def test_voice_mock_and_audio_limits(user_client, app):
         app.config["MAX_AUDIO_BYTES"] = old
 
 
+def test_whisper_cpp_is_stt_only(user_client):
+    rv = post_json(user_client, "/api/v1/providers", {
+        "name": "Local Whisper TTS",
+        "kind": "tts",
+        "adapter": "whisper_cpp",
+        "baseUrl": "http://127.0.0.1:8765",
+    })
+    assert rv.status_code == 422
+    assert "STT" in rv.get_json()["error"]["message"]
+
+
 def test_user_and_guest_idor_isolation(app):
     a = app.test_client(); b = app.test_client(); g = app.test_client()
     register(a, "auser", "a@example.com", "password123")
