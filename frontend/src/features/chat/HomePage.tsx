@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Conversation, Message, Provider } from '../../types'
 import { chatApi } from '../../services/chatApi'
 import { providersApi } from '../../services/providersApi'
@@ -21,8 +21,14 @@ export function HomePage() {
   const { t, locale } = useLocale()
   const [aiReady, setAiReady] = useState<boolean | null>(null)
   const [sttReady, setSttReady] = useState(false); const [ttsReady, setTtsReady] = useState(false); const [error, setError] = useState(''); const [streaming, setStreaming] = useState(false); const [historyOpen, setHistoryOpen] = useState(false)
-  const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0)
-  const voice = useVoice(text => { setInput(text); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('#command-input')?.focus()) })
+  const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0); const liveConversationRef = useRef(false)
+  const [liveConversation, setLiveConversation] = useState(false); const [liveTranscript, setLiveTranscript] = useState(''); const [liveRetry, setLiveRetry] = useState(0)
+  const handleVoiceTranscript = useCallback((text: string) => {
+    if (liveConversationRef.current) { setLiveTranscript(text); return }
+    setInput(text); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('#command-input')?.focus())
+  }, [setInput])
+  const handleVoiceNoSpeech = useCallback(() => { if (liveConversationRef.current) setLiveRetry(value => value + 1) }, [])
+  const voice = useVoice(handleVoiceTranscript, handleVoiceNoSpeech)
   const conserveMotion = conservesMotion(settings)
   useEffect(() => {
     const generation = ++systemLoadGenerationRef.current
@@ -44,6 +50,9 @@ export function HomePage() {
     setStreaming(false)
     if (dispatchState) dispatchCore({ type: online ? 'CANCEL' : 'NETWORK_LOST' })
   }
+  const stopLiveConversation = () => {
+    liveConversationRef.current = false; setLiveConversation(false); setLiveTranscript(''); setLiveRetry(0); voice.stop(); voice.stopSpeaking(); cancelActiveResponse(true)
+  }
   useEffect(() => () => { historyAbortRef.current?.abort(); const active = activeResponseRef.current; if (active) { active.stopped = true; abortRef.current?.abort(); dispatchCore({ type: 'CANCEL' }) } }, [dispatchCore])
   const selectConversation = async (conversation: Conversation) => {
     cancelActiveResponse(false); historyAbortRef.current?.abort(); const generation = ++selectionGenerationRef.current; const controller = new AbortController(); historyAbortRef.current = controller
@@ -53,20 +62,20 @@ export function HomePage() {
     finally { if (generation === selectionGenerationRef.current) historyAbortRef.current = null }
   }
   const newConversation = () => { cancelActiveResponse(false); selectionGenerationRef.current += 1; historyAbortRef.current?.abort(); historyAbortRef.current = null; setConversationId(undefined); setActiveConversation(undefined); setMessages([]); setError(''); setHistoryOpen(false) }
-  const send = async () => {
-    const text = input.trim(); if (!text || streaming) return; if (!online) { setError(networkOnline ? t('The Xultron backend is unavailable. Retry the link before sending.', 'Xultron backend kullanılamıyor. Göndermeden önce bağlantıyı yenile.') : t('Xultron is offline. Reconnect before sending.', 'Xultron çevrimdışı. Göndermeden önce yeniden bağlan.')); if (!networkOnline) dispatchCore({ type: 'NETWORK_LOST' }); return }
-    if (aiReady === false) { setError(t('No AI provider is configured.', 'AI sağlayıcısı yapılandırılmadı.')); return }
+  const send = async (overrideText?: string, liveTurn = false) => {
+    const text = (overrideText ?? input).trim(); if (!text || streaming) return; if (!online) { setError(networkOnline ? t('The Xultron backend is unavailable. Retry the link before sending.', 'Xultron backend kullanılamıyor. Göndermeden önce bağlantıyı yenile.') : t('Xultron is offline. Reconnect before sending.', 'Xultron çevrimdışı. Göndermeden önce yeniden bağlan.')); if (!networkOnline) dispatchCore({ type: 'NETWORK_LOST' }); if (liveTurn) stopLiveConversation(); return }
+    if (aiReady !== true) { setError(t('No AI provider is configured.', 'AI sağlayıcısı yapılandırılmadı.')); if (liveTurn) stopLiveConversation(); return }
     const requestId = id(); const userMessage: Message = { id: `local-${requestId}`, conversationId: conversationId ?? '', role: 'user', content: text, createdAt: new Date().toISOString() }
     const assistantId = `stream-${requestId}`; setMessages(current => [...current, userMessage, { id: assistantId, conversationId: conversationId ?? '', role: 'assistant', content: '', createdAt: new Date().toISOString(), pending: true }]); setInput(''); setError(''); setStreaming(true)
     if (coreState === 'ERROR') dispatchCore({ type: 'RECOVER' })
     dispatchCore({ type: 'THINK' })
-    const controller = new AbortController(); abortRef.current = controller; activeResponseRef.current = { requestId, assistantId, stopped: false }; let streamError = ''; let failed = false
+    const controller = new AbortController(); abortRef.current = controller; activeResponseRef.current = { requestId, assistantId, stopped: false }; let streamError = ''; let failed = false; let assistantOutput = ''
     const acceptsStreamEvent = () => activeResponseRef.current?.requestId === requestId && !activeResponseRef.current.stopped
     try { await chatApi.stream({ conversationId, message: text, requestId }, {
       onState: state => { if (acceptsStreamEvent() && state.toLowerCase() === 'thinking') dispatchCore({ type: 'THINK' }) },
       onConversation: conversation => { if (!acceptsStreamEvent()) return; setConversationId(conversation.id); setConversations(current => [conversation, ...current.filter(item => item.id !== conversation.id)]) },
-      onDelta: delta => { if (acceptsStreamEvent()) setMessages(current => current.map(item => item.id === assistantId ? { ...item, content: item.content + delta } : item)) },
-      onDone: message => { if (acceptsStreamEvent()) setMessages(current => current.map(item => item.id === assistantId ? { ...(message?.id ? message : item), content: message?.content || item.content, pending: false } : item)) },
+      onDelta: delta => { if (acceptsStreamEvent()) { assistantOutput += delta; setMessages(current => current.map(item => item.id === assistantId ? { ...item, content: item.content + delta } : item)) } },
+      onDone: message => { if (acceptsStreamEvent()) { assistantOutput = message?.content || assistantOutput; setMessages(current => current.map(item => item.id === assistantId ? { ...(message?.id ? message : item), content: message?.content || item.content, pending: false } : item)) } },
       onError: message => { if (!acceptsStreamEvent()) return; streamError = message; throw new ApiError(message) },
     }, controller.signal) } catch (caught) {
       if (!(caught instanceof DOMException && caught.name === 'AbortError')) { failed = true; const message = streamError || (caught instanceof Error ? caught.message : 'Response interrupted.'); setError(message); setMessages(current => current.map(item => item.id === assistantId ? { ...item, pending: false, failed: true, content: item.content || 'Response interrupted before output was received.' } : item)); dispatchCore({ type: 'FAIL' }) }
@@ -75,12 +84,40 @@ export function HomePage() {
         const stopped = activeResponseRef.current.stopped
         setStreaming(false); abortRef.current = null; activeResponseRef.current = null
         if (!failed && !stopped) dispatchCore({ type: online ? 'COMPLETE' : 'NETWORK_LOST' })
+        if (liveTurn && !failed && !stopped && liveConversationRef.current) {
+          if (assistantOutput.trim()) await voice.speak(assistantOutput.trim())
+          if (liveConversationRef.current) {
+            const started = await voice.start()
+            if (!started && liveConversationRef.current) stopLiveConversation()
+          }
+        }
       }
     }
   }
   const stop = () => {
     cancelActiveResponse(true)
   }
+  const startLiveConversation = async () => {
+    if (liveConversationRef.current) return
+    if (!online || !sttReady || !ttsReady || aiReady !== true) {
+      setError(t('Configure AI, STT, and TTS providers before starting live voice.', 'Canlı sesi başlatmadan önce AI, STT ve TTS sağlayıcılarını yapılandır.'))
+      return
+    }
+    setError(''); setLiveRetry(0); liveConversationRef.current = true; setLiveConversation(true)
+    const started = await voice.start()
+    if (!started && liveConversationRef.current) stopLiveConversation()
+  }
+  useEffect(() => {
+    if (!liveConversation || !liveTranscript) return
+    const text = liveTranscript; setLiveTranscript(''); void send(text, true)
+  }, [liveConversation, liveTranscript])
+  useEffect(() => {
+    if (!liveConversation || !liveRetry) return
+    void voice.start()
+  }, [liveConversation, liveRetry])
+  useEffect(() => {
+    if (!online && liveConversation) stopLiveConversation()
+  }, [liveConversation, online])
   const coreCompact = messages.length > 0
   return <div className="home-page">
     <aside className={`conversation-ledger ${historyOpen ? 'open' : ''}`} aria-label={t('Conversation history', 'Sohbet geçmişi')}><div className="ledger-head"><span>{t('CONVERSATION LOG', 'SOHBET KAYDI')}</span><button onClick={() => setHistoryOpen(false)} aria-label={t('Close history', 'Geçmişi kapat')}><Icon name="close" /></button></div><button className="new-thread" onClick={newConversation}><Icon name="plus" /> {t('NEW THREAD', 'YENİ SOHBET')}</button><div className="ledger-list">{conversations.map(item => <button key={item.id} className={item.id === conversationId ? 'active' : ''} onClick={() => void selectConversation(item)}><span>{item.title || t('Untitled sequence', 'Adsız sohbet')}</span><small>{new Date(item.updatedAt).toLocaleDateString(locale)}</small></button>)}{!conversations.length && <p>{t('No previous sequences.', 'Önceki sohbet yok.')}</p>}</div></aside>
@@ -95,7 +132,7 @@ export function HomePage() {
       </div>
       {(aiReady === false || (!online && messages.length === 0)) && <div className="system-notice"><span className="notice-code">{!online ? 'LINK / 00' : 'PROVIDER / 00'}</span><div><strong>{!online ? 'Connection unavailable' : 'No AI provider configured'}</strong><p>{!online ? 'The interface remains available. AI actions resume after reconnection.' : 'Connect an intelligence provider to activate conversations.'}</p></div>{online && <Button variant="secondary" onClick={() => setPage('settings')}>CONFIGURE PROVIDER</Button>}</div>}
       {(error || voice.error) && <div className="command-error" role="alert"><span>{error || voice.error}</span><button onClick={() => { setError(''); voice.clearError() }} aria-label="Dismiss error"><Icon name="close" /></button></div>}
-      <div className="command-dock"><div className="input-line"><textarea id="command-input" rows={1} value={input} maxLength={8000} onChange={event => setInput(event.target.value.slice(0, 8000))} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={online ? t('Ask Xultron…', 'Xultron’a sor…') : t('Reconnect to transmit…', 'Göndermek için yeniden bağlan…')} aria-label={t('Message Xultron', 'Xultron’a mesaj gönder')} disabled={!online || streaming} /><span className="char-count">{input.length > 7000 ? `${input.length}/8000` : ''}</span></div><div className="dock-actions"><button className={`voice-button ${voice.recording ? 'recording' : ''}`} onClick={() => voice.recording ? voice.stop() : void voice.start()} disabled={!online || !sttReady || streaming} aria-label={voice.recording ? t('Stop recording', 'Kaydı durdur') : sttReady ? t('Start voice input', 'Sesli girişi başlat') : t('Configure an STT provider first', 'Önce bir STT sağlayıcısı yapılandır')} >{voice.recording ? <Icon name="stop" /> : <Icon name="mic" />}</button>{streaming ? <button className="send-button stop" onClick={stop} aria-label={t('Stop response', 'Yanıtı durdur')}><Icon name="stop" /></button> : <button className="send-button" onClick={() => void send()} disabled={!input.trim() || !online} aria-label={t('Send message', 'Mesaj gönder')}>{aiReady === null ? <Spinner /> : <Icon name="send" />}</button>}</div></div>
+      <div className="command-dock"><div className="input-line"><textarea id="command-input" rows={1} value={input} maxLength={8000} onChange={event => setInput(event.target.value.slice(0, 8000))} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={online ? t('Ask Xultron…', 'Xultron’a sor…') : t('Reconnect to transmit…', 'Göndermek için yeniden bağlan…')} aria-label={t('Message Xultron', 'Xultron’a mesaj gönder')} disabled={!online || streaming || liveConversation} /><span className="char-count">{input.length > 7000 ? `${input.length}/8000` : ''}</span></div><div className="dock-actions"><button className={`live-voice-button ${liveConversation ? 'active' : ''}`} onClick={() => liveConversation ? stopLiveConversation() : void startLiveConversation()} disabled={liveConversation ? false : !online || !sttReady || !ttsReady || aiReady !== true} aria-pressed={liveConversation} aria-label={liveConversation ? t('Stop live conversation', 'Anlık konuşmayı durdur') : t('Start live conversation', 'Anlık konuşmayı başlat')}><span className="live-waveform" aria-hidden="true"><span /><span /><span /><span /><span /></span></button><button className={`voice-button ${voice.recording ? 'recording' : ''}`} onClick={() => voice.recording ? voice.stop() : void voice.start()} disabled={!online || !sttReady || streaming || liveConversation} aria-label={voice.recording ? t('Stop recording', 'Kaydı durdur') : sttReady ? t('Start voice input', 'Sesli girişi başlat') : t('Configure an STT provider first', 'Önce bir STT sağlayıcısı yapılandır')} >{voice.recording ? <Icon name="stop" /> : <Icon name="mic" />}</button>{streaming ? <button className="send-button stop" onClick={stop} aria-label={t('Stop response', 'Yanıtı durdur')}><Icon name="stop" /></button> : <button className="send-button" onClick={() => void send()} disabled={!input.trim() || !online || liveConversation} aria-label={t('Send message', 'Mesaj gönder')}>{aiReady === null ? <Spinner /> : <Icon name="send" />}</button>}</div></div>
     </section>
   </div>
 }

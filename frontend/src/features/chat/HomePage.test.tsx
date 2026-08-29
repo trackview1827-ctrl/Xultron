@@ -7,11 +7,11 @@ import { HomePage } from './HomePage'
 const app = vi.hoisted(() => ({ dispatchCore: vi.fn(), value: {} as Record<string, unknown> }))
 const chat = vi.hoisted(() => ({ conversations: vi.fn(), messages: vi.fn(), stream: vi.fn() }))
 const providers = vi.hoisted(() => ({ list: vi.fn() }))
-const voice = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), speak: vi.fn(), stopSpeaking: vi.fn(), clearError: vi.fn(), recording: false, speaking: false, level: 0, error: '' }))
+const voice = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), speak: vi.fn(), stopSpeaking: vi.fn(), clearError: vi.fn(), onTranscript: undefined as ((text: string) => void) | undefined, recording: false, speaking: false, level: 0, error: '' }))
 vi.mock('../../stores/AppContext', () => ({ useApp: () => app.value }))
 vi.mock('../../services/chatApi', () => ({ chatApi: chat }))
 vi.mock('../../services/providersApi', () => ({ providersApi: providers }))
-vi.mock('../../hooks/useVoice', () => ({ useVoice: () => voice }))
+vi.mock('../../hooks/useVoice', () => ({ useVoice: (onTranscript: (text: string) => void) => { voice.onTranscript = onTranscript; return voice } }))
 
 const conversationA = { id: 'a', title: 'Sequence A', createdAt: '2026-08-24T00:00:00Z', updatedAt: '2026-08-24T01:00:00Z' }
 const conversationB = { id: 'b', title: 'Sequence B', createdAt: '2026-08-24T00:00:00Z', updatedAt: '2026-08-24T02:00:00Z' }
@@ -26,6 +26,8 @@ describe('HomePage response and history lifecycle', () => {
     chat.conversations.mockResolvedValue({ conversations: [] })
     chat.messages.mockResolvedValue({ messages: [] })
     chat.stream.mockReset()
+    voice.start.mockReset().mockResolvedValue(true)
+    voice.stop.mockReset(); voice.speak.mockReset().mockResolvedValue(undefined); voice.stopSpeaking.mockReset(); voice.clearError.mockReset(); voice.onTranscript = undefined
   })
 
   it('finalizes partial assistant output on explicit Stop without a Core error flash', async () => {
@@ -69,5 +71,31 @@ describe('HomePage response and history lifecycle', () => {
     first.resolve({ messages: [message('ma', 'a', 'Stale A output')] })
     await Promise.resolve()
     expect(screen.queryByText('Stale A output')).not.toBeInTheDocument()
+  })
+
+  it('runs a live voice turn, speaks the reply, and listens for the next turn', async () => {
+    providers.list.mockResolvedValue({ providers: [
+      { id: 'ai', name: 'AI', kind: 'ai', adapter: 'mock', baseUrl: null, model: null, temperature: null, maxTokens: null, streaming: true, enabled: true, isDefault: true, credential: { configured: false, masked: null }, config: {} },
+      { id: 'stt', name: 'STT', kind: 'stt', adapter: 'mock', baseUrl: null, model: null, temperature: null, maxTokens: null, streaming: false, enabled: true, isDefault: true, credential: { configured: false, masked: null }, config: {} },
+      { id: 'tts', name: 'TTS', kind: 'tts', adapter: 'mock', baseUrl: null, model: null, temperature: null, maxTokens: null, streaming: false, enabled: true, isDefault: true, credential: { configured: false, masked: null }, config: {} },
+    ] })
+    chat.stream.mockImplementation(async (_request, handlers) => {
+      handlers.onDelta('Canlı yanıt')
+      handlers.onDone({ id: 'live-answer', conversationId: '', role: 'assistant', content: 'Canlı yanıt', createdAt: '2026-08-29T00:00:00Z' })
+    })
+    const user = userEvent.setup(); render(<HomePage />)
+    const start = await screen.findByRole('button', { name: 'Start live conversation' })
+    await waitFor(() => expect(start).toBeEnabled())
+    await user.click(start)
+    expect(voice.start).toHaveBeenCalledTimes(1)
+
+    voice.onTranscript?.('Nasılsın?')
+    await waitFor(() => expect(chat.stream).toHaveBeenCalledWith(expect.objectContaining({ message: 'Nasılsın?' }), expect.anything(), expect.anything()))
+    await waitFor(() => expect(voice.speak).toHaveBeenCalledWith('Canlı yanıt'))
+    await waitFor(() => expect(voice.start).toHaveBeenCalledTimes(2))
+
+    await user.click(screen.getByRole('button', { name: 'Stop live conversation' }))
+    expect(voice.stop).toHaveBeenCalled()
+    expect(voice.stopSpeaking).toHaveBeenCalled()
   })
 })

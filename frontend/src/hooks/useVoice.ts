@@ -20,7 +20,7 @@ function abortError(message: string): DOMException {
   return new DOMException(message, 'AbortError')
 }
 
-export function useVoice(onTranscript: (text: string) => void) {
+export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () => void) {
   const { coreState, dispatchCore, settings, online, networkOnline } = useApp()
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -100,18 +100,18 @@ export function useVoice(onTranscript: (text: string) => void) {
     dispatchRef.current({ type: 'NETWORK_LOST' })
   }, [cancelCapture, cancelPlayback, networkOnline])
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (): Promise<boolean> => {
     setError('')
     if (!online) {
       setError('Voice input needs a network connection.')
       if (!networkOnline) dispatchCore({ type: 'NETWORK_LOST' })
-      return
+      return false
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setError('Microphone recording is not supported in this browser.')
-      return
+      return false
     }
-    if (recorderRef.current?.state === 'recording') return
+    if (recorderRef.current?.state === 'recording') return true
 
     if (playbackRef.current || synthAbortRef.current) cancelPlayback(true)
     cancelCapture(false)
@@ -122,7 +122,7 @@ export function useVoice(onTranscript: (text: string) => void) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } })
       if (!mountedRef.current || operationId !== captureGenerationRef.current) {
         stream.getTracks().forEach(track => track.stop())
-        return
+        return false
       }
       streamRef.current = stream
 
@@ -164,7 +164,8 @@ export function useVoice(onTranscript: (text: string) => void) {
             if (!mountedRef.current || operationId !== captureGenerationRef.current) return
             const transcript = result.text.trim()
             if (!transcript) {
-              setError('No speech was detected. Try speaking closer to the microphone.')
+              if (!onNoSpeech) setError('No speech was detected. Try speaking closer to the microphone.')
+              onNoSpeech?.()
               dispatchRef.current({ type: 'COMPLETE' })
               return
             }
@@ -209,15 +210,17 @@ export function useVoice(onTranscript: (text: string) => void) {
           if (context && context.state !== 'closed') void context.close().catch(() => undefined)
         }
       }
+      return true
     } catch (caught) {
-      if (!mountedRef.current || operationId !== captureGenerationRef.current) return
+      if (!mountedRef.current || operationId !== captureGenerationRef.current) return false
       setError(caught instanceof DOMException && caught.name === 'NotAllowedError'
         ? 'Microphone access was denied. Enable it in browser permissions, then retry.'
         : 'Xultron could not activate the microphone.')
       cancelCapture(false)
       dispatchCore({ type: 'FAIL' })
+      return false
     }
-  }, [cancelCapture, cancelPlayback, coreState, dispatchCore, networkOnline, onTranscript, online, releaseCapture, settings.lowDataMode, settings.reducedMotion, settings.sttLanguage])
+  }, [cancelCapture, cancelPlayback, coreState, dispatchCore, networkOnline, onNoSpeech, onTranscript, online, releaseCapture, settings.lowDataMode, settings.reducedMotion, settings.sttLanguage])
 
   const stop = useCallback(() => {
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
