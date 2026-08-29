@@ -19,3 +19,13 @@ def test_azerbaijani_tts_expands_numbers_and_preserves_ids():
 
 def test_other_locales_are_left_unchanged():
     assert spoken_text("Version 2 costs $10.", "en") == "Version 2 costs $10."
+
+
+def test_tts_number_normalization_handles_non_prose_tokens_safely():
+    assert spoken_text("Sürüm v1.2.3, IP 192.168.1.1.", "tr") == (
+        "Sürüm versiyon bir nokta iki nokta üç, IP yüz doksan iki nokta yüz altmış sekiz nokta bir nokta bir."
+    )
+    assert spoken_text("Git: https://example.com/x?id=1250", "tr") == "Git: https://example.com/x?id=1250"
+    assert spoken_text("Ara: +90 (555) 123 45 67.", "tr") == "Ara: +90 (555) 123 45 67."
+    assert spoken_text("Geçersiz 31/02/2026 ve 00-12-2026.", "tr") == "Geçersiz 31/02/2026 ve 00-12-2026."
+    assert spoken_text("Ücret $10.25.", "tr") == "Ücret on virgül yirmi beş dolar."

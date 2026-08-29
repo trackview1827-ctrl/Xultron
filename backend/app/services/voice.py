@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from datetime import date as calendar_date
 
 
 _NUMBER_WORDS = {
@@ -7,7 +8,7 @@ _NUMBER_WORDS = {
         "ones": ("sıfır", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"),
         "tens": ("", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"),
         "scales": ("", "bin", "milyon", "milyar", "trilyon", "katrilyon"),
-        "hundred": "yüz", "decimal": "virgül", "minus": "eksi", "percent": "yüzde",
+        "hundred": "yüz", "decimal": "virgül", "minus": "eksi", "percent": "yüzde", "dot": "nokta",
         "months": ("", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"),
         "currency": {"₺": "Türk lirası", "TL": "Türk lirası", "$": "dolar", "€": "euro"},
         "time": "saat",
@@ -16,7 +17,7 @@ _NUMBER_WORDS = {
         "ones": ("sıfır", "bir", "iki", "üç", "dörd", "beş", "altı", "yeddi", "səkkiz", "doqquz"),
         "tens": ("", "on", "iyirmi", "otuz", "qırx", "əlli", "altmış", "yetmiş", "səksən", "doxsan"),
         "scales": ("", "min", "milyon", "milyard", "trilyon", "katrilyon"),
-        "hundred": "yüz", "decimal": "vergül", "minus": "mənfi", "percent": "faiz",
+        "hundred": "yüz", "decimal": "vergül", "minus": "mənfi", "percent": "faiz", "dot": "nöqtə",
         "months": ("", "yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avqust", "sentyabr", "oktyabr", "noyabr", "dekabr"),
         "currency": {"₺": "Türkiyə lirəsi", "TL": "Türkiyə lirəsi", "$": "dollar", "€": "avro"},
         "time": "saat",
@@ -87,6 +88,13 @@ def spoken_text(text: str, locale: str = "tr") -> str:
     if not words or not isinstance(text, str) or not re.search(r"\d", text):
         return text
 
+    protected = []
+
+    def hold(value: str) -> str:
+        marker = chr(0xE000 + len(protected))
+        protected.append((marker, value))
+        return marker
+
     def localized_number(raw: str) -> str:
         if re.fullmatch(r"-?\d{1,3}(?:\.\d{3})+(?:,\d+)?", raw):
             raw = raw.replace(".", "")
@@ -94,9 +102,11 @@ def spoken_text(text: str, locale: str = "tr") -> str:
 
     def date(match):
         day, month, year = match.groups()
+        try:
+            calendar_date(int(year), int(month), int(day))
+        except ValueError:
+            return hold(match.group(0))
         month_index = int(month)
-        if not 1 <= month_index <= 12:
-            return match.group(0)
         return f'{_integer_words(str(int(day)), words)} {words["months"][month_index]} {_integer_words(str(int(year)), words)}'
 
     def clock(match):
@@ -107,15 +117,31 @@ def spoken_text(text: str, locale: str = "tr") -> str:
 
     def currency_prefix(match):
         symbol, number = match.groups()
-        return f'{localized_number(number)} {words["currency"][symbol]}'
+        spoken = _number_words(number, words) if symbol in {"$", "€"} and "." in number and "," not in number else localized_number(number)
+        return f'{spoken} {words["currency"][symbol]}'
 
     def currency_suffix(match):
         number, symbol = match.groups()
-        return f'{localized_number(number)} {words["currency"][symbol.upper()]}'
+        normalized_symbol = symbol.upper()
+        spoken = _number_words(number, words) if normalized_symbol in {"$", "€"} and "." in number and "," not in number else localized_number(number)
+        return f'{spoken} {words["currency"][normalized_symbol]}'
 
-    result = re.sub(r"(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?!\d)", date, text)
+    result = re.sub(r'(?:https?://|www\.)[^\s<>"\']+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}', lambda m: hold(m.group(0)), text, flags=re.IGNORECASE)
+    result = re.sub(r"(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?!\d)", date, result)
     result = re.sub(r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)(?!\d)", clock, result)
-    number_token = r"-?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?"
+    result = re.sub(
+        r"(?<![\w])(?:\d{1,3}\.){3}\d{1,3}(?![\w])",
+        lambda m: f' {words["dot"]} '.join(_integer_words(part, words) for part in m.group(0).split(".")),
+        result,
+    )
+    result = re.sub(
+        r"(?<![\w])([vV]?)(\d+(?:\.\d+){2,})(?![\w])",
+        lambda m: ("versiyon " if m.group(1) and language == "tr" else "versiya " if m.group(1) else "")
+        + f' {words["dot"]} '.join(_integer_words(part, words) for part in m.group(2).split(".")),
+        result,
+    )
+    result = re.sub(r"(?<![\w])\+?\d[\d\s()-]{6,}\d(?![\w])", lambda m: hold(m.group(0)), result)
+    number_token = r"-?(?:\d{1,3}(?:\.\d{3})+|\d+(?:\.\d+)?)(?:,\d+)?"
     result = re.sub(rf"([₺$€])\s*({number_token})", currency_prefix, result)
     result = re.sub(rf"({number_token})\s*(TL|tl|₺|\$|€)(?!\w)", currency_suffix, result)
     result = re.sub(rf"%\s*({number_token})", lambda m: f'{words["percent"]} {localized_number(m.group(1))}', result)
@@ -123,7 +149,10 @@ def spoken_text(text: str, locale: str = "tr") -> str:
     result = re.sub(r"(?<![\w])-?\d{1,3}(?:\.\d{3})+(?:,\d+)?(?![\w])", lambda m: localized_number(m.group(0)), result)
     result = re.sub(r"(?<![\w])(-?\d+[.,]\d+)(?![\w])", lambda m: _number_words(m.group(1), words), result)
     result = re.sub(r"(?<![\w])(-?\d+)(?![\w])", lambda m: _integer_words(m.group(1), words), result)
-    return re.sub(r"\s+", " ", result).strip()
+    result = re.sub(r"\s+", " ", result).strip()
+    for marker, value in protected:
+        result = result.replace(marker, value)
+    return result
 
 
 def speech_text(value: object, max_length: int = 20000) -> str:
