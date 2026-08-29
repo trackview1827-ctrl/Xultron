@@ -39,13 +39,14 @@ def test_invalid_provider_failure(user_client):
 def test_voice_mock_and_audio_limits(user_client, app):
     stt = create_mock_provider(user_client, "stt", config={"transcript": "hello voice"})
     tts = create_mock_provider(user_client, "tts")
+    patch_json(user_client, "/api/v1/settings", {"locale": "tr"})
     token = user_client.get("/api/v1/auth/session").get_json()["csrfToken"]
     rv = user_client.post("/api/v1/voice/transcribe", data={"audio": (io.BytesIO(b"abc"), "a.webm"), "providerId": stt["id"]}, content_type="multipart/form-data", headers={"X-CSRF-Token": token})
     assert rv.status_code == 200
     assert rv.get_json()["text"] == "hello voice"
-    audio = post_json(user_client, "/api/v1/voice/synthesize", {"text": "say hi", "providerId": tts["id"]})
+    audio = post_json(user_client, "/api/v1/voice/synthesize", {"text": "Saat 14:30 ve sayı 1250.", "providerId": tts["id"]})
     assert audio.status_code == 200
-    assert audio.data.startswith(b"MOCK-AUDIO")
+    assert audio.data == b"MOCK-AUDIO:default:Saat on d\xc3\xb6rt otuz ve say\xc4\xb1 bin iki y\xc3\xbcz elli."
     old = app.config["MAX_AUDIO_BYTES"]
     app.config["MAX_AUDIO_BYTES"] = 2
     try:

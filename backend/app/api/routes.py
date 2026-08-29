@@ -16,7 +16,7 @@ from app.services.providers import adapter_call, create_provider, default_provid
 from app.services.openai_oauth import callback as openai_oauth_callback, clear as clear_openai_oauth, start as start_openai_oauth
 from app.services.settings import get_settings, patch_settings
 from app.services.verification import tool_descriptions
-from app.services.voice import speech_text
+from app.services.voice import speech_text, spoken_text
 from app.services.tasks import claim_task, create_task, execute_task, owned_task, record_event, renew_task, retry_task, update_task
 from app.services.planner import approve_plan, generate_plan
 
@@ -447,7 +447,9 @@ def synthesize():
     provider = owned_provider(provider_id, user.id) if provider_id else default_provider(user.id, "tts")
     if not provider:
         raise APIError("provider_not_configured", "No TTS provider is configured.", 503)
-    audio, media_type = adapter_call(provider, "synthesize", text, voice)
+    provider_language = (provider.config or {}).get("language")
+    locale = provider_language if isinstance(provider_language, str) and provider_language not in {"", "auto"} else get_settings(user).get("locale", "tr")
+    audio, media_type = adapter_call(provider, "synthesize", spoken_text(text, locale), voice)
     if len(audio) > current_app.config["MAX_AUDIO_BYTES"]:
         raise APIError("request_entity_too_large", "Audio response is too large.", 413)
     return Response(audio, mimetype=media_type)
