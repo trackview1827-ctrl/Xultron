@@ -1,8 +1,11 @@
 import json
+import io
 import re
 import subprocess
+import struct
 import time
 import unicodedata
+import wave
 from typing import Iterable
 from urllib.parse import quote, urlparse
 
@@ -444,12 +447,38 @@ class WhisperCppAdapter(OpenAICompatibleAdapter):
         )
         if marker_wrapped and (not normalized or any(term in normalized for term in non_speech) or re.fullmatch(r"x\s*", normalized)):
             return ""
+        lines = [re.sub(r"\s+", " ", line).strip().casefold() for line in text.splitlines() if line.strip()]
+        if len(lines) >= 3 and len(set(lines)) == 1:
+            return ""
         return text
+
+    @staticmethod
+    def _has_speech_energy(audio: bytes) -> bool:
+        try:
+            with wave.open(io.BytesIO(audio), "rb") as source:
+                if source.getsampwidth() != 2:
+                    return True
+                frames = source.readframes(source.getnframes())
+        except (EOFError, wave.Error):
+            return True
+        count = len(frames) // 2
+        if not count:
+            return False
+        total = 0
+        peak = 0
+        for (sample,) in struct.iter_unpack("<h", frames[:count * 2]):
+            absolute = abs(sample)
+            total += sample * sample
+            peak = max(peak, absolute)
+        rms = (total / count) ** 0.5 / 32768
+        return rms >= 0.003 or peak / 32768 >= 0.02
 
     def transcribe(self, audio: bytes, filename: str, language: str | None):
         if not audio:
             raise ProviderFailure("invalid_audio", "Audio is empty.", 422)
         audio, filename = self._wav_audio(audio, filename or "audio")
+        if not self._has_speech_energy(audio):
+            return {"text": "", "language": language}
         data = {"response_format": "json"}
         if language and language != "auto":
             data["language"] = language
