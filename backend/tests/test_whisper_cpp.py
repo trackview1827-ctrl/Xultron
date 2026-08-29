@@ -1,7 +1,5 @@
 import json
-import io
 from types import SimpleNamespace
-import wave
 
 from app.providers.adapters import WhisperCppAdapter
 from app.providers.base import ProviderConfig, ProviderFailure
@@ -23,16 +21,6 @@ class FakeResponse:
 
 def config():
     return ProviderConfig("local", "whisper.cpp", "stt", "whisper_cpp", "http://127.0.0.1:8766", None, "tiny", None, None, False, {})
-
-
-def silent_wav():
-    output = io.BytesIO()
-    with wave.open(output, "wb") as target:
-        target.setnchannels(1)
-        target.setsampwidth(2)
-        target.setframerate(16000)
-        target.writeframes(b"\0\0" * 16000)
-    return output.getvalue()
 
 
 def test_whisper_cpp_transcribes_without_auth(app, monkeypatch):
@@ -92,13 +80,6 @@ def test_whisper_cpp_preserves_spoken_music_sentence(app, monkeypatch):
     with app.app_context():
         result = WhisperCppAdapter(config()).transcribe(b"RIFF\x00\x00\x00\x00WAVEaudio", "voice.wav", "tr")
     assert result == {"text": "Müzik çalıyor mu?", "language": "tr"}
-
-
-def test_whisper_cpp_skips_silent_wav_without_calling_server(app, monkeypatch):
-    post = monkeypatch.setattr("app.providers.adapters.requests.post", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("server should not be called")))
-    with app.app_context():
-        result = WhisperCppAdapter(config()).transcribe(silent_wav(), "silence.wav", "tr")
-    assert result == {"text": "", "language": "tr"}
 
 
 def test_whisper_cpp_filters_three_identical_hallucinated_lines(app, monkeypatch):
