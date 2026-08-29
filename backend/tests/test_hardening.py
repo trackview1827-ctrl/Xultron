@@ -88,6 +88,9 @@ def test_provider_url_and_settings_validation(user_client):
     assert good_settings.get_json()["settings"]["theme"] == "darker"
     assert good_settings.get_json()["settings"]["locale"] == "tr"
     assert good_settings.get_json()["settings"]["sttLanguage"] == "tr"
+    az_settings = user_client.patch("/api/v1/settings", json={"sttLanguage": "az"}, headers={"X-CSRF-Token": csrf(user_client)})
+    assert az_settings.status_code == 200
+    assert az_settings.get_json()["settings"]["sttLanguage"] == "az"
 
 
 def test_safe_log_validation(client, app, caplog):

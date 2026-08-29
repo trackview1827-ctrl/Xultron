@@ -16,6 +16,10 @@ interface PlaybackSession {
   abort: () => void
 }
 
+interface StartOptions {
+  autoStopSilenceMs?: number
+}
+
 function abortError(message: string): DOMException {
   return new DOMException(message, 'AbortError')
 }
@@ -100,7 +104,7 @@ export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () =
     dispatchRef.current({ type: 'NETWORK_LOST' })
   }, [cancelCapture, cancelPlayback, networkOnline])
 
-  const start = useCallback(async (): Promise<boolean> => {
+  const start = useCallback(async (options: StartOptions = {}): Promise<boolean> => {
     setError('')
     if (!online) {
       setError('Voice input needs a network connection.')
@@ -189,19 +193,37 @@ export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () =
       setRecording(true)
       dispatchCore({ type: 'LISTEN' })
 
-      if (!settings.lowDataMode && !settings.reducedMotion && typeof AudioContext !== 'undefined') {
+      if ((!settings.lowDataMode && !settings.reducedMotion || options.autoStopSilenceMs) && typeof AudioContext !== 'undefined') {
         let context: AudioContext | null = null
         try {
           context = new AudioContext()
+          void context.resume?.().catch(() => undefined)
           audioContextRef.current = context
           const source = context.createMediaStreamSource(stream)
           const analyser = context.createAnalyser()
           analyser.fftSize = 64
           source.connect(analyser)
           const data = new Uint8Array(analyser.frequencyBinCount)
+          const startedAt = performance.now()
+          let speechDetected = false
+          let silenceStartedAt: number | null = null
           const sample = () => {
             analyser.getByteFrequencyData(data)
-            if (mountedRef.current && operationId === captureGenerationRef.current) setLevel(data.reduce((sum, value) => sum + value, 0) / data.length / 255)
+            const now = performance.now()
+            const currentLevel = data.reduce((sum, value) => sum + value, 0) / data.length / 255
+            if (mountedRef.current && operationId === captureGenerationRef.current) setLevel(currentLevel)
+            if (options.autoStopSilenceMs && recorder.state === 'recording') {
+              if (currentLevel > 0.035) {
+                speechDetected = true
+                silenceStartedAt = null
+              } else if (speechDetected || now - startedAt >= options.autoStopSilenceMs * 2) {
+                silenceStartedAt ??= now
+                if (now - silenceStartedAt >= options.autoStopSilenceMs) {
+                  recorder.stop()
+                  return
+                }
+              }
+            }
             analyserFrame.current = requestAnimationFrame(sample)
           }
           sample()

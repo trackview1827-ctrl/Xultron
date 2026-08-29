@@ -87,7 +87,7 @@ export function HomePage() {
         if (liveTurn && !failed && !stopped && liveConversationRef.current) {
           if (assistantOutput.trim()) await voice.speak(assistantOutput.trim())
           if (liveConversationRef.current) {
-            const started = await voice.start()
+            const started = await voice.start({ autoStopSilenceMs: 900 })
             if (!started && liveConversationRef.current) stopLiveConversation()
           }
         }
@@ -104,7 +104,7 @@ export function HomePage() {
       return
     }
     setError(''); setLiveRetry(0); liveConversationRef.current = true; setLiveConversation(true)
-    const started = await voice.start()
+    const started = await voice.start({ autoStopSilenceMs: 900 })
     if (!started && liveConversationRef.current) stopLiveConversation()
   }
   useEffect(() => {
@@ -113,7 +113,7 @@ export function HomePage() {
   }, [liveConversation, liveTranscript])
   useEffect(() => {
     if (!liveConversation || !liveRetry) return
-    void voice.start()
+    void voice.start({ autoStopSilenceMs: 900 })
   }, [liveConversation, liveRetry])
   useEffect(() => {
     if (!online && liveConversation) stopLiveConversation()

@@ -9,7 +9,7 @@ THEMES = {"dark", "darker"}
 ACCENTS = {"cyan", "violet"}
 TEXT_SCALES = {"compact", "standard", "large"}
 LOCALES = {"en", "tr"}
-STT_LANGUAGES = {"auto", "en", "tr", "es", "fr", "de"}
+STT_LANGUAGES = {"auto", "en", "tr", "az", "es", "fr", "de"}
 TIME_ZONE_COUNTRIES = {
     "UTC": "GMT / UTC",
     "Europe/Istanbul": "Türkiye",
