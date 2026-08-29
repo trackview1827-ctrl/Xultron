@@ -217,7 +217,15 @@ class OpenAICompatibleAdapter:
         return {"text": text, "language": lang}
 
     def synthesize(self, text: str, voice: str | None):
-        payload = {"model": self.cfg.model or "tts-1", "input": text, "voice": voice or self.cfg.config.get("voice") or "alloy"}
+        response_format = self.cfg.config.get("responseFormat", "mp3")
+        if response_format not in {"mp3", "pcm", "wav", "opus", "aac", "flac"}:
+            raise ProviderFailure("provider_invalid", "TTS response format is invalid.", 422)
+        payload = {
+            "model": self.cfg.model or "tts-1",
+            "input": text,
+            "voice": voice or self.cfg.config.get("voice") or "alloy",
+            "response_format": response_format,
+        }
         if self.cfg.config.get("speed") is not None:
             payload["speed"] = self.cfg.config["speed"]
         try:
@@ -231,9 +239,14 @@ class OpenAICompatibleAdapter:
             raise ProviderFailure("provider_request_failed", f"Provider returned HTTP {r.status_code}.", 502, r.status_code >= 500)
         if not audio:
             raise ProviderFailure("provider_empty_response", "Provider returned an empty response.", 502, True)
-        media_type = (r.headers.get("Content-Type") or "audio/mpeg").split(";", 1)[0]
-        if not media_type.startswith("audio/"):
-            media_type = "audio/mpeg"
+        media_type = (r.headers.get("Content-Type") or "").split(";", 1)[0].lower()
+        if media_type == "application/octet-stream" or not media_type:
+            media_type = {
+                "mp3": "audio/mpeg", "pcm": "audio/pcm", "wav": "audio/wav",
+                "opus": "audio/ogg", "aac": "audio/aac", "flac": "audio/flac",
+            }[response_format]
+        elif not media_type.startswith("audio/"):
+            raise ProviderFailure("provider_malformed_response", "Provider returned non-audio TTS data.", 502, True)
         return audio, media_type
 
 
