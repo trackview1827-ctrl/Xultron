@@ -1,4 +1,5 @@
 import json
+import subprocess
 import time
 from typing import Iterable
 from urllib.parse import quote, urlparse
@@ -399,9 +400,37 @@ class WhisperCppAdapter(OpenAICompatibleAdapter):
     def models(self):
         return [{"id": self.cfg.model or "tiny", "label": f"whisper.cpp {self.cfg.model or 'tiny'}"}]
 
+    def _wav_audio(self, audio: bytes, filename: str) -> tuple[bytes, str]:
+        if audio.startswith(b"RIFF") and audio[8:12] == b"WAVE":
+            return audio, filename if filename.lower().endswith(".wav") else "audio.wav"
+        try:
+            converted = subprocess.run(
+                [
+                    "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                    "-i", "pipe:0", "-t", "120", "-vn", "-sn", "-dn",
+                    "-ac", "1", "-ar", "16000", "-f", "wav", "pipe:1",
+                ],
+                input=audio,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=min(self.timeout, 30),
+                check=False,
+            )
+        except FileNotFoundError:
+            raise ProviderFailure("provider_dependency_missing", "Local whisper.cpp needs ffmpeg to decode browser audio.", 503)
+        except subprocess.TimeoutExpired:
+            raise ProviderFailure("invalid_audio", "Browser audio conversion timed out.", 422)
+        if converted.returncode != 0 or not converted.stdout.startswith(b"RIFF"):
+            raise ProviderFailure("invalid_audio", "Browser audio could not be decoded.", 422)
+        max_bytes = current_app.config.get("MAX_AUDIO_BYTES", 5242880)
+        if len(converted.stdout) > max_bytes:
+            raise ProviderFailure("payload_too_large", "Converted audio is too large.", 413)
+        return converted.stdout, "audio.wav"
+
     def transcribe(self, audio: bytes, filename: str, language: str | None):
         if not audio:
             raise ProviderFailure("invalid_audio", "Audio is empty.", 422)
+        audio, filename = self._wav_audio(audio, filename or "audio")
         data = {"response_format": "json"}
         if language and language != "auto":
             data["language"] = language

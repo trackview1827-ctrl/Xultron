@@ -220,6 +220,10 @@ birlikte otomatik başlatmak için `XULTRON_LOCAL_STT_AUTOSTART=1 xultron start`
 kullanılır; varsayılan kapalıdır, böylece telefon boşuna RAM tüketmez. Xultron
 ayarlarında STT adaptörü olarak **whisper.cpp (local)** seçilebilir.
 
+Termux bootstrap, tarayıcının WebM/Opus mikrofon kaydını whisper.cpp'nin okuduğu
+16 kHz mono WAV biçimine istek sırasında dönüştürmek için `ffmpeg` kurar. Bu araç
+arka planda sürekli çalışmaz; yalnızca transkripsiyon sırasında kısa süreli açılır.
+
 Kokoro-82M'nin resmi ses listesinde Türkçe veya Azerice ses paketi yoktur. Bu
 nedenle Kokoro'yu telefonda zorla kurup RAM tüketmek yerine Türkçe/Azerice TTS
 ElevenLabs üzerinden, yerel STT ise whisper.cpp üzerinden çalıştırılır.

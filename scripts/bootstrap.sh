@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV="$ROOT/backend/.venv"
 
+if [[ "${PREFIX:-}" == *com.termux* ]] && ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "Installing ffmpeg for browser WebM/Opus voice input..."
+  pkg install -y ffmpeg
+fi
+
 if [[ ! -d "$VENV" ]]; then
   if [[ "${PREFIX:-}" == *com.termux* ]] && python -c 'import cryptography' >/dev/null 2>&1; then
     echo "Creating a Termux virtual environment with the trusted system cryptography package..."
@@ -31,4 +36,3 @@ echo "Applying database migrations..."
 )
 
 echo "Xultron is ready. Run: make dev"
-

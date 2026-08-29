@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 from app.providers.adapters import WhisperCppAdapter
 from app.providers.base import ProviderConfig, ProviderFailure
@@ -31,11 +32,34 @@ def test_whisper_cpp_transcribes_without_auth(app, monkeypatch):
 
     monkeypatch.setattr("app.providers.adapters.requests.post", post)
     with app.app_context():
-        result = WhisperCppAdapter(config()).transcribe(b"wav", "voice.wav", "tr")
+        result = WhisperCppAdapter(config()).transcribe(b"RIFF\x00\x00\x00\x00WAVEaudio", "voice.wav", "tr")
     assert result == {"text": "Merhaba dünya", "language": "tr"}
     assert captured["url"] == "http://127.0.0.1:8766/inference"
     assert captured["data"] == {"response_format": "json", "language": "tr"}
     assert captured["headers"] == {}
+
+
+def test_whisper_cpp_converts_browser_audio_to_wav(app, monkeypatch):
+    captured = {}
+    wav = b"RIFF\x00\x00\x00\x00WAVEconverted"
+
+    def run(command, **kwargs):
+        captured["command"] = command
+        captured["input"] = kwargs["input"]
+        return SimpleNamespace(returncode=0, stdout=wav, stderr=b"")
+
+    def post(url, **kwargs):
+        captured["files"] = kwargs["files"]
+        return FakeResponse({"text": "Salam dünya"})
+
+    monkeypatch.setattr("app.providers.adapters.subprocess.run", run)
+    monkeypatch.setattr("app.providers.adapters.requests.post", post)
+    with app.app_context():
+        result = WhisperCppAdapter(config()).transcribe(b"webm-opus", "voice.webm", "az")
+    assert result == {"text": "Salam dünya", "language": "az"}
+    assert captured["input"] == b"webm-opus"
+    assert captured["files"]["file"] == ("audio.wav", wav)
+    assert "ffmpeg" in captured["command"]
 
 
 def test_whisper_cpp_is_loopback_only(app):
