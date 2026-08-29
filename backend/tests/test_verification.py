@@ -148,12 +148,12 @@ def test_verified_completion_injects_terminal_policy_and_evidence(app, monkeypat
     assert "VERIFIED EVIDENCE" in calls[0][-2]["content"]
 
 
-def test_failed_verification_returns_no_model_answer(app, monkeypatch):
+def test_failed_verification_uses_best_effort_model_answer(app, monkeypatch):
     calls = []
 
     def fake_call(provider, method, messages):
         calls.append(messages)
-        return '{"tool":"web","query":"current fact","reason":"current"}'
+        return "Kesin güncel veriye erişemiyorum; genel olarak bu durum koşullara göre değişir."
 
     monkeypatch.setattr(chat, "adapter_call", fake_call)
     with app.app_context():
@@ -163,8 +163,11 @@ def test_failed_verification_returns_no_model_answer(app, monkeypatch):
         finally:
             app.config["TESTING"] = True
 
-    assert len(calls) == 0
-    assert answer == "Bu istek için doğrulanmış bir sonuç bulunamadı."
+    assert len(calls) == 1
+    assert answer == "Kesin güncel veriye erişemiyorum; genel olarak bu durum koşullara göre değişir."
+    assert calls[0][0]["role"] == "system"
+    assert "BEST-EFFORT ANSWER POLICY" in calls[0][0]["content"]
+    assert calls[0][-1] == {"role": "user", "content": "Güncel bilgi"}
     assert "Doğrulama" not in answer
 
 

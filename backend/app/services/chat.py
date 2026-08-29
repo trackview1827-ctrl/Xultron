@@ -13,7 +13,7 @@ from app.security.errors import APIError
 from app.security.validation import require_object, string_field
 from app.services.providers import adapter_call, default_provider
 from app.services.settings import get_settings
-from app.services.verification import ANSWER_POLICY, capability_prompt, deterministic_plan, direct_answer, execute as execute_verification, refusal as verification_refusal
+from app.services.verification import ANSWER_POLICY, BEST_EFFORT_ANSWER_POLICY, capability_prompt, deterministic_plan, direct_answer, execute as execute_verification
 
 MAX_MESSAGE_CHARS = 8000
 MAX_REQUEST_ID_CHARS = 100
@@ -107,7 +107,11 @@ def _verified_complete(provider, provider_messages: list[dict], question: str, l
     plan = deterministic_plan(question)
     result = execute_verification(plan, question, settings=settings)
     if not result.verified:
-        return verification_refusal(result, locale)
+        best_effort_messages = [
+            {"role": "system", "content": BEST_EFFORT_ANSWER_POLICY},
+            *provider_messages,
+        ]
+        return _clean_visible_answer(adapter_call(provider, "complete", best_effort_messages), locale)
     direct = direct_answer(result, locale)
     if direct is not None:
         return direct
