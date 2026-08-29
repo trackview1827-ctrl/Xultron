@@ -19,7 +19,7 @@ class FakeResponse:
 
 
 def config():
-    return ProviderConfig("local", "whisper.cpp", "stt", "whisper_cpp", "http://127.0.0.1:8765", None, "tiny", None, None, False, {})
+    return ProviderConfig("local", "whisper.cpp", "stt", "whisper_cpp", "http://127.0.0.1:8766", None, "tiny", None, None, False, {})
 
 
 def test_whisper_cpp_transcribes_without_auth(app, monkeypatch):
@@ -33,7 +33,7 @@ def test_whisper_cpp_transcribes_without_auth(app, monkeypatch):
     with app.app_context():
         result = WhisperCppAdapter(config()).transcribe(b"wav", "voice.wav", "tr")
     assert result == {"text": "Merhaba dünya", "language": "tr"}
-    assert captured["url"] == "http://127.0.0.1:8765/inference"
+    assert captured["url"] == "http://127.0.0.1:8766/inference"
     assert captured["data"] == {"response_format": "json", "language": "tr"}
     assert captured["headers"] == {}
 

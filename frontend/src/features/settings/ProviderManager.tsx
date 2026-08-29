@@ -153,7 +153,7 @@ function ProviderEditor({ kind, online, provider, confirmationOpen, deleteButton
         ...current,
         adapter,
         name: current.name || 'whisper.cpp (local)',
-        baseUrl: 'http://127.0.0.1:8765',
+        baseUrl: 'http://127.0.0.1:8766',
         model: current.model || 'tiny',
       } : { ...current, adapter })
   }

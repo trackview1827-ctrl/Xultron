@@ -61,7 +61,7 @@ def test_whisper_cpp_is_stt_only(user_client):
         "name": "Local Whisper TTS",
         "kind": "tts",
         "adapter": "whisper_cpp",
-        "baseUrl": "http://127.0.0.1:8765",
+        "baseUrl": "http://127.0.0.1:8766",
     })
     assert rv.status_code == 422
     assert "STT" in rv.get_json()["error"]["message"]

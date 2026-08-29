@@ -374,7 +374,7 @@ class WhisperCppAdapter(OpenAICompatibleAdapter):
 
     @property
     def base(self):
-        configured = (self.cfg.base_url or "http://127.0.0.1:8765").rstrip("/")
+        configured = (self.cfg.base_url or "http://127.0.0.1:8766").rstrip("/")
         parsed = urlparse(configured)
         if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ProviderFailure("provider_invalid", "whisper.cpp base URL must point to localhost.", 422)

@@ -215,7 +215,7 @@ listeleme veya ayar yanıtında tarayıcıya geri gönderilmez.
 Termux/Android üzerinde düşük kaynaklı yerel STT için `whisper.cpp` kurulabilir.
 Bu projede tiny multilingual model yaklaşık 75 MiB diskte ve yaklaşık 273 MiB
 RAM kullanır. Kurulu binary ve model ile `scripts/local-voice.sh start` komutu
-localhost:8765 üzerinde yalnızca cihaz içi STT servisini başlatır. Web sitesiyle
+localhost:8766 üzerinde yalnızca cihaz içi STT servisini başlatır. Web sitesiyle
 birlikte otomatik başlatmak için `XULTRON_LOCAL_STT_AUTOSTART=1 xultron start`
 kullanılır; varsayılan kapalıdır, böylece telefon boşuna RAM tüketmez. Xultron
 ayarlarında STT adaptörü olarak **whisper.cpp (local)** seçilebilir.
