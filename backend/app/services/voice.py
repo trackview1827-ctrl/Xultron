@@ -91,7 +91,15 @@ def spoken_text(text: str, locale: str = "tr") -> str:
     protected = []
 
     def hold(value: str) -> str:
-        marker = chr(0xE000 + len(protected))
+        # Use a pair from the private-use range that is absent from the source
+        # and all held values. A single fixed PUA character can collide with
+        # legitimate user text and cause an unrelated URL to be restored twice.
+        index = 0
+        while True:
+            marker = chr(0xE000 + index * 2) + chr(0xE000 + index * 2 + 1)
+            if marker not in text and all(marker not in prior_marker and marker not in held for prior_marker, held in protected):
+                break
+            index += 1
         protected.append((marker, value))
         return marker
 
@@ -108,6 +116,12 @@ def spoken_text(text: str, locale: str = "tr") -> str:
             return hold(match.group(0))
         month_index = int(month)
         return f'{_integer_words(str(int(day)), words)} {words["months"][month_index]} {_integer_words(str(int(year)), words)}'
+
+    def embedded_date(match):
+        start, end = match.span()
+        before = result[start - 1] if start else ""
+        after = result[end] if end < len(result) else ""
+        return hold(match.group(0)) if before.isalnum() or after.isalnum() or before == "_" or after == "_" else match.group(0)
 
     def clock(match):
         hour, minute = match.groups()
@@ -127,7 +141,8 @@ def spoken_text(text: str, locale: str = "tr") -> str:
         return f'{spoken} {words["currency"][normalized_symbol]}'
 
     result = re.sub(r'(?:https?://|www\.)[^\s<>"\']+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}', lambda m: hold(m.group(0)), text, flags=re.IGNORECASE)
-    result = re.sub(r"(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?!\d)", date, result)
+    result = re.sub(r"\d{1,2}[./-]\d{1,2}[./-]\d{4}", embedded_date, result)
+    result = re.sub(r"(?<![\w])(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?![\w])", date, result)
     result = re.sub(r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)(?!\d)", clock, result)
     result = re.sub(
         r"(?<![\w])(?:\d{1,3}\.){3}\d{1,3}(?![\w])",
@@ -135,12 +150,23 @@ def spoken_text(text: str, locale: str = "tr") -> str:
         result,
     )
     result = re.sub(
-        r"(?<![\w])([vV]?)(\d+(?:\.\d+){2,})(?![\w])",
+        r"(?<![\w])(?=[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:)[0-9A-Fa-f:.]+(?![\w])",
+        lambda m: hold(m.group(0)) if "::" in m.group(0) or re.search(r"[A-Fa-f]", m.group(0)) else m.group(0),
+        result,
+    )
+    result = re.sub(
+        r"(?<![\w])([vV])(\d+(?:\.\d+)+)(?![\w])",
         lambda m: ("versiyon " if m.group(1) and language == "tr" else "versiya " if m.group(1) else "")
         + f' {words["dot"]} '.join(_integer_words(part, words) for part in m.group(2).split(".")),
         result,
     )
-    result = re.sub(r"(?<![\w])\+?\d[\d\s()-]{6,}\d(?![\w])", lambda m: hold(m.group(0)), result)
+    def phone(value):
+        # Do not hide ordinary numeric ranges such as "1234 - 5678". A
+        # phone-like token must contain enough digits to be a real number.
+        digits = re.sub(r"\D", "", value.group(0))
+        return hold(value.group(0)) if len(digits) >= 10 else value.group(0)
+
+    result = re.sub(r"(?<![\w])\+?\d[\d\s()-]{6,}\d(?![\w])", phone, result)
     number_token = r"-?(?:\d{1,3}(?:\.\d{3})+|\d+(?:\.\d+)?)(?:,\d+)?"
     result = re.sub(rf"([₺$€])\s*({number_token})", currency_prefix, result)
     result = re.sub(rf"({number_token})\s*(TL|tl|₺|\$|€)(?!\w)", currency_suffix, result)

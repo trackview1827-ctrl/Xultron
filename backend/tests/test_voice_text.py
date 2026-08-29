@@ -29,3 +29,9 @@ def test_tts_number_normalization_handles_non_prose_tokens_safely():
     assert spoken_text("Ara: +90 (555) 123 45 67.", "tr") == "Ara: +90 (555) 123 45 67."
     assert spoken_text("Geçersiz 31/02/2026 ve 00-12-2026.", "tr") == "Geçersiz 31/02/2026 ve 00-12-2026."
     assert spoken_text("Ücret $10.25.", "tr") == "Ücret on virgül yirmi beş dolar."
+
+
+def test_tts_number_normalization_handles_identifier_boundaries_and_ipv6():
+    assert spoken_text("ref31/12/2026x v1.2 2001:db8::1", "tr") == "ref31/12/2026x versiyon bir nokta iki 2001:db8::1"
+    assert spoken_text("Aralık 1234 - 5678", "tr") == "Aralık bin iki yüz otuz dört - beş bin altı yüz yetmiş sekiz"
+    assert spoken_text("U+E000 https://example.com/1250", "tr") == "U+E000 https://example.com/1250"
