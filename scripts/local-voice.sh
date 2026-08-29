@@ -20,7 +20,7 @@ case "${1:-start}" in
     fi
     test -x "$BIN" || { printf 'whisper.cpp binary not found: %s\n' "$BIN" >&2; exit 1; }
     test -f "$MODEL" || { printf 'whisper.cpp model not found: %s\n' "$MODEL" >&2; exit 1; }
-    nohup "$BIN" --host 127.0.0.1 --port "$PORT" --model "$MODEL" --threads "$THREADS" --processors 1 --max-context 0 --no-gpu --language auto --public "$WHISPER_ROOT/examples/server/public" >"$LOGFILE" 2>&1 </dev/null &
+    nohup "$BIN" --host 127.0.0.1 --port "$PORT" --model "$MODEL" --threads "$THREADS" --processors 1 --max-context 0 --no-gpu --language auto --suppress-nst --no-speech-thold 0.5 --public "$WHISPER_ROOT/examples/server/public" >"$LOGFILE" 2>&1 </dev/null &
     printf '%s\n' "$!" > "$PIDFILE"
     ;;
   stop)

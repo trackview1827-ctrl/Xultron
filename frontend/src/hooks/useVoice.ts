@@ -162,7 +162,13 @@ export function useVoice(onTranscript: (text: string) => void) {
           try {
             const result = await voiceApi.transcribe(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }), settings.sttLanguage, undefined, controller.signal)
             if (!mountedRef.current || operationId !== captureGenerationRef.current) return
-            onTranscript(result.text)
+            const transcript = result.text.trim()
+            if (!transcript) {
+              setError('No speech was detected. Try speaking closer to the microphone.')
+              dispatchRef.current({ type: 'COMPLETE' })
+              return
+            }
+            onTranscript(transcript)
             dispatchRef.current({ type: 'COMPLETE' })
           } catch (caught) {
             if (!mountedRef.current || operationId !== captureGenerationRef.current) return

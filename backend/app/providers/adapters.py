@@ -1,6 +1,8 @@
 import json
+import re
 import subprocess
 import time
+import unicodedata
 from typing import Iterable
 from urllib.parse import quote, urlparse
 
@@ -427,6 +429,23 @@ class WhisperCppAdapter(OpenAICompatibleAdapter):
             raise ProviderFailure("payload_too_large", "Converted audio is too large.", 413)
         return converted.stdout, "audio.wav"
 
+    def _speech_text(self, value) -> str:
+        text = self._bound_text(value).strip()
+        if not text:
+            return ""
+        folded = text.casefold().replace("_", " ")
+        folded = "".join(char for char in unicodedata.normalize("NFKD", folded) if unicodedata.category(char) != "Mn")
+        marker_wrapped = bool(re.fullmatch(r"\s*[\[({<♪♫].*[\])}>♪♫]\s*", text, re.DOTALL))
+        normalized = re.sub(r"[^\wçğıöşüə]+", " ", folded, flags=re.UNICODE)
+        normalized = re.sub(r"\d+", "", normalized).strip()
+        non_speech = (
+            "müzik", "muzik", "music", "blank audio", "blankaudio", "silence",
+            "sessizlik", "applause", "alkış", "alkis", "background noise",
+        )
+        if marker_wrapped and (not normalized or any(term in normalized for term in non_speech) or re.fullmatch(r"x\s*", normalized)):
+            return ""
+        return text
+
     def transcribe(self, audio: bytes, filename: str, language: str | None):
         if not audio:
             raise ProviderFailure("invalid_audio", "Audio is empty.", 422)
@@ -449,7 +468,7 @@ class WhisperCppAdapter(OpenAICompatibleAdapter):
             raise ProviderFailure("provider_malformed_response", "whisper.cpp returned malformed transcript data.", 502, True)
         if not isinstance(payload, dict):
             raise ProviderFailure("provider_malformed_response", "whisper.cpp returned malformed transcript data.", 502, True)
-        return {"text": self._bound_text(payload.get("text")), "language": language}
+        return {"text": self._speech_text(payload.get("text")), "language": language}
 
 
 class CodexOAuthAdapter(OpenAICompatibleAdapter):

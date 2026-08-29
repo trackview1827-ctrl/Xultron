@@ -137,4 +137,22 @@ describe('useVoice media lifecycle', () => {
     expect(app.dispatchCore).toHaveBeenLastCalledWith({ type: 'LISTEN' })
     await act(async () => { result.current.stop(); await speech })
   })
+
+  it('does not submit an empty non-speech transcript to chat', async () => {
+    const stream = new FakeStream()
+    const onTranscript = vi.fn()
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue(stream) } })
+    api.transcribe.mockResolvedValue({ text: '', language: 'tr' })
+    const { result } = renderHook(() => useVoice(onTranscript))
+
+    await act(async () => result.current.start())
+    const recorder = FakeRecorder.instances[0]!
+    act(() => recorder.ondataavailable?.({ data: new Blob(['webm']) } as BlobEvent))
+    await act(async () => { result.current.stop(); await Promise.resolve(); await Promise.resolve() })
+
+    await waitFor(() => expect(api.transcribe).toHaveBeenCalled())
+    expect(onTranscript).not.toHaveBeenCalled()
+    expect(result.current.error).toMatch(/no speech was detected/i)
+    expect(app.dispatchCore).toHaveBeenLastCalledWith({ type: 'COMPLETE' })
+  })
 })
