@@ -74,6 +74,16 @@ def test_elevenlabs_stt_posts_file_and_returns_language(app, monkeypatch):
     assert captured["files"]["file"] == ("voice.webm", b"audio")
 
 
+def test_elevenlabs_filters_marker_only_non_speech(app, monkeypatch):
+    monkeypatch.setattr(
+        "app.providers.adapters.requests.post",
+        lambda *args, **kwargs: FakeResponse({"text": "[MUZIK CALIYO4]", "language_code": "tr"}),
+    )
+    with app.app_context():
+        result = ElevenLabsAdapter(eleven_config("stt", "scribe_v2")).transcribe(b"audio", "voice.webm", "tr")
+    assert result == {"text": "", "language": "tr"}
+
+
 def test_elevenlabs_models_filter_tts_capability(app, monkeypatch):
     payload = [
         {"model_id": "eleven_multilingual_v2", "name": "Multilingual v2", "can_do_text_to_speech": True},

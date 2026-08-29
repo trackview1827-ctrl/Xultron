@@ -56,6 +56,19 @@ def test_voice_mock_and_audio_limits(user_client, app):
         app.config["MAX_AUDIO_BYTES"] = old
 
 
+def test_voice_api_filters_provider_non_speech_markers(user_client):
+    stt = create_mock_provider(user_client, "stt", config={"transcript": "[MUZIK CALIYO4]"})
+    token = user_client.get("/api/v1/auth/session").get_json()["csrfToken"]
+    response = user_client.post(
+        "/api/v1/voice/transcribe",
+        data={"audio": (io.BytesIO(b"abc"), "silence.webm"), "providerId": stt["id"]},
+        content_type="multipart/form-data",
+        headers={"X-CSRF-Token": token},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["text"] == ""
+
+
 def test_whisper_cpp_is_stt_only(user_client):
     rv = post_json(user_client, "/api/v1/providers", {
         "name": "Local Whisper TTS",

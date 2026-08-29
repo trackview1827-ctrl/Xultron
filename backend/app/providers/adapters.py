@@ -2,7 +2,6 @@ import json
 import re
 import subprocess
 import time
-import unicodedata
 from typing import Iterable
 from urllib.parse import quote, urlparse
 
@@ -10,6 +9,7 @@ import requests
 from flask import current_app
 
 from app.providers.base import ProviderConfig, ProviderFailure
+from app.services.voice import speech_text
 
 
 class MockAdapter:
@@ -325,7 +325,7 @@ class ElevenLabsAdapter(OpenAICompatibleAdapter):
         payload = self._json_response(response)
         if not isinstance(payload, dict):
             raise ProviderFailure("provider_malformed_response", "ElevenLabs returned malformed transcript data.", 502, True)
-        text = self._bound_text(payload.get("text"))
+        text = speech_text(self._bound_text(payload.get("text")))
         detected = payload.get("language_code") or language
         return {"text": text, "language": detected if isinstance(detected, str) else None}
 
@@ -430,25 +430,7 @@ class WhisperCppAdapter(OpenAICompatibleAdapter):
         return converted.stdout, "audio.wav"
 
     def _speech_text(self, value) -> str:
-        text = self._bound_text(value).strip()
-        if not text:
-            return ""
-        folded = text.casefold().replace("_", " ")
-        folded = "".join(char for char in unicodedata.normalize("NFKD", folded) if unicodedata.category(char) != "Mn")
-        marker_wrapped = bool(re.fullmatch(r"\s*[\[({<♪♫].*[\])}>♪♫]\s*", text, re.DOTALL))
-        normalized = re.sub(r"[^\wçğıöşüə]+", " ", folded, flags=re.UNICODE)
-        normalized = re.sub(r"\d+", "", normalized).strip()
-        non_speech = (
-            "müzik", "muzik", "music", "blank audio", "blankaudio", "silence",
-            "sessizlik", "applause", "alkış", "alkis", "background noise",
-        )
-        if marker_wrapped and (not normalized or any(term in normalized for term in non_speech) or re.fullmatch(r"x\s*", normalized)):
-            return ""
-        lines = [re.sub(r"\s+", " ", line).strip().casefold() for line in text.splitlines() if line.strip()]
-        repeated_hallucination = ("bu videonun", "izlediğiniz için teşekkür", "altyazı")
-        if len(lines) >= 3 and len(set(lines)) == 1 and any(phrase in lines[0] for phrase in repeated_hallucination):
-            return ""
-        return text
+        return speech_text(self._bound_text(value))
 
     def transcribe(self, audio: bytes, filename: str, language: str | None):
         if not audio:

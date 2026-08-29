@@ -16,6 +16,7 @@ from app.services.providers import adapter_call, create_provider, default_provid
 from app.services.openai_oauth import callback as openai_oauth_callback, clear as clear_openai_oauth, start as start_openai_oauth
 from app.services.settings import get_settings, patch_settings
 from app.services.verification import tool_descriptions
+from app.services.voice import speech_text
 from app.services.tasks import claim_task, create_task, execute_task, owned_task, record_event, renew_task, retry_task, update_task
 from app.services.planner import approve_plan, generate_plan
 
@@ -428,7 +429,10 @@ def transcribe():
     if not provider:
         raise APIError("provider_not_configured", "No STT provider is configured.", 503)
     filename = secure_filename(f.filename or "")[:120] or "audio.webm"
-    return ok(adapter_call(provider, "transcribe", audio, filename, language.strip() if language else None))
+    result = adapter_call(provider, "transcribe", audio, filename, language.strip() if language else None)
+    if isinstance(result, dict):
+        result["text"] = speech_text(result.get("text"))
+    return ok(result)
 
 
 @api_bp.post("/voice/synthesize")
