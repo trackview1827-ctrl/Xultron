@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { access, mkdir, readdir, stat } from "node:fs/promises";
+import { access, chmod, mkdir, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -148,6 +148,13 @@ async function isEmptyDirectory(target) {
   }
 }
 
+async function secureXultronParent(target) {
+  const parent = path.dirname(path.resolve(target));
+  if (path.basename(parent) !== ".xultron") return;
+  await mkdir(parent, { recursive: true, mode: 0o700 });
+  await chmod(parent, 0o700);
+}
+
 async function assertXultronCheckout(target, repository) {
   const gitDir = path.join(target, ".git");
   if (!(await pathExists(gitDir))) {
@@ -209,6 +216,7 @@ async function bootstrap(target, options) {
 export async function install(options) {
   const { target, repository, io } = options;
   await doctor({ io });
+  await secureXultronParent(target);
   const exists = await pathExists(target);
   if (!exists) {
     await mkdir(path.dirname(target), { recursive: true });
