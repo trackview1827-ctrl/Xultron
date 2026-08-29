@@ -445,7 +445,8 @@ class WhisperCppAdapter(OpenAICompatibleAdapter):
         if marker_wrapped and (not normalized or any(term in normalized for term in non_speech) or re.fullmatch(r"x\s*", normalized)):
             return ""
         lines = [re.sub(r"\s+", " ", line).strip().casefold() for line in text.splitlines() if line.strip()]
-        if len(lines) >= 3 and len(set(lines)) == 1:
+        repeated_hallucination = ("bu videonun", "izlediğiniz için teşekkür", "altyazı")
+        if len(lines) >= 3 and len(set(lines)) == 1 and any(phrase in lines[0] for phrase in repeated_hallucination):
             return ""
         return text
 

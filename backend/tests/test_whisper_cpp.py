@@ -90,6 +90,14 @@ def test_whisper_cpp_filters_three_identical_hallucinated_lines(app, monkeypatch
     assert result == {"text": "", "language": "tr"}
 
 
+def test_whisper_cpp_preserves_legitimate_repeated_speech(app, monkeypatch):
+    repeated = "Evet.\nEvet.\nEvet."
+    monkeypatch.setattr("app.providers.adapters.requests.post", lambda *args, **kwargs: FakeResponse({"text": repeated}))
+    with app.app_context():
+        result = WhisperCppAdapter(config()).transcribe(b"RIFF\x00\x00\x00\x00WAVEaudio", "voice.wav", "tr")
+    assert result == {"text": repeated, "language": "tr"}
+
+
 def test_whisper_cpp_is_loopback_only(app):
     invalid = config()
     invalid.base_url = "https://remote.example/inference"
