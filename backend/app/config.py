@@ -71,7 +71,11 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SESSION_COOKIE_NAME = "xultron_session"
     SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = "Strict"
+    # OAuth returns from auth.openai.com with a top-level GET. Strict cookies
+    # are omitted on that cross-site navigation, which loses the PKCE state
+    # stored in Flask's signed session. Lax keeps that callback working while
+    # still withholding the cookie from cross-site subrequests and POSTs.
+    SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", XULTRON_ENV == "production")
     PERMANENT_SESSION_LIFETIME_SECONDS = int(os.getenv("SESSION_LIFETIME_SECONDS", "2592000"))
     GUEST_LIFETIME_SECONDS = int(os.getenv("GUEST_LIFETIME_SECONDS", "86400"))

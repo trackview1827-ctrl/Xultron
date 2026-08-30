@@ -64,6 +64,7 @@ def test_codex_oauth_start_returns_pkce_authorization_link(user_client):
 
 
 def test_oauth_backend_callback_keeps_loopback_cookie_host(app):
+    assert app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
     with app.test_request_context("/", base_url="http://localhost:5000"):
         assert _backend_callback_uri() == "http://localhost:5000/api/v1/providers/oauth/openai/callback"
     with app.test_request_context("/", base_url="http://127.0.0.1:5000"):
