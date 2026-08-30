@@ -11,6 +11,7 @@ from app.extensions import db
 from app.models import Conversation, IdempotencyKey, MemoryItem, Message, new_id, utcnow
 from app.security.errors import APIError
 from app.security.validation import require_object, string_field
+from app.services.auto_memory import remember_from_message
 from app.services.providers import adapter_call, default_provider
 from app.services.settings import get_settings
 from app.services.verification import ANSWER_POLICY, BEST_EFFORT_ANSWER_POLICY, capability_prompt, deterministic_plan, direct_answer, execute as execute_verification
@@ -88,6 +89,8 @@ def handle_message(user, data):
             {"id": new_id("msg"), "conversationId": conv.id, "role": "assistant", "content": assistant_text, "createdAt": now, "requestId": request_id},
         ]
     response = {"conversation": conv.to_public(), "messages": messages}
+    if settings.get("memoryEnabled", True):
+        remember_from_message(user.id, message)
     if history_enabled:
         db.session.add(IdempotencyKey(user_id=user.id, request_id=request_id, request_fingerprint=fingerprint, response=response))
     else:
