@@ -1,7 +1,7 @@
 {
-  "name": "xultron",
+  "name": "xultron-ai",
   "version": "1.0.2",
-  "description": "Zero-dependency installer and launcher for Xultron",
+  "description": "Zero-dependency installer and launcher for Xultron AI",
   "type": "module",
   "bin": {
     "xultron": "cli/xultron.mjs"

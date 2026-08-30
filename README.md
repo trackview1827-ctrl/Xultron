@@ -102,7 +102,7 @@ CLI paketinin yayın ve global kurulum adı `xultron`, çalıştırılabilir kom
 `xultron`dur:
 
 ```bash
-npm install -g xultron
+npm install -g xultron-ai
 xultron
 ```
 
