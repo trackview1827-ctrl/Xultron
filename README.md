@@ -52,6 +52,7 @@ Ayrıntılı belgeler:
 - Python 3.11 veya daha yeni
 - Node.js 20 veya daha yeni
 - npm
+- Git ve `make` (kaynak koddan kurulum için)
 - Güvenli sağlayıcı anahtarı saklama için `pyca/cryptography`
 
 Termux üzerinde resmi paketi kullan:
@@ -61,10 +62,11 @@ pkg install python-cryptography
 python -m venv --system-site-packages backend/.venv
 ```
 
-Standart Linux veya macOS ortamında normal sanal ortam yeterlidir:
+Standart Linux veya macOS ortamında normal sanal ortam yeterlidir. Ubuntu ve
+Debian'da Python komutu genellikle `python3` adındadır:
 
 ```bash
-python -m venv backend/.venv
+python3 -m venv backend/.venv
 ```
 
 ## Kurulum
@@ -82,6 +84,7 @@ Alembic migrasyonlarını uygular. Elle kurulum gerekirse:
 cd Xultron
 
 # Backend
+python3 -m venv backend/.venv
 backend/.venv/bin/python -m pip install -r backend/requirements.txt
 cp backend/.env.example backend/.env
 cd backend
@@ -98,12 +101,43 @@ Geliştirme ortamında uygulama sırları yoksa backend, Git dışında kalan
 
 ## NPM ile tek komut kurulum
 
-CLI paketinin yayın ve global kurulum adı `xultron`, çalıştırılabilir komutu da
-`xultron`dur:
+CLI paketinin npm adı `xultron-ai`, çalıştırılabilir komutu ise `xultron`dur.
+
+### Ubuntu / Debian
+
+Önce Node.js 20 veya daha yeni bir sürümü [resmi Node.js kurulum
+sayfasından](https://nodejs.org/en/download) kur. Bazı Ubuntu sürümlerinin
+varsayılan `nodejs` paketi daha eski olabilir.
 
 ```bash
+sudo apt update
+sudo apt install -y git python3 python3-venv
+node --version  # 20 veya daha yeni olmalı
+npm --version
 npm install -g xultron-ai
 xultron
+```
+
+Kurulan sürümü `xultron --version` ile kontrol et. Registry henüz en yeni sürümü
+göstermiyorsa doğrudan GitHub sürümünü çalıştırabilirsin:
+
+```bash
+npx --yes github:trackview1827-ctrl/Xultron
+```
+
+### Termux / Android
+
+```bash
+pkg update
+pkg install git nodejs python python-cryptography
+npm install -g xultron-ai
+xultron
+```
+
+Global kurulumdan önce gereksinimleri GitHub'daki CLI ile denetlemek için:
+
+```bash
+npx --yes github:trackview1827-ctrl/Xultron doctor
 ```
 
 İlk `xultron` çağrısı gerçek uygulamayı varsayılan olarak `~/.xultron/app`
@@ -112,6 +146,59 @@ yazmak yerine çalıştırılabilir olduğunu doğrular. Henüz yerel hesap yoks
 kullanıcı adını, gizli parolayı ve parola tekrarını etkileşimli terminalde sorar.
 Parola Flask hazırlama komutuna yalnızca standart girdiden aktarılır; komut
 argümanlarına veya süreç ortamına eklenmez. Ardından Xultron'u başlatır.
+
+### Güncelleme
+
+```bash
+npm install -g xultron-ai@latest
+xultron update
+xultron
+```
+
+Yarım kalmış bir kurulum GitHub'daki en yeni düzeltmeyle güncellenecekse:
+
+```bash
+cd ~/.xultron/app
+git pull
+cd ~
+xultron
+```
+
+### Sık karşılaşılan npm hataları
+
+Eski `xultron` paketi `/usr/bin/xultron` dosyasını oluşturduğu için `EEXIST`
+hatası alınırsa eski paketi kaldırıp yeni paketi kur:
+
+```bash
+npm uninstall -g xultron xultron-ai
+ls -l /usr/bin/xultron
+sudo rm -f /usr/bin/xultron  # yalnızca eski npm bağlantısı hâlâ duruyorsa
+npm install -g xultron-ai
+```
+
+Global kurulum `EACCES` ile reddedilirse npm paketlerini kullanıcı dizinine kur:
+
+```bash
+mkdir -p "$HOME/.local"
+npm config set prefix "$HOME/.local"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.profile"
+export PATH="$HOME/.local/bin:$PATH"
+npm install -g xultron-ai
+```
+
+Npm kurulum betiği için açık izin isterse `--allow-scripts` seçeneğinden sonra
+paket adını ayrıca yazmak gerekir:
+
+```bash
+npm install -g --allow-scripts=xultron-ai xultron-ai
+```
+
+`npm install -g --allow-scripts=xultron-ai` komutu tek başına paket adı içermez
+ve mevcut dizinde `package.json` aradığı için `ENOENT` hatası verir.
+
+Ubuntu'da `python` komutu bulunmayıp `python3` bulunuyorsa Xultron otomatik olarak
+`python3` kullanır. Eski veya yarım kalmış klonda hâlâ `python: command not found`
+hatası görülürse yukarıdaki `git pull` adımlarını çalıştır.
 
 Otomasyon veya yönlendirilmiş standart girdi altında ilk hesap oluşturulamaz.
 Bu durumda CLI, komutu doğrudan etkileşimli bir terminalde yeniden çalıştırmayı
@@ -181,8 +268,7 @@ pkg install git nodejs python python-cryptography
 ```
 
 Registry yayını GitHub kurulumundan ayrıdır ve npm hesabı ile paket yayınlama yetkisi
-gerektirir. Paket henüz Registry'ye yüklenmediyse GitHub tabanlı `npx` komutlarını
-kullan.
+gerektirir. Registry'ye erişilemiyorsa GitHub tabanlı `npx` komutlarını kullan.
 
 ## Geliştirme sunucuları
 
