@@ -1,5 +1,5 @@
 {
-  "name": "xultron-ai-cli",
+  "name": "xultron",
   "version": "1.0.0",
   "description": "Zero-dependency installer and launcher for Xultron",
   "type": "module",

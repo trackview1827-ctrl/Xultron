@@ -1,6 +1,8 @@
+import json
 import logging
 from pathlib import Path
 
+import click
 from dotenv import load_dotenv
 from flask import Flask, abort, send_from_directory
 
@@ -67,5 +69,58 @@ def create_app(config_object=None):
         from app.services.auth import provision_local_pin_user
         user = provision_local_pin_user(force=True)
         print(f"Local PIN identity ready: {user.username}")
+
+    def read_local_account_request():
+        """Read one bounded JSON object from stdin without exposing credentials."""
+        from app.security.errors import APIError
+
+        raw = click.get_text_stream("stdin").read(16_385)
+        if not raw.strip():
+            raise click.ClickException(
+                "Expected a JSON object on stdin with username, password, and optional email."
+            )
+        if len(raw) > 16_384:
+            raise click.ClickException("JSON input is too large.")
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise click.ClickException(
+                f"Invalid JSON on stdin at line {error.lineno}, column {error.colno}."
+            ) from None
+        if not isinstance(payload, dict):
+            raise click.ClickException("credentials must be an object.")
+        return payload, APIError
+
+    @app.cli.command("provision-first-user")
+    def provision_first_user_root():
+        """Create the first non-guest user from JSON credentials read on stdin."""
+        from app.services.auth import provision_first_user
+
+        credentials, api_error = read_local_account_request()
+        try:
+            provision_first_user(credentials)
+        except api_error as error:
+            raise click.ClickException(error.message) from None
+        click.echo("First user provisioned.")
+
+    @app.cli.command("provision-local-account")
+    def provision_local_account_root():
+        """Report or create the installation's first local account via stdin JSON."""
+        from app.models import User
+        from app.services.auth import provision_first_user
+
+        payload, api_error = read_local_account_request()
+        action = payload.pop("action", None)
+        if action == "status":
+            exists = User.query.filter_by(is_guest=False).first() is not None
+            click.echo(json.dumps({"accountExists": exists}, separators=(",", ":")))
+            return
+        if action != "create":
+            raise click.ClickException("action must be status or create.")
+        try:
+            user = provision_first_user(payload)
+        except api_error as error:
+            raise click.ClickException(error.message) from None
+        click.echo(json.dumps({"created": True, "username": user.username}, separators=(",", ":")))
 
     return app

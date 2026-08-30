@@ -96,18 +96,46 @@ Geliştirme ortamında uygulama sırları yoksa backend, Git dışında kalan
 `backend/instance` dizininde kalıcı ve rastgele yerel sırlar üretir. Üretimde
 `SECRET_KEY` ve `ENCRYPTION_KEY` açıkça sağlanmalıdır.
 
-## NPM ve npx ile tek komut kurulum
+## NPM ile tek komut kurulum
 
-Xultron CLI, npm paketini GitHub deposundan indirip gerçek uygulamayı varsayılan
-olarak `~/.xultron/app` dizinine kurar. NPM Registry yayını beklenmeden doğrudan
-GitHub üzerinden kullanılabilir:
+CLI paketinin yayın ve global kurulum adı `xultron`, çalıştırılabilir komutu da
+`xultron`dur:
+
+```bash
+npm install -g xultron
+xultron
+```
+
+İlk `xultron` çağrısı gerçek uygulamayı varsayılan olarak `~/.xultron/app`
+dizinine klonlar ve bootstrap işlemini tamamlar. Kurulum zaten varsa üzerine
+yazmak yerine çalıştırılabilir olduğunu doğrular. Henüz yerel hesap yoksa
+kullanıcı adını, gizli parolayı ve parola tekrarını etkileşimli terminalde sorar.
+Parola Flask hazırlama komutuna yalnızca standart girdiden aktarılır; komut
+argümanlarına veya süreç ortamına eklenmez. Ardından Xultron'u başlatır.
+
+Otomasyon veya yönlendirilmiş standart girdi altında ilk hesap oluşturulamaz.
+Bu durumda CLI, komutu doğrudan etkileşimli bir terminalde yeniden çalıştırmayı
+söyleyen işlem yapılabilir bir hatayla durur.
+
+Açık komutlar da kullanılmaya devam eder:
+
+```bash
+xultron install   # Klonla ve bootstrap işlemini çalıştır
+xultron update    # Temiz main kurulumunu fast-forward güncelle
+xultron start     # Mevcut kurulumu başlat
+xultron dev       # Geliştirme sunucularını başlat
+xultron doctor    # Gereksinimleri denetle
+xultron help      # Komut yardımını göster
+```
+
+Registry paketi yerine GitHub deposundaki CLI'yi doğrudan çalıştırmak gerekirse:
 
 ```bash
 # Gereksinimleri kontrol et
 npx --yes github:trackview1827-ctrl/Xultron doctor
 
-# Xultron'u kur
-npx --yes github:trackview1827-ctrl/Xultron install
+# Kur, ilk hesabı hazırla ve başlat
+npx --yes github:trackview1827-ctrl/Xultron
 
 # Tek-origin arayüzü http://127.0.0.1:5000 üzerinde başlat
 npx --yes github:trackview1827-ctrl/Xultron start
@@ -150,15 +178,6 @@ migrasyonlarını hazırlar. Termux'ta önce şu komutu çalıştır:
 
 ```bash
 pkg install git nodejs python python-cryptography
-```
-
-Kök npm paketi NPM Registry'ye `npm publish` ile ayrıca yayımlandıktan sonra daha kısa
-komutlar kullanılabilir:
-
-```bash
-npx xultron-ai-cli install
-npm install --global xultron-ai-cli
-xultron start
 ```
 
 Registry yayını GitHub kurulumundan ayrıdır ve npm hesabı ile paket yayınlama yetkisi

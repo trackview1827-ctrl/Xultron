@@ -4,6 +4,7 @@ import secrets
 from datetime import timedelta
 
 from flask import current_app, request, session
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash
 
@@ -78,6 +79,78 @@ def validate_registration(data):
     if len(password) > 1024:
         raise APIError("validation_failed", "password is too long.", 422)
     return username, email, password
+
+
+def validate_first_user_credentials(data):
+    data = require_object(data, "credentials")
+    unexpected = sorted(set(data) - {"username", "password", "email"})
+    if unexpected:
+        raise APIError(
+            "validation_failed",
+            "Unexpected credential fields are not allowed.",
+            422,
+        )
+    username = normalize_username(data.get("username"))
+    email_value = data.get("email")
+    email = None if email_value is None else normalize_email(email_value)
+    password = data.get("password")
+    if not isinstance(password, str):
+        raise APIError("validation_failed", "password must be a string.", 422)
+    if len(password) < 10:
+        raise APIError("validation_failed", "Password must be at least 10 characters.", 422)
+    if len(password) > 1024:
+        raise APIError("validation_failed", "password is too long.", 422)
+    return username, email, password
+
+
+def provision_first_user(data) -> User:
+    """Create the first non-guest user without changing any existing identity."""
+    username, email, password = validate_first_user_credentials(data)
+    session_record = db.session()
+    if not session_record.in_transaction():
+        if db.engine.dialect.name == "sqlite":
+            db.session.execute(text("BEGIN IMMEDIATE"))
+        elif db.engine.dialect.name == "postgresql":
+            db.session.execute(text("SELECT pg_advisory_xact_lock(6365935205575246)"))
+    if User.query.filter_by(is_guest=False).first() is not None:
+        db.session.rollback()
+        raise APIError(
+            "first_user_exists",
+            "A non-guest user already exists; provisioning was not performed.",
+            409,
+        )
+
+    conflict = User.query.filter_by(username=username).first()
+    if conflict is None and email is not None:
+        conflict = User.query.filter_by(email=email).first()
+    if conflict is not None:
+        db.session.rollback()
+        raise APIError(
+            "identity_conflict",
+            "Username or email is already in use; provisioning was not performed.",
+            409,
+        )
+
+    user = User(username=username, email=email, is_guest=False)
+    user.settings = UserSettings()
+    user.set_password(password)
+    db.session.add(user)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        if User.query.filter_by(is_guest=False).first() is not None:
+            raise APIError(
+                "first_user_exists",
+                "A non-guest user already exists; provisioning was not performed.",
+                409,
+            )
+        raise APIError(
+            "identity_conflict",
+            "Username or email is already in use; provisioning was not performed.",
+            409,
+        )
+    return user
 
 
 def provision_local_pin_user(force: bool = False) -> User:

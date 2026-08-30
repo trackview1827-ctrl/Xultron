@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider } from '../../stores/AppContext'
@@ -12,7 +12,7 @@ describe('authentication critical flows', () => {
   beforeEach(() => {
     auth.session.mockResolvedValue({ user: null, csrfToken: 'csrf', expiresAt: null })
     auth.guest.mockResolvedValue({ user: guest, csrfToken: 'csrf', expiresAt: null })
-    auth.login.mockResolvedValue({ user: { ...guest, isGuest: false, username: 'local-user' } })
+    auth.login.mockResolvedValue({ user: { ...guest, isGuest: false, username: 'operator' } })
   })
 
   it('enters an isolated guest session from the Turkish gateway', async () => {
@@ -23,21 +23,22 @@ describe('authentication critical flows', () => {
     await waitFor(() => expect(auth.guest).toHaveBeenCalledTimes(1))
   })
 
-  it('submits the fixed identity with exactly four PIN digits', async () => {
+  it('submits the username and password created by the CLI', async () => {
     const user = userEvent.setup()
     render(<AppProvider><AuthGateway /></AppProvider>)
-    expect(await screen.findByDisplayValue('local-user')).toHaveAttribute('readonly')
-    for (const [index, digit] of ['2', '4', '6', '8'].entries()) await user.type(screen.getByLabelText(`PIN hanesi ${index + 1}`), digit)
+    await user.type(await screen.findByLabelText('KULLANICI ADI'), 'operator')
+    await user.type(screen.getByLabelText('PAROLA'), 'correct horse battery staple')
     await user.click(screen.getByRole('button', { name: 'SİSTEME GİR' }))
-    await waitFor(() => expect(auth.login).toHaveBeenCalledWith({ identifier: 'local-user', password: '2468' }))
+    await waitFor(() => expect(auth.login).toHaveBeenCalledWith({ identifier: 'operator', password: 'correct horse battery staple' }))
   })
 
-  it('ignores non-numeric PIN input and keeps submission disabled', async () => {
+  it('keeps submission disabled until both credentials are present', async () => {
+    const user = userEvent.setup()
     render(<AppProvider><AuthGateway /></AppProvider>)
-    const first = await screen.findByLabelText('PIN hanesi 1')
-    fireEvent.change(first, { target: { value: 'x' } })
-    expect(first).toHaveValue('')
-    expect(screen.getByRole('button', { name: 'SİSTEME GİR' })).toBeDisabled()
+    const submit = await screen.findByRole('button', { name: 'SİSTEME GİR' })
+    expect(submit).toBeDisabled()
+    await user.type(screen.getByLabelText('KULLANICI ADI'), 'operator')
+    expect(submit).toBeDisabled()
     expect(auth.login).not.toHaveBeenCalled()
   })
 })

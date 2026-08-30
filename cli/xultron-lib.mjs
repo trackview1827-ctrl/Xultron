@@ -3,6 +3,7 @@ import { access, chmod, mkdir, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import readline from "node:readline";
 
 export const PACKAGE_VERSION = "1.0.0";
 export const DEFAULT_REPOSITORY = "https://github.com/trackview1827-ctrl/Xultron.git";
@@ -11,6 +12,7 @@ export const DEFAULT_BRANCH = "main";
 const HELP = `Xultron CLI ${PACKAGE_VERSION}
 
 Kullanım:
+  xultron                             İlk kurulumu tamamlar, hesabı hazırlar ve Xultron'u başlatır
   xultron install [--dir <klasör>]   Xultron'u klonlar ve bağımlılıkları kurar
   xultron update  [--dir <klasör>]   Temiz kurulumu main dalına günceller
   xultron start   [--dir <klasör>]   Tek-origin üretim önizlemesini başlatır
@@ -47,9 +49,46 @@ function defaultIo() {
   };
 }
 
+function defaultPrompt({ message, hidden = false }) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error(
+      "İlk hesabı oluşturmak için etkileşimli bir terminal gerekli. "
+      + "Düzeltme: `xultron` komutunu doğrudan bir terminalde çalıştırın.",
+    );
+  }
+
+  return new Promise((resolve) => {
+    const terminal = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: true,
+    });
+
+    if (hidden) {
+      const write = terminal._writeToOutput.bind(terminal);
+      let muted = false;
+      terminal._writeToOutput = (value) => {
+        if (!muted) write(value);
+      };
+      terminal.question(message, (answer) => {
+        process.stdout.write("\n");
+        terminal.close();
+        resolve(answer);
+      });
+      muted = true;
+      return;
+    }
+
+    terminal.question(message, (answer) => {
+      terminal.close();
+      resolve(answer);
+    });
+  });
+}
+
 export function parseArgs(argv) {
   const args = [...argv];
-  let command = "help";
+  let command = "launch";
   let commandAssigned = false;
   let directory;
   let skipBootstrap = false;
@@ -101,12 +140,21 @@ export function repositoriesEqual(left, right) {
 }
 
 function runProcess(command, args, options = {}) {
-  const { cwd, env = process.env, stdio = "inherit", capture = false } = options;
+  const {
+    cwd,
+    env = process.env,
+    stdio = "inherit",
+    capture = false,
+    input,
+  } = options;
   return new Promise((resolve, reject) => {
+    const pipeStdin = input !== undefined;
     const child = spawn(command, args, {
       cwd,
       env,
-      stdio: capture ? ["ignore", "pipe", "pipe"] : stdio,
+      stdio: capture || pipeStdin
+        ? [pipeStdin ? "pipe" : "ignore", capture ? "pipe" : "inherit", capture ? "pipe" : "inherit"]
+        : stdio,
     });
     let stdout = "";
     let stderr = "";
@@ -116,6 +164,7 @@ function runProcess(command, args, options = {}) {
       child.stdout.on("data", (chunk) => { stdout += chunk; });
       child.stderr.on("data", (chunk) => { stderr += chunk; });
     }
+    if (pipeStdin) child.stdin.end(input);
     child.on("error", (error) => {
       if (error.code === "ENOENT") reject(new Error(`${command} bulunamadı.`));
       else reject(error);
@@ -155,12 +204,12 @@ async function secureXultronParent(target) {
   await chmod(parent, 0o700);
 }
 
-async function assertXultronCheckout(target, repository) {
+async function assertXultronCheckout(target, repository, processRunner = runProcess) {
   const gitDir = path.join(target, ".git");
   if (!(await pathExists(gitDir))) {
     throw new Error(`${target} geçerli bir Xultron Git kurulumu değil.`);
   }
-  const { stdout: origin } = await runProcess("git", ["remote", "get-url", "origin"], {
+  const { stdout: origin } = await processRunner("git", ["remote", "get-url", "origin"], {
     cwd: target,
     capture: true,
   });
@@ -169,9 +218,9 @@ async function assertXultronCheckout(target, repository) {
   }
 }
 
-async function toolVersion(command, args, minimum, label) {
+async function toolVersion(command, args, minimum, label, processRunner) {
   try {
-    const { stdout, stderr } = await runProcess(command, args, { capture: true });
+    const { stdout, stderr } = await processRunner(command, args, { capture: true });
     const output = stdout || stderr;
     const parsed = parseVersion(output);
     if (!parsed || !versionAtLeast(parsed, minimum)) {
@@ -185,11 +234,12 @@ async function toolVersion(command, args, minimum, label) {
 
 export async function doctor(options = {}) {
   const io = options.io || defaultIo();
+  const processRunner = options.processRunner || runProcess;
   const checks = await Promise.all([
-    toolVersion("git", ["--version"], [2, 20, 0], "Git"),
-    toolVersion("node", ["--version"], [20, 0, 0], "Node.js"),
-    toolVersion("npm", ["--version"], [9, 0, 0], "npm"),
-    toolVersion("python", ["--version"], [3, 11, 0], "Python"),
+    toolVersion("git", ["--version"], [2, 20, 0], "Git", processRunner),
+    toolVersion("node", ["--version"], [20, 0, 0], "Node.js", processRunner),
+    toolVersion("npm", ["--version"], [9, 0, 0], "npm", processRunner),
+    toolVersion("python", ["--version"], [3, 11, 0], "Python", processRunner),
   ]);
   for (const check of checks) {
     io.stdout(`${check.ok ? "✓" : "✗"} ${check.label}: ${check.output}`);
@@ -206,7 +256,7 @@ async function bootstrap(target, options) {
     options.io.stdout("Bootstrap atlandı. Bu seçenek yalnızca test ve ileri düzey kullanım içindir.");
     return;
   }
-  await runProcess("bash", [path.join(target, "scripts", "bootstrap.sh")], {
+  await options.processRunner("bash", [path.join(target, "scripts", "bootstrap.sh")], {
     cwd: target,
     env: options.env,
     stdio: options.stdio,
@@ -215,27 +265,27 @@ async function bootstrap(target, options) {
 
 export async function install(options) {
   const { target, repository, io } = options;
-  await doctor({ io });
+  await doctor({ io, processRunner: options.processRunner });
   await secureXultronParent(target);
   const exists = await pathExists(target);
   if (!exists) {
     await mkdir(path.dirname(target), { recursive: true });
     io.stdout(`Xultron klonlanıyor: ${target}`);
-    await runProcess("git", ["clone", "--depth", "1", "--branch", DEFAULT_BRANCH, repository, target], {
+    await options.processRunner("git", ["clone", "--depth", "1", "--branch", DEFAULT_BRANCH, repository, target], {
       env: options.env,
       stdio: options.stdio,
     });
   } else if (await isEmptyDirectory(target)) {
     io.stdout(`Xultron boş klasöre klonlanıyor: ${target}`);
-    await runProcess("git", ["clone", "--depth", "1", "--branch", DEFAULT_BRANCH, repository, target], {
+    await options.processRunner("git", ["clone", "--depth", "1", "--branch", DEFAULT_BRANCH, repository, target], {
       env: options.env,
       stdio: options.stdio,
     });
   } else {
-    await assertXultronCheckout(target, repository);
+    await assertXultronCheckout(target, repository, options.processRunner);
     io.stdout(`Mevcut Xultron kurulumu kullanılacak: ${target}`);
   }
-  await assertXultronCheckout(target, repository);
+  await assertXultronCheckout(target, repository, options.processRunner);
   await bootstrap(target, options);
   io.stdout("Xultron hazır.");
   io.stdout(`Başlat: xultron start --dir ${JSON.stringify(target)}`);
@@ -243,16 +293,16 @@ export async function install(options) {
 
 export async function update(options) {
   const { target, repository, io } = options;
-  await doctor({ io });
-  await assertXultronCheckout(target, repository);
-  const { stdout: currentBranch } = await runProcess("git", ["branch", "--show-current"], {
+  await doctor({ io, processRunner: options.processRunner });
+  await assertXultronCheckout(target, repository, options.processRunner);
+  const { stdout: currentBranch } = await options.processRunner("git", ["branch", "--show-current"], {
     cwd: target,
     capture: true,
   });
   if (currentBranch !== DEFAULT_BRANCH) {
     throw new Error(`Güncelleme durduruldu: etkin dal ${currentBranch || "detached HEAD"}, beklenen dal ${DEFAULT_BRANCH}.`);
   }
-  const { stdout: statusOutput } = await runProcess("git", ["status", "--porcelain"], {
+  const { stdout: statusOutput } = await options.processRunner("git", ["status", "--porcelain"], {
     cwd: target,
     capture: true,
   });
@@ -260,12 +310,12 @@ export async function update(options) {
     throw new Error("Güncelleme durduruldu: kurulumda commit edilmemiş yerel değişiklikler var.");
   }
   io.stdout("GitHub main dalı alınıyor...");
-  await runProcess("git", ["fetch", "origin", DEFAULT_BRANCH], {
+  await options.processRunner("git", ["fetch", "origin", DEFAULT_BRANCH], {
     cwd: target,
     env: options.env,
     stdio: options.stdio,
   });
-  await runProcess("git", ["merge", "--ff-only", `origin/${DEFAULT_BRANCH}`], {
+  await options.processRunner("git", ["merge", "--ff-only", `origin/${DEFAULT_BRANCH}`], {
     cwd: target,
     env: options.env,
     stdio: options.stdio,
@@ -294,26 +344,26 @@ export async function start(options) {
   const { target, io } = options;
   await ensureRunnable(target);
   io.stdout("Xultron üretim arayüzü hazırlanıyor...");
-  await runProcess("npm", ["--prefix", path.join(target, "frontend"), "run", "build"], {
+  await options.processRunner("npm", ["--prefix", path.join(target, "frontend"), "run", "build"], {
     cwd: target,
     env: options.env,
     stdio: options.stdio,
   });
   if (options.env.XULTRON_LOCAL_STT_AUTOSTART === "1") {
     io.stdout("Yerel whisper.cpp STT hazırlanıyor...");
-    await runProcess("bash", [path.join(target, "scripts", "local-voice.sh"), "start"], {
+    await options.processRunner("bash", [path.join(target, "scripts", "local-voice.sh"), "start"], {
       cwd: target,
       env: options.env,
       stdio: options.stdio,
     });
   }
-  await runProcess(path.join(target, "backend", ".venv", "bin", "flask"), ["--app", "run.py", "db", "upgrade"], {
+  await options.processRunner(path.join(target, "backend", ".venv", "bin", "flask"), ["--app", "run.py", "db", "upgrade"], {
     cwd: path.join(target, "backend"),
     env: options.env,
     stdio: options.stdio,
   });
   io.stdout(`Xultron başlatılıyor: http://127.0.0.1:${options.env.PORT || "5000"}`);
-  await runProcess(path.join(target, "backend", ".venv", "bin", "python"), ["run.py"], {
+  await options.processRunner(path.join(target, "backend", ".venv", "bin", "python"), ["run.py"], {
     cwd: path.join(target, "backend"),
     env: options.env,
     stdio: options.stdio,
@@ -324,11 +374,93 @@ export async function dev(options) {
   const { target, io } = options;
   await ensureRunnable(target);
   io.stdout("Xultron geliştirme sunucuları başlatılıyor...");
-  await runProcess("bash", [path.join(target, "scripts", "dev.sh")], {
+  await options.processRunner("bash", [path.join(target, "scripts", "dev.sh")], {
     cwd: target,
     env: options.env,
     stdio: options.stdio,
   });
+}
+
+function parseProvisionResponse(stdout) {
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    throw new Error(
+      "Yerel hesap durumu okunamadı. "
+      + "Düzeltme: `xultron update` çalıştırıp yeniden deneyin.",
+    );
+  }
+}
+
+async function provisioningRequest(options, payload) {
+  const backend = path.join(options.target, "backend");
+  const flask = path.join(backend, ".venv", "bin", "flask");
+  const result = await options.processRunner(
+    flask,
+    ["--app", "run.py", "provision-local-account"],
+    {
+      cwd: backend,
+      env: options.env,
+      capture: true,
+      input: `${JSON.stringify(payload)}\n`,
+    },
+  );
+  return parseProvisionResponse(result.stdout);
+}
+
+async function collectCredentials(options) {
+  if (!options.interactive) {
+    throw new Error(
+      "İlk hesabı oluşturmak için etkileşimli bir terminal gerekli. "
+      + "Düzeltme: `xultron` komutunu doğrudan bir terminalde çalıştırın.",
+    );
+  }
+
+  const username = String(await options.prompt({
+    message: "Kullanıcı adı: ",
+    hidden: false,
+  })).trim();
+  if (!username) throw new Error("Kullanıcı adı boş olamaz. Xultron'u yeniden çalıştırıp bir kullanıcı adı girin.");
+
+  const password = String(await options.prompt({
+    message: "Parola: ",
+    hidden: true,
+  }));
+  if (!password) throw new Error("Parola boş olamaz. Xultron'u yeniden çalıştırıp bir parola girin.");
+
+  const confirmation = String(await options.prompt({
+    message: "Parola tekrar: ",
+    hidden: true,
+  }));
+  if (password !== confirmation) {
+    throw new Error("Parolalar eşleşmedi. Xultron'u yeniden çalıştırıp aynı parolayı iki kez girin.");
+  }
+  return { username, password };
+}
+
+export async function launch(options) {
+  const exists = await pathExists(options.target);
+  if (!exists || await isEmptyDirectory(options.target)) {
+    await install(options);
+  } else {
+    await assertXultronCheckout(options.target, options.repository, options.processRunner);
+    await ensureRunnable(options.target);
+    options.io.stdout(`Mevcut Xultron kurulumu kullanılacak: ${options.target}`);
+  }
+
+  const status = await provisioningRequest(options, { action: "status" });
+  if (typeof status.accountExists !== "boolean") {
+    throw new Error(
+      "Yerel hesap durumu geçersiz. Düzeltme: `xultron update` çalıştırıp yeniden deneyin.",
+    );
+  }
+  if (!status.accountExists) {
+    const credentials = await collectCredentials(options);
+    await provisioningRequest(options, { action: "create", ...credentials });
+    options.io.stdout(`Yerel hesap hazır: ${credentials.username}`);
+  }
+
+  return start(options);
 }
 
 export async function runCli(argv, context = {}) {
@@ -344,6 +476,9 @@ export async function runCli(argv, context = {}) {
     io,
     env,
     stdio: context.stdio || "inherit",
+    processRunner: context.processRunner || runProcess,
+    prompt: context.prompt || defaultPrompt,
+    interactive: context.interactive ?? Boolean(process.stdin.isTTY && process.stdout.isTTY),
   };
 
   if (parsed.command === "help") {
@@ -354,6 +489,7 @@ export async function runCli(argv, context = {}) {
     io.stdout(PACKAGE_VERSION);
     return;
   }
+  if (parsed.command === "launch") return launch(options);
   if (parsed.command === "doctor") return doctor(options);
   if (parsed.command === "install" || parsed.command === "setup") return install(options);
   if (parsed.command === "update") return update(options);
