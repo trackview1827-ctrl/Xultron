@@ -109,6 +109,60 @@ test("help and doctor exercise the public CLI without changing files", async () 
   assert.match(output, /✓ Python:/);
 });
 
+test("doctor accepts Ubuntu-style python3 when python is unavailable", async () => {
+  const calls = [];
+  const processRunner = async (command, args) => {
+    calls.push({ command, args });
+    if (command === "python") throw new Error("spawn python ENOENT");
+    const versions = {
+      git: "git version 2.45.0",
+      node: "v20.0.0",
+      npm: "10.0.0",
+      python3: "Python 3.12.3",
+    };
+    return { stdout: versions[command], stderr: "" };
+  };
+  const output = bufferedIo();
+
+  await runCli(["doctor"], { io: output.io, processRunner, stdio: "ignore" });
+
+  assert.ok(calls.some(({ command }) => command === "python"));
+  assert.ok(calls.some(({ command }) => command === "python3"));
+  assert.match(output.stdout.join("\n"), /✓ Python: Python 3\.12\.3/);
+});
+
+test("doctor falls back from an old python and reports both missing commands", async () => {
+  const baseVersions = {
+    git: "git version 2.45.0",
+    node: "v20.0.0",
+    npm: "10.0.0",
+  };
+  const fallbackOutput = bufferedIo();
+  await runCli(["doctor"], {
+    io: fallbackOutput.io,
+    processRunner: async (command) => ({
+      stdout: command === "python" ? "Python 3.10.12" : command === "python3" ? "Python 3.12.3" : baseVersions[command],
+      stderr: "",
+    }),
+    stdio: "ignore",
+  });
+  assert.match(fallbackOutput.stdout.join("\n"), /✓ Python: Python 3\.12\.3/);
+
+  const missingOutput = bufferedIo();
+  await assert.rejects(
+    runCli(["doctor"], {
+      io: missingOutput.io,
+      processRunner: async (command) => {
+        if (command === "python" || command === "python3") throw new Error(`spawn ${command} ENOENT`);
+        return { stdout: baseVersions[command], stderr: "" };
+      },
+      stdio: "ignore",
+    }),
+    /Python >= 3\.11\.0/,
+  );
+  assert.match(missingOutput.stdout.join("\n"), /python: spawn python ENOENT; python3: spawn python3 ENOENT/);
+});
+
 test("no arguments install a missing checkout, bootstrap it, provision status, and start", async () => {
   const scratchBase = process.env.JCODE_SCRATCH_DIR || os.tmpdir();
   const workspace = await mkdtemp(path.join(scratchBase, "xultron-cli-launch-"));

@@ -232,6 +232,21 @@ async function toolVersion(command, args, minimum, label, processRunner) {
   }
 }
 
+async function firstAvailableToolVersion(commands, args, minimum, label, processRunner) {
+  const failures = [];
+  for (const command of commands) {
+    const check = await toolVersion(command, args, minimum, label, processRunner);
+    if (check.ok) return check;
+    failures.push(`${command}: ${check.output}`);
+  }
+  return {
+    ok: false,
+    label,
+    output: failures.join("; "),
+    minimum: minimum.join("."),
+  };
+}
+
 export async function doctor(options = {}) {
   const io = options.io || defaultIo();
   const processRunner = options.processRunner || runProcess;
@@ -239,7 +254,7 @@ export async function doctor(options = {}) {
     toolVersion("git", ["--version"], [2, 20, 0], "Git", processRunner),
     toolVersion("node", ["--version"], [20, 0, 0], "Node.js", processRunner),
     toolVersion("npm", ["--version"], [9, 0, 0], "npm", processRunner),
-    toolVersion("python", ["--version"], [3, 11, 0], "Python", processRunner),
+    firstAvailableToolVersion(["python", "python3"], ["--version"], [3, 11, 0], "Python", processRunner),
   ]);
   for (const check of checks) {
     io.stdout(`${check.ok ? "✓" : "✗"} ${check.label}: ${check.output}`);
