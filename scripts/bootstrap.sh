@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
 VENV="$ROOT/backend/.venv"
+
+if command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="python3"
+else
+  echo "Python 3.11+ bulunamadı. Ubuntu/Debian: sudo apt install python3 python3-venv" >&2
+  exit 1
+fi
 
 if [[ "${PREFIX:-}" == *com.termux* ]] && ! command -v ffmpeg >/dev/null 2>&1; then
   echo "Installing ffmpeg for browser WebM/Opus voice input..."
@@ -10,12 +19,12 @@ if [[ "${PREFIX:-}" == *com.termux* ]] && ! command -v ffmpeg >/dev/null 2>&1; t
 fi
 
 if [[ ! -d "$VENV" ]]; then
-  if [[ "${PREFIX:-}" == *com.termux* ]] && python -c 'import cryptography' >/dev/null 2>&1; then
+  if [[ "${PREFIX:-}" == *com.termux* ]] && "$PYTHON_BIN" -c 'import cryptography' >/dev/null 2>&1; then
     echo "Creating a Termux virtual environment with the trusted system cryptography package..."
-    python -m venv --system-site-packages "$VENV"
+    "$PYTHON_BIN" -m venv --system-site-packages "$VENV"
   else
     echo "Creating backend virtual environment..."
-    python -m venv "$VENV"
+    "$PYTHON_BIN" -m venv "$VENV"
   fi
 fi
 

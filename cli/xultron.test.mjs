@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -170,6 +170,46 @@ test("doctor falls back from an old python and reports both missing commands", a
     /Python >= 3\.11\.0/,
   );
   assert.match(missingOutput.stdout.join("\n"), /python: spawn python ENOENT; python3: spawn python3 ENOENT/);
+});
+
+test("bootstrap uses python3 when the python command is unavailable", async () => {
+  const scratchBase = process.env.JCODE_SCRATCH_DIR || os.tmpdir();
+  const workspace = await mkdtemp(path.join(scratchBase, "xultron-bootstrap-python3-"));
+  const checkout = path.join(workspace, "checkout");
+  const fakeBin = path.join(workspace, "bin");
+  const callsFile = path.join(workspace, "python3-calls");
+  const bashPath = process.env.PREFIX ? path.join(process.env.PREFIX, "bin", "bash") : "/bin/bash";
+  const mkdirPath = process.env.PREFIX ? path.join(process.env.PREFIX, "bin", "mkdir") : "/bin/mkdir";
+  const chmodPath = process.env.PREFIX ? path.join(process.env.PREFIX, "bin", "chmod") : "/bin/chmod";
+
+  try {
+    await mkdir(path.join(checkout, "scripts"), { recursive: true });
+    await mkdir(path.join(checkout, "backend"), { recursive: true });
+    await mkdir(path.join(checkout, "frontend", "node_modules"), { recursive: true });
+    await mkdir(fakeBin, { recursive: true });
+    await writeFile(
+      path.join(fakeBin, "python3"),
+      `#!${bashPath}\necho "$*" >> "${callsFile}"\nif [[ "$1 $2" == "-m venv" ]]; then\n  target="\${@: -1}"\n  "${mkdirPath}" -p "$target/bin"\n  printf '#!${bashPath}\\nexit 0\\n' > "$target/bin/python"\n  printf '#!${bashPath}\\nexit 0\\n' > "$target/bin/flask"\n  "${chmodPath}" +x "$target/bin/python" "$target/bin/flask"\nfi\nexit 0\n`,
+      { encoding: "utf8", mode: 0o755 },
+    );
+    await writeFile(path.join(fakeBin, "npm"), `#!${bashPath}\nexit 0\n`, { mode: 0o755 });
+    await writeFile(
+      path.join(checkout, "scripts", "bootstrap.sh"),
+      await readFile(new URL("../scripts/bootstrap.sh", import.meta.url), "utf8"),
+      { mode: 0o755 },
+    );
+
+    const result = spawnSync(bashPath, [path.join(checkout, "scripts", "bootstrap.sh")], {
+      cwd: checkout,
+      encoding: "utf8",
+      env: { ...process.env, PREFIX: "", PATH: `${fakeBin}:/usr/bin:/bin` },
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(await readFile(callsFile, "utf8"), /-m venv/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("no arguments install a missing checkout, bootstrap it, provision status, and start", async () => {
