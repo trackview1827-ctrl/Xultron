@@ -532,7 +532,7 @@ class CodexOAuthAdapter(OpenAICompatibleAdapter):
         self.models()
         return {"ok": True, "latencyMs": int((time.monotonic() - start) * 1000), "message": "ChatGPT OAuth bağlantısı başarılı."}
 
-    def complete(self, messages):
+    def _response_payload(self, messages):
         input_items = []
         instructions = []
         for message in messages:
@@ -551,9 +551,15 @@ class CodexOAuthAdapter(OpenAICompatibleAdapter):
             "model": self.cfg.model or "gpt-5-codex",
             "instructions": "\n\n".join(instructions),
             "input": input_items,
-            "stream": False,
+            # The ChatGPT Codex transport only accepts streaming Responses
+            # requests, even when Xultron's caller wants one final string.
+            "stream": True,
             "store": False,
         }
+        return payload
+
+    def stream(self, messages) -> Iterable[str]:
+        payload = self._response_payload(messages)
         try:
             response = requests.post(
                 f"{self.base}/responses", headers=self.headers(), json=payload,
@@ -563,16 +569,58 @@ class CodexOAuthAdapter(OpenAICompatibleAdapter):
             raise ProviderFailure("provider_timeout", "ChatGPT request timed out.", 504, True)
         except requests.RequestException as exc:
             self._safe_raise(exc)
-        data = self._json_response(response)
-        output_text = data.get("output_text")
-        if not isinstance(output_text, str):
-            parts = []
-            for item in data.get("output", []) if isinstance(data.get("output"), list) else []:
-                for block in item.get("content", []) if isinstance(item, dict) and isinstance(item.get("content"), list) else []:
-                    if isinstance(block, dict) and isinstance(block.get("text"), str):
-                        parts.append(block["text"])
-            output_text = "".join(parts)
-        return self._bound_text(output_text)
+        if response.status_code in {401, 403}:
+            response.close()
+            raise ProviderFailure("provider_authentication_failed", "ChatGPT OAuth oturumu reddedildi.", 502)
+        if response.status_code == 429:
+            response.close()
+            raise ProviderFailure("provider_rate_limited", "ChatGPT rate limit reached.", 502, True)
+        if response.status_code >= 400:
+            response.close()
+            raise ProviderFailure("provider_request_failed", f"ChatGPT returned HTTP {response.status_code}.", 502, response.status_code >= 500)
+
+        max_bytes = current_app.config.get("MAX_PROVIDER_RESPONSE_BYTES", 1048576)
+        max_chars = current_app.config.get("MAX_PROVIDER_TEXT_CHARS", 200000)
+        received = 0
+        emitted = 0
+        try:
+            for raw_line in response.iter_lines():
+                if not raw_line:
+                    continue
+                received += len(raw_line)
+                if received > max_bytes:
+                    raise ProviderFailure("provider_response_too_large", "Provider response is too large.", 502)
+                if not raw_line.startswith(b"data: "):
+                    continue
+                raw_event = raw_line[6:]
+                if raw_event == b"[DONE]":
+                    break
+                try:
+                    event = json.loads(raw_event.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    raise ProviderFailure("provider_malformed_response", "ChatGPT returned malformed streaming data.", 502, True)
+                if event.get("type") != "response.output_text.delta":
+                    continue
+                delta = event.get("delta")
+                if not isinstance(delta, str) or not delta:
+                    continue
+                remaining = max_chars - emitted
+                if remaining <= 0:
+                    break
+                chunk = delta[:remaining]
+                emitted += len(chunk)
+                yield chunk
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "ChatGPT request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc)
+        finally:
+            response.close()
+        if emitted == 0:
+            raise ProviderFailure("provider_empty_response", "Provider returned an empty response.", 502, True)
+
+    def complete(self, messages):
+        return self._bound_text("".join(self.stream(messages)))
 
 
 class AnthropicAdapter(OpenAICompatibleAdapter):

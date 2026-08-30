@@ -4,6 +4,8 @@ import requests
 from urllib.parse import parse_qs, urlparse
 
 from app.models import Provider
+from app.providers.adapters import CodexOAuthAdapter
+from app.providers.base import ProviderConfig
 from app.services.openai_oauth import _backend_callback_uri
 from conftest import delete_json, post_json
 
@@ -181,3 +183,50 @@ def test_oauth_routes_reject_unsupported_provider(user_client):
     assert start.get_json()["error"]["code"] == "oauth_not_supported"
     assert disconnect.status_code == 422
     assert disconnect.get_json()["error"]["code"] == "oauth_not_supported"
+
+
+def test_codex_adapter_uses_required_streaming_responses_protocol(app, monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        def iter_lines(self):
+            return iter([
+                b'data: {"type":"response.created"}',
+                b'data: {"type":"response.output_text.delta","delta":"O"}',
+                b'data: {"type":"response.output_text.delta","delta":"K"}',
+                b'data: {"type":"response.completed","response":{"status":"completed"}}',
+                b'data: [DONE]',
+            ])
+
+        def close(self):
+            captured["closed"] = True
+
+    def fake_post(*args, **kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr("app.providers.adapters.requests.post", fake_post)
+    with app.app_context():
+        adapter = CodexOAuthAdapter(ProviderConfig(
+            id="prv_test",
+            name="Codex",
+            kind="ai",
+            adapter="openai_codex_oauth",
+            base_url="https://chatgpt.com/backend-api/codex",
+            api_key=None,
+            access_token="access-secret",
+            account_id="acct_test",
+            auth_mode="codex_oauth",
+            model="gpt-5.6-sol",
+            temperature=0.3,
+            max_tokens=4096,
+            streaming=True,
+            config={},
+        ))
+        assert adapter.complete([{"role": "user", "content": "Reply OK"}]) == "OK"
+
+    assert captured["json"]["stream"] is True
+    assert captured["stream"] is True
+    assert captured["closed"] is True
