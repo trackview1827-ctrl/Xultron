@@ -109,6 +109,19 @@ olacaktır.
 Paylaşılacak şey UI kodu değil, API şemaları, capability isimleri, error code'ları,
 action schema'ları, state isimleri, feature inventory ve test senaryolarıdır.
 
+### SDK seçimi
+
+- `minSdk = 26` (Android 8): modern foreground service, notification, storage ve
+  security API'leri için makul taban; daha eski sürümlerin ek compatibility yükü
+  bu ürünün background/voice hedeflerine değmez.
+- `compileSdk = 35` başlangıç baseline'ı: Android 15 API davranışları Phase 0'da
+  derlenip test edilir.
+- `targetSdk = 35` başlangıç baseline'ı: Android 15'in güncel permission ve
+  foreground-service kuralları zorunlu olarak görülür.
+- Release öncesi `compileSdk` ve `targetSdk`, Play ve Android'in o tarihteki
+  güncel zorunlu API seviyesine yükseltilir. Bu yükseltme yapılmadan release kabul
+  edilmez; Android 13, 14, 15 ve güncel sürüm matrisi yeniden çalıştırılır.
+
 ## 3. Module Structure
 
 ```text
@@ -678,70 +691,56 @@ kill sonrası sonsuz çalışma garanti edilmez.
 
 ## 16. File-by-file Implementation Map
 
-```text
-android/app/src/main/AndroidManifest.xml
-android/app/src/main/java/com/xultron/android/MainActivity.kt
-android/app/src/main/java/com/xultron/android/XultronApplication.kt
-
-android/core/network/ApiClient.kt
-android/core/network/AuthInterceptor.kt
-android/core/network/SseClient.kt
-android/core/auth/TokenStore.kt
-android/core/auth/SessionManager.kt
-android/core/security/KeystoreManager.kt
-android/core/security/RedactedLogger.kt
-android/core/permissions/AndroidPermissionManager.kt
-android/core/capabilities/CapabilityEngine.kt
-android/core/capabilities/CapabilityPolicy.kt
-android/core/audit/LocalAuditRepository.kt
-android/core/database/XultronDatabase.kt
-android/core/datastore/XultronPreferences.kt
-
-android/feature-terminal/TerminalPolicyManager.kt
-android/feature-terminal/CommandValidator.kt
-android/feature-terminal/PathBoundaryValidator.kt
-android/feature-terminal/AppProcessExecutor.kt
-android/feature-terminal/TermuxExecutor.kt
-android/feature-terminal/ShizukuExecutor.kt
-android/feature-terminal/RootExecutor.kt
-
-android/feature-voice/WakeWordManager.kt
-android/feature-voice/VadEngine.kt
-android/feature-camera/CameraRepository.kt
-android/feature-location/LocationRepository.kt
-android/feature-sensors/SensorRepository.kt
-android/feature-notifications/NotificationChannels.kt
-android/feature-diagnostics/DiagnosticsViewModel.kt
-android/feature-settings/OverlaySettings.kt
-android/feature-settings/ScreenCaptureSettings.kt
-
-android/service/XultronForegroundService.kt
-android/service/WakeWordService.kt
-android/service/ScreenCaptureService.kt
-android/service/ProjectionTeardown.kt
-android/service/BootReceiver.kt
-
-backend/app/auth/native.py
-backend/app/devices/routes.py
-backend/app/services/device_auth.py
-backend/app/services/device_actions.py
-backend/app/services/device_audit.py
-backend/app/services/screen_capture.py
-backend/app/security/native_tokens.py
-backend/migrations/versions/0007_android_devices.py
-
-frontend/src/features/devices/
-frontend/src/features/permissions/
-frontend/src/features/activity-log/
-frontend/src/features/screen-capture/
-frontend/src/services/devicesApi.ts
-frontend/src/services/capabilitiesApi.ts
-
-.devcontainer/devcontainer.json
-.github/workflows/android.yml
-.github/workflows/android-security.yml
-.github/workflows/android-release.yml
-```
+| Dosya/grup | Amaç |
+|---|---|
+| `android/app/src/main/AndroidManifest.xml` | Permission, service type, receiver ve exported component sınırları |
+| `android/.../MainActivity.kt` | Compose host, navigation, deep-link ve permission sonucu |
+| `android/.../XultronApplication.kt` | Dependency graph, database, DataStore ve notification kurulumu |
+| `android/core/network/` | HTTPS client, auth interceptor, SSE ve network state |
+| `android/core/auth/` | Access/refresh token, session, logout ve revoke |
+| `android/core/security/` | Keystore, encryption, redacted logging ve backup policy |
+| `android/core/permissions/` | Gerçek Android permission state ve Settings yönlendirmeleri |
+| `android/core/capabilities/` | Merkezi capability policy ve fail-closed action gate |
+| `android/core/audit/` | Hassas içerik olmadan local activity log |
+| `android/core/database/` | Room entities, migrations ve offline state |
+| `android/core/datastore/` | Küçük ayarların kalıcı saklanması |
+| `android/feature-auth/` | Login, register, guest ve device session ekranları |
+| `android/feature-chat/` | Chat, SSE stream ve recovery UI |
+| `android/feature-conversations/` | Conversation list/detail/history |
+| `android/feature-memory/` | Memory görüntüleme ve yönetimi |
+| `android/feature-providers/` | AI/STT/TTS provider CRUD, test ve model seçimi |
+| `android/feature-settings/` | General, voice, permission, terminal, overlay ve capture ayarları |
+| `android/feature-terminal/` | Policy, argv validation, path boundary ve execution adapter’ları |
+| `android/feature-voice/` | Wake-word enrollment, detector, VAD ve aktif voice pipeline |
+| `android/feature-sensors/` | Sensor discovery, per-sensor policy ve sampling lifecycle |
+| `android/feature-camera/` | CameraX capture, preview ve temporary media cleanup |
+| `android/feature-location/` | Fused location, foreground/background policy ve battery control |
+| `android/feature-notifications/` | Service, Tasks, Alerts ve General notification channels |
+| `android/feature-diagnostics/` | Backend, WebSocket, wake-word, mic, FGS, battery, terminal ve son 20 event |
+| `android/feature-screen-capture/` | Overlay navbar, preview, MediaProjection ve screenshot upload UI |
+| `android/service/XultronForegroundService.kt` | Wake-word microphone foreground service |
+| `android/service/WakeWordService.kt` | Local detector lifecycle ve sleep/active state |
+| `android/service/ScreenCaptureService.kt` | MediaProjection capture, upload ve stop handling |
+| `android/service/ProjectionTeardown.kt` | Callback, error, lock, process death ve replacement cleanup |
+| `android/service/BootReceiver.kt` | Android’in izin verdiği reboot recovery davranışı |
+| `backend/app/auth/native.py` | Native device auth ve token endpoints |
+| `backend/app/devices/routes.py` | Device registration, action ve result transport |
+| `backend/app/services/device_auth.py` | Token rotation, device binding ve revoke logic |
+| `backend/app/services/device_actions.py` | Typed action schema, expiry, nonce ve idempotency |
+| `backend/app/services/device_audit.py` | Redacted privileged action audit |
+| `backend/app/services/screen_capture.py` | `retention=none`, size limit ve temporary processing |
+| `backend/app/security/native_tokens.py` | Native bearer/proof-of-possession validation |
+| `backend/migrations/versions/0007_android_devices.py` | Device/session/action/audit schema |
+| `frontend/src/features/devices/` | Web device/session management |
+| `frontend/src/features/permissions/` | Shared capability visibility |
+| `frontend/src/features/activity-log/` | Web redacted activity log |
+| `frontend/src/features/screen-capture/` | Web-side device capture status, not silent capture |
+| `frontend/src/services/devicesApi.ts` | Device and action API client |
+| `frontend/src/services/capabilitiesApi.ts` | Capability metadata API client |
+| `.devcontainer/devcontainer.json` | Codespaces JDK, Android SDK ve build araçları |
+| `.github/workflows/android.yml` | Test, lint ve debug APK pipeline |
+| `.github/workflows/android-security.yml` | Static/security checks |
+| `.github/workflows/android-release.yml` | Protected signing ve release artifact pipeline |
 
 Signing key repository’ye commit edilmeyecek. Cihazdaki logo dosyası Codespace’ten
 otomatik okunmayacağı için build asset upload/import süreci ayrıca tanımlanacak.
