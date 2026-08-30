@@ -1,11 +1,13 @@
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, readFileSync } from "node:fs";
 import { access, chmod, mkdir, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import readline from "node:readline";
 
-export const PACKAGE_VERSION = "1.0.0";
+export const PACKAGE_VERSION = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 export const DEFAULT_REPOSITORY = "https://github.com/trackview1827-ctrl/Xultron.git";
 export const DEFAULT_BRANCH = "main";
 

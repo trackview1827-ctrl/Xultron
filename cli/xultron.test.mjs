@@ -109,6 +109,15 @@ test("help and doctor exercise the public CLI without changing files", async () 
   assert.match(output, /✓ Python:/);
 });
 
+test("public version output stays synchronized with package.json", async () => {
+  const packageMetadata = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const output = bufferedIo();
+
+  await runCli(["--version"], { io: output.io });
+
+  assert.deepEqual(output.stdout, [packageMetadata.version]);
+});
+
 test("doctor accepts Ubuntu-style python3 when python is unavailable", async () => {
   const calls = [];
   const processRunner = async (command, args) => {

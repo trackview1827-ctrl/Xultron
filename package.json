@@ -1,6 +1,6 @@
 {
   "name": "xultron",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Zero-dependency installer and launcher for Xultron",
   "type": "module",
   "bin": {
