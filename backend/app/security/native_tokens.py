@@ -54,7 +54,9 @@ def authenticate_bearer_header(value: str) -> MobilePrincipal:
         raise APIError("mobile_session_expired", "The mobile session has expired.", 401)
 
     supplied_device_id = request.headers.get("X-Device-ID")
-    if supplied_device_id and supplied_device_id != auth_session.device_id:
+    if not supplied_device_id:
+        raise APIError("device_header_required", "The mobile device identity header is required.", 401)
+    if supplied_device_id != auth_session.device_id:
         raise APIError("device_mismatch", "The access token is bound to another device.", 401)
 
     user = auth_session.user

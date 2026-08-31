@@ -3,6 +3,7 @@ package ai.xultron.app.core.network
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PATCH
 import retrofit2.http.Path
@@ -124,6 +125,8 @@ object ApiRoutes {
     val credential: ProviderCredentialDto = ProviderCredentialDto(),
 )
 @Serializable data class ProvidersDto(val providers: List<ProviderDto>)
+@Serializable data class ProviderEnvelope(val provider: ProviderDto)
+@Serializable data class ModelsDto(val models: List<String>)
 @Serializable data class SettingsDto(val settings: JsonObject)
 
 interface XultronApi {
@@ -136,7 +139,14 @@ interface XultronApi {
     @POST(ApiRoutes.MESSAGES) suspend fun sendMessage(@Body request: ChatRequest): ChatResponse
     @GET(ApiRoutes.MEMORY) suspend fun memories(): MemoriesDto
     @GET(ApiRoutes.PROVIDERS) suspend fun providers(): ProvidersDto
+    @POST(ApiRoutes.PROVIDERS) suspend fun createProvider(@Body request: JsonObject): ProviderEnvelope
+    @PATCH("providers/{providerId}") suspend fun patchProvider(
+        @Path("providerId") providerId: String,
+        @Body request: JsonObject,
+    ): ProviderEnvelope
+    @DELETE("providers/{providerId}") suspend fun deleteProvider(@Path("providerId") providerId: String): OkDto
     @POST("providers/{providerId}/test") suspend fun testProvider(@Path("providerId") providerId: String): JsonObject
+    @POST("providers/{providerId}/models") suspend fun providerModels(@Path("providerId") providerId: String): ModelsDto
     @GET(ApiRoutes.SETTINGS) suspend fun settings(): SettingsDto
     @PATCH(ApiRoutes.SETTINGS) suspend fun patchSettings(@Body request: JsonObject): SettingsDto
     @POST(ApiRoutes.DEVICE_AUTH_LOGIN) suspend fun deviceLogin(@Body request: DeviceLoginRequest): DeviceAuthResponse

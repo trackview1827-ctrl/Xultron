@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
@@ -45,7 +46,7 @@ class ConversationsViewModel(
 }
 
 @Composable
-fun ConversationsScreen(viewModel: ConversationsViewModel) {
+fun ConversationsScreen(viewModel: ConversationsViewModel, onOpenConversation: (String) -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LoadablePane(state, viewModel::refresh) { conversations ->
         LazyColumn(
@@ -53,10 +54,11 @@ fun ConversationsScreen(viewModel: ConversationsViewModel) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(conversations, key = { it.id }) { conversation ->
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(modifier = Modifier.fillMaxWidth().clickable { onOpenConversation(conversation.id) }) {
                     Column(Modifier.padding(16.dp)) {
                         Text(conversation.title, style = MaterialTheme.typography.titleMedium)
                         Text(conversation.updatedAt, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Aç", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }

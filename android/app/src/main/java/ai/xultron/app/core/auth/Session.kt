@@ -11,6 +11,7 @@ import kotlin.concurrent.withLock
 
 @Serializable
 data class StoredSession(
+    val backendBaseUrl: String? = null,
     val user: UserDto? = null,
     val accessToken: String? = null,
     val refreshToken: String? = null,

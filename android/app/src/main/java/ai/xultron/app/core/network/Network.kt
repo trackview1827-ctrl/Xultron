@@ -32,15 +32,36 @@ object BackendEndpoint {
     }
 }
 
+internal fun shouldAttachSessionHeaders(requestUrl: okhttp3.HttpUrl, backendBaseUrl: String?): Boolean {
+    val sessionUrl = backendBaseUrl?.toHttpUrlOrNull() ?: return false
+    val sameBackend = requestUrl.scheme == sessionUrl.scheme &&
+        requestUrl.host == sessionUrl.host &&
+        requestUrl.port == sessionUrl.port &&
+        requestUrl.encodedPath.startsWith(sessionUrl.encodedPath)
+    return sameBackend && !isAuthlessDeviceAuthRoute(requestUrl.encodedPath)
+}
+
+internal fun isAuthlessDeviceAuthRoute(path: String): Boolean = AUTHLESS_DEVICE_AUTH_PATHS.any(path::endsWith)
+
+private val AUTHLESS_DEVICE_AUTH_PATHS = setOf(
+    "/device-auth/enroll",
+    "/device-auth/login",
+    "/device-auth/guest",
+    "/device-auth/refresh",
+)
+
 class SessionHeaderInterceptor(private val sessionStore: SessionStore) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val builder = original.newBuilder().header("X-Request-ID", "android_${UUID.randomUUID()}")
         val session = sessionStore.current()
-        session?.accessToken?.takeIf { it.isNotBlank() }?.let { builder.header("Authorization", "Bearer $it") }
-        session?.deviceId?.takeIf { it.isNotBlank() }?.let { builder.header("X-Device-ID", it) }
+        if (session != null && shouldAttachSessionHeaders(original.url, session.backendBaseUrl)) {
+            session.accessToken?.takeIf { it.isNotBlank() }?.let { builder.header("Authorization", "Bearer $it") }
+            session.deviceId?.takeIf { it.isNotBlank() }?.let { builder.header("X-Device-ID", it) }
+        }
         return chain.proceed(builder.build())
     }
+
 }
 
 class ApiFactory(private val sessionStore: SessionStore) {

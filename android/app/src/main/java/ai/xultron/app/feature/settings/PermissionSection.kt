@@ -28,6 +28,7 @@ import ai.xultron.app.core.capabilities.CapabilityDecision
 import ai.xultron.app.core.capabilities.CapabilityEngine
 import ai.xultron.app.core.capabilities.CapabilityRequest
 import ai.xultron.app.core.capabilities.PermissionDisposition
+import ai.xultron.app.core.capabilities.PhaseCapabilityPolicy
 import ai.xultron.app.core.permissions.AndroidPermissionManager
 import ai.xultron.app.core.permissions.PermissionSnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,9 +46,9 @@ class PermissionViewModel(
     fun decision(snapshot: PermissionSnapshot): CapabilityDecision = engine.evaluate(
         CapabilityRequest(
             capability = snapshot.capability,
-            userEnabled = true,
+            userEnabled = PhaseCapabilityPolicy.isUserEnabled(snapshot.capability),
             permission = snapshot.disposition,
-            featureImplemented = true,
+            featureImplemented = PhaseCapabilityPolicy.isImplemented(snapshot.capability),
         ),
     )
     fun settingsIntent(snapshot: PermissionSnapshot): Intent = manager.settingsIntent(snapshot)
@@ -81,7 +82,7 @@ fun PermissionSection(manager: AndroidPermissionManager, engine: CapabilityEngin
                         Text(snapshot.disposition.label(), style = MaterialTheme.typography.labelMedium, color = snapshot.disposition.color())
                         Text(snapshot.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    when (viewModel.decision(snapshot)) {
+                    when (val decision = viewModel.decision(snapshot)) {
                         is CapabilityDecision.RequestPermission -> snapshot.runtimePermission?.let { permission ->
                             Button(onClick = {
                                 manager.markRequested(permission)
@@ -89,6 +90,11 @@ fun PermissionSection(manager: AndroidPermissionManager, engine: CapabilityEngin
                             }) { Text("İzin iste") }
                         } ?: OutlinedButton(onClick = { settingsLauncher.launch(viewModel.settingsIntent(snapshot)) }) { Text("Ayarlar") }
                         is CapabilityDecision.OpenSettings -> OutlinedButton(onClick = { settingsLauncher.launch(viewModel.settingsIntent(snapshot)) }) { Text("Ayarlar") }
+                        is CapabilityDecision.Denied -> Text(
+                            decision.reason,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         else -> Unit
                     }
                 }

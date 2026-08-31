@@ -45,4 +45,12 @@ class CapabilityEngineTest {
         )
         assertEquals(CapabilityDecision.Confirm(Capability.SCREEN_CAPTURE), pending)
     }
+
+    @Test
+    fun `phase three exposes permission state but enables no privileged feature`() {
+        Capability.entries.forEach { capability ->
+            assertTrue(!PhaseCapabilityPolicy.isImplemented(capability))
+            assertTrue(!PhaseCapabilityPolicy.isUserEnabled(capability))
+        }
+    }
 }

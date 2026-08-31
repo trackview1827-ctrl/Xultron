@@ -13,6 +13,7 @@ class EncryptedSessionStoreTest {
         val store = EncryptedSessionStore(storage)
         store.replace(
             StoredSession(
+                backendBaseUrl = "https://api.example.com/api/v1/",
                 user = UserDto("usr_1", "nuri"),
                 accessToken = "mat_secret",
                 refreshToken = "mrt_secret",
@@ -23,6 +24,7 @@ class EncryptedSessionStoreTest {
         val restored = EncryptedSessionStore(storage).current()
         assertEquals("nuri", restored?.user?.username)
         assertEquals("dev_1", restored?.deviceId)
+        assertEquals("https://api.example.com/api/v1/", restored?.backendBaseUrl)
     }
 
     @Test

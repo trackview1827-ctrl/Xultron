@@ -34,7 +34,7 @@ class AuthRepository(
     suspend fun login(backendUrl: String, identifier: String, password: String): UserDto {
         val device = deviceIdentity.descriptor()
         val response = apiFactory.create(backendUrl).deviceLogin(DeviceLoginRequest(identifier.trim(), password, device))
-        persist(response)
+        persist(response, backendUrl)
         registerDeviceFailClosed(backendUrl, device)
         return response.user
     }
@@ -42,7 +42,7 @@ class AuthRepository(
     suspend fun enroll(backendUrl: String, username: String, email: String, password: String): UserDto {
         val device = deviceIdentity.descriptor()
         val response = apiFactory.create(backendUrl).deviceEnroll(DeviceEnrollRequest(username.trim(), email.trim(), password, device))
-        persist(response)
+        persist(response, backendUrl)
         registerDeviceFailClosed(backendUrl, device)
         return response.user
     }
@@ -50,7 +50,7 @@ class AuthRepository(
     suspend fun guest(backendUrl: String): UserDto {
         val device = deviceIdentity.descriptor()
         val response = apiFactory.create(backendUrl).deviceGuest(DeviceGuestRequest(device))
-        persist(response)
+        persist(response, backendUrl)
         registerDeviceFailClosed(backendUrl, device)
         return response.user
     }
@@ -58,7 +58,7 @@ class AuthRepository(
     suspend fun refresh(backendUrl: String): DeviceAuthResponse {
         val refreshToken = sessionStore.current()?.refreshToken ?: error("Refresh token bulunamadı.")
         val response = apiFactory.create(backendUrl).deviceRefresh(RefreshRequest(refreshToken))
-        persist(response)
+        persist(response, backendUrl)
         return response
     }
 
@@ -90,10 +90,13 @@ class AuthRepository(
         }
     }
 
-    private fun persist(response: DeviceAuthResponse) {
+    private fun persist(response: DeviceAuthResponse, backendUrl: String) {
         require(response.tokenType.equals("Bearer", ignoreCase = true))
+        val normalizedBackendUrl = ai.xultron.app.core.network.BackendEndpoint.normalize(backendUrl)
+            ?: error("Backend URL doğrulanamadı.")
         sessionStore.update {
             it.copy(
+                backendBaseUrl = normalizedBackendUrl,
                 user = response.user,
                 accessToken = response.accessToken,
                 refreshToken = response.refreshToken,

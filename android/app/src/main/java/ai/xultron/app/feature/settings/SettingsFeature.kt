@@ -36,6 +36,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 class SettingsViewModel(private val repository: XultronRepository, private val backendUrl: String) : ViewModel() {
     private val mutableState = MutableStateFlow<Loadable<JsonObject>>(Loadable.Idle)
@@ -44,6 +46,12 @@ class SettingsViewModel(private val repository: XultronRepository, private val b
     fun refresh() = viewModelScope.launch {
         mutableState.value = Loadable.Loading
         runCatching { repository.settings(backendUrl) }
+            .onSuccess { mutableState.value = Loadable.Content(it) }
+            .onFailure { mutableState.value = it.toLoadableError() }
+    }
+
+    fun setBoolean(key: String, enabled: Boolean) = viewModelScope.launch {
+        runCatching { repository.patchBooleanSetting(backendUrl, key, enabled) }
             .onSuccess { mutableState.value = Loadable.Content(it) }
             .onFailure { mutableState.value = it.toLoadableError() }
     }
@@ -91,15 +99,34 @@ fun SettingsScreen(
         }
         permissionsContent()
         Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Backend ayarları", style = MaterialTheme.typography.titleMedium)
                 LoadablePane(state, viewModel::refresh) { settings ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        settings.entries.sortedBy { it.key }.forEach { (key, value) -> Text("$key: $value", style = MaterialTheme.typography.bodySmall) }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BackendBooleanSetting("Bellek", "memoryEnabled", settings, viewModel::setBoolean)
+                        BackendBooleanSetting("Konuşma geçmişi", "conversationHistory", settings, viewModel::setBoolean)
+                        BackendBooleanSetting("Ses geçmişi", "voiceHistory", settings, viewModel::setBoolean)
+                        BackendBooleanSetting("Anonim analitik", "analytics", settings, viewModel::setBoolean)
+                        Text("Dil: ${settings["locale"]?.jsonPrimitive?.content ?: "-"}", style = MaterialTheme.typography.bodySmall)
+                        Text("Saat dilimi: ${settings["timeZone"]?.jsonPrimitive?.content ?: "-"}", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BackendBooleanSetting(
+    title: String,
+    key: String,
+    settings: JsonObject,
+    onChange: (String, Boolean) -> Unit,
+) {
+    val checked = settings[key]?.jsonPrimitive?.booleanOrNull ?: false
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text(title, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = { onChange(key, it) })
     }
 }
 

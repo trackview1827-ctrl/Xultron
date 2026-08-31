@@ -59,6 +59,13 @@ class RootViewModel(private val container: AppContainer) : ViewModel() {
 
     fun saveBackendUrl(value: String) = viewModelScope.launch {
         val result = container.settingsStore.setBackendUrl(value)
+        result.getOrNull()?.let { normalized ->
+            val sessionBackend = container.sessionStore.current()?.backendBaseUrl
+            if (sessionBackend != null && sessionBackend != normalized) {
+                container.sessionStore.clear()
+                mutableState.value = mutableState.value.copy(user = null)
+            }
+        }
         result.exceptionOrNull()?.let { error ->
             mutableState.value = mutableState.value.copy(error = error.message)
         }

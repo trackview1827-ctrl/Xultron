@@ -15,6 +15,13 @@ enum class Capability {
 
 enum class PermissionDisposition { GRANTED, DENIED, REQUIRES_SETTINGS, RESTRICTED, NOT_AVAILABLE, UNKNOWN }
 
+/** Phase 0-3 ships only the permission bridge. Privileged feature execution starts in later phases. */
+object PhaseCapabilityPolicy {
+    private val implementedCapabilities: Set<Capability> = emptySet()
+    fun isImplemented(capability: Capability): Boolean = capability in implementedCapabilities
+    fun isUserEnabled(capability: Capability): Boolean = isImplemented(capability)
+}
+
 data class CapabilityRequest(
     val capability: Capability,
     val userEnabled: Boolean,

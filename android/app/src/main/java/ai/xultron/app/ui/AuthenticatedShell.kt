@@ -47,6 +47,7 @@ fun AuthenticatedShell(
 ) {
     var destination by remember { mutableStateOf(Destination.Chat) }
     val factory = remember(backendUrl) { FeatureViewModelFactory(container, backendUrl) }
+    val chatViewModel = viewModel<ChatViewModel>(key = "chat-$backendUrl", factory = factory)
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -70,8 +71,14 @@ fun AuthenticatedShell(
     ) { padding ->
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().then(Modifier.padding(padding))) {
             when (destination) {
-                Destination.Chat -> ChatScreen(viewModel<ChatViewModel>(key = "chat-$backendUrl", factory = factory))
-                Destination.Conversations -> ConversationsScreen(viewModel<ConversationsViewModel>(key = "conversations-$backendUrl", factory = factory))
+                Destination.Chat -> ChatScreen(chatViewModel)
+                Destination.Conversations -> ConversationsScreen(
+                    viewModel = viewModel<ConversationsViewModel>(key = "conversations-$backendUrl", factory = factory),
+                    onOpenConversation = { conversationId ->
+                        chatViewModel.openConversation(conversationId)
+                        destination = Destination.Chat
+                    },
+                )
                 Destination.Memory -> MemoryScreen(viewModel<MemoryViewModel>(key = "memory-$backendUrl", factory = factory))
                 Destination.Providers -> ProvidersScreen(viewModel<ProvidersViewModel>(key = "providers-$backendUrl", factory = factory))
                 Destination.Settings -> SettingsScreen(

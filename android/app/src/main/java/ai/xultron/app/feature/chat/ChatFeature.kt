@@ -59,6 +59,21 @@ class ChatViewModel(private val repository: XultronRepository, private val backe
         }.onFailure { mutableState.value = mutableState.value.copy(messages = it.toLoadableError()) }
     }
 
+    fun openConversation(conversationId: String) = viewModelScope.launch {
+        mutableState.value = mutableState.value.copy(conversationId = conversationId, messages = Loadable.Loading, sendError = null)
+        runCatching { repository.messages(backendUrl, conversationId) }
+            .onSuccess { messages ->
+                mutableState.value = mutableState.value.copy(
+                    messages = if (messages.isEmpty()) Loadable.Empty("Bu konuşmada mesaj yok.") else Loadable.Content(messages),
+                )
+            }
+            .onFailure { mutableState.value = mutableState.value.copy(messages = it.toLoadableError()) }
+    }
+
+    fun newConversation() {
+        mutableState.value = ChatUiState(messages = Loadable.Empty("Mesaj yazarak yeni bir konuşma başlatın."))
+    }
+
     fun send(message: String) = viewModelScope.launch {
         if (message.isBlank() || mutableState.value.sending) return@launch
         mutableState.value = mutableState.value.copy(sending = true, sendError = null)
@@ -80,6 +95,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var input by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.End) {
+            Button(onClick = viewModel::newConversation, enabled = !state.sending) { Text("Yeni konuşma") }
+        }
         Column(Modifier.weight(1f)) {
             LoadablePane(state.messages, viewModel::refresh) { messages ->
                 LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

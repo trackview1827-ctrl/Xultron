@@ -36,8 +36,12 @@ def enroll(client, username, installation_id):
     return response.get_json()
 
 
-def bearer(token):
-    return {"Authorization": f"Bearer {token}"}
+def bearer(issued):
+    device_id = issued["session"].get("deviceId") or issued["session"]["device"]["id"]
+    return {
+        "Authorization": f"Bearer {issued['accessToken']}",
+        "X-Device-ID": device_id,
+    }
 
 
 def test_mobile_enroll_tokens_are_hashed_and_bearer_works_without_csrf(client, app):
@@ -47,13 +51,13 @@ def test_mobile_enroll_tokens_are_hashed_and_bearer_works_without_csrf(client, a
     assert issued["accessToken"].startswith("mat_")
     assert issued["refreshToken"].startswith("mrt_")
     assert issued["expiresIn"] <= 900
-    settings = client.get("/api/v1/settings", headers=bearer(issued["accessToken"]))
+    settings = client.get("/api/v1/settings", headers=bearer(issued))
     assert settings.status_code == 200
 
     update = client.patch(
         "/api/v1/settings",
         json={"lowDataMode": True},
-        headers=bearer(issued["accessToken"]),
+        headers=bearer(issued),
     )
     assert update.status_code == 200
 
@@ -95,8 +99,8 @@ def test_refresh_rotates_once_and_reuse_revokes_entire_family(client, app):
     assert replay.status_code == 401
     assert replay.get_json()["error"]["code"] == "refresh_reuse_detected"
 
-    assert client.get("/api/v1/settings", headers=bearer(first["accessToken"])).status_code == 401
-    assert client.get("/api/v1/settings", headers=bearer(rotated["accessToken"])).status_code == 401
+    assert client.get("/api/v1/settings", headers=bearer(first)).status_code == 401
+    assert client.get("/api/v1/settings", headers=bearer(rotated)).status_code == 401
     latest = client.post(
         "/api/v1/device-auth/refresh",
         json={"refreshToken": rotated["refreshToken"]},
@@ -118,7 +122,7 @@ def test_expired_access_and_refresh_tokens_are_rejected(client, app):
         MobileRefreshToken.query.one().expires_at = utcnow() - timedelta(seconds=1)
         db.session.commit()
 
-    access = client.get("/api/v1/settings", headers=bearer(issued["accessToken"]))
+    access = client.get("/api/v1/settings", headers=bearer(issued))
     assert access.status_code == 401
     assert access.get_json()["error"]["code"] == "access_token_expired"
     refresh = client.post(
@@ -134,10 +138,10 @@ def test_logout_and_owned_revoke_invalidate_mobile_credentials(client):
     logout = client.post(
         "/api/v1/device-auth/logout",
         json={},
-        headers=bearer(issued["accessToken"]),
+        headers=bearer(issued),
     )
     assert logout.status_code == 200
-    assert client.get("/api/v1/settings", headers=bearer(issued["accessToken"])).status_code == 401
+    assert client.get("/api/v1/settings", headers=bearer(issued)).status_code == 401
     assert (
         client.post(
             "/api/v1/device-auth/refresh",
@@ -157,10 +161,10 @@ def test_logout_and_owned_revoke_invalidate_mobile_credentials(client):
     revoked = client.post(
         "/api/v1/device-auth/revoke",
         json={"sessionId": second["session"]["id"]},
-        headers=bearer(second["accessToken"]),
+        headers=bearer(second),
     )
     assert revoked.status_code == 200
-    assert client.get("/api/v1/settings", headers=bearer(second["accessToken"])).status_code == 401
+    assert client.get("/api/v1/settings", headers=bearer(second)).status_code == 401
 
 
 def test_device_revoke_cancels_all_device_families_and_password_can_reauthorize(client):
@@ -177,7 +181,7 @@ def test_device_revoke_cancels_all_device_families_and_password_can_reauthorize(
     second = second_response.get_json()
 
     sessions = client.get(
-        "/api/v1/device-auth/sessions", headers=bearer(second["accessToken"])
+        "/api/v1/device-auth/sessions", headers=bearer(second)
     )
     assert sessions.status_code == 200
     assert len(sessions.get_json()["sessions"]) == 2
@@ -185,11 +189,11 @@ def test_device_revoke_cancels_all_device_families_and_password_can_reauthorize(
     revoked = client.post(
         "/api/v1/device-auth/revoke",
         json={"deviceId": second["session"]["device"]["id"]},
-        headers=bearer(second["accessToken"]),
+        headers=bearer(second),
     )
     assert revoked.status_code == 200
-    assert client.get("/api/v1/settings", headers=bearer(first["accessToken"])).status_code == 401
-    assert client.get("/api/v1/settings", headers=bearer(second["accessToken"])).status_code == 401
+    assert client.get("/api/v1/settings", headers=bearer(first)).status_code == 401
+    assert client.get("/api/v1/settings", headers=bearer(second)).status_code == 401
     assert (
         client.post(
             "/api/v1/device-auth/refresh",
@@ -210,7 +214,7 @@ def test_device_revoke_cancels_all_device_families_and_password_can_reauthorize(
     assert (
         client.get(
             "/api/v1/settings",
-            headers=bearer(relogin.get_json()["accessToken"]),
+            headers=bearer(relogin.get_json()),
         ).status_code
         == 200
     )
@@ -223,14 +227,14 @@ def test_cross_user_session_device_and_resource_access_is_denied(client):
     conversation = client.post(
         "/api/v1/chat/messages",
         json={"message": "private", "requestId": "mobile-cross-1"},
-        headers=bearer(alice["accessToken"]),
+        headers=bearer(alice),
     )
     assert conversation.status_code == 201
     conversation_id = conversation.get_json()["conversation"]["id"]
     assert (
         client.get(
             f"/api/v1/chat/conversations/{conversation_id}",
-            headers=bearer(bob["accessToken"]),
+            headers=bearer(bob),
         ).status_code
         == 403
     )
@@ -238,16 +242,16 @@ def test_cross_user_session_device_and_resource_access_is_denied(client):
     revoke_session = client.post(
         "/api/v1/device-auth/revoke",
         json={"sessionId": alice["session"]["id"]},
-        headers=bearer(bob["accessToken"]),
+        headers=bearer(bob),
     )
     assert revoke_session.status_code == 403
     revoke_device = client.post(
         "/api/v1/device-auth/revoke",
         json={"deviceId": alice["session"]["device"]["id"]},
-        headers=bearer(bob["accessToken"]),
+        headers=bearer(bob),
     )
     assert revoke_device.status_code == 403
-    assert client.get("/api/v1/settings", headers=bearer(alice["accessToken"])).status_code == 200
+    assert client.get("/api/v1/settings", headers=bearer(alice)).status_code == 200
 
 
 def test_guest_upgrade_preserves_identity_and_revokes_guest_family(client):
@@ -258,7 +262,7 @@ def test_guest_upgrade_preserves_identity_and_revokes_guest_family(client):
     assert guest_response.status_code == 201
     guest = guest_response.get_json()
     assert guest["user"]["isGuest"] is True
-    assert client.get("/api/v1/settings", headers=bearer(guest["accessToken"])).status_code == 200
+    assert client.get("/api/v1/settings", headers=bearer(guest)).status_code == 200
 
     upgraded_response = client.post(
         "/api/v1/device-auth/enroll",
@@ -268,14 +272,14 @@ def test_guest_upgrade_preserves_identity_and_revokes_guest_family(client):
             "password": "password123",
             "device": device("install-guest-0001", "Upgraded Pixel"),
         },
-        headers=bearer(guest["accessToken"]),
+        headers=bearer(guest),
     )
     assert upgraded_response.status_code == 201
     upgraded = upgraded_response.get_json()
     assert upgraded["user"]["id"] == guest["user"]["id"]
     assert upgraded["user"]["isGuest"] is False
-    assert client.get("/api/v1/settings", headers=bearer(guest["accessToken"])).status_code == 401
-    assert client.get("/api/v1/settings", headers=bearer(upgraded["accessToken"])).status_code == 200
+    assert client.get("/api/v1/settings", headers=bearer(guest)).status_code == 401
+    assert client.get("/api/v1/settings", headers=bearer(upgraded)).status_code == 200
 
 
 def test_device_registration_is_bound_to_current_mobile_session(client):
@@ -283,7 +287,7 @@ def test_device_registration_is_bound_to_current_mobile_session(client):
     updated = client.post(
         "/api/v1/devices/register",
         json=device("install-device-001", "Renamed Pixel"),
-        headers=bearer(issued["accessToken"]),
+        headers=bearer(issued),
     )
     assert updated.status_code == 200
     assert updated.get_json()["device"]["name"] == "Renamed Pixel"
@@ -291,7 +295,7 @@ def test_device_registration_is_bound_to_current_mobile_session(client):
     mismatch = client.post(
         "/api/v1/devices/register",
         json=device("install-device-999", "Other Device"),
-        headers=bearer(issued["accessToken"]),
+        headers=bearer(issued),
     )
     assert mismatch.status_code == 409
     assert mismatch.get_json()["error"]["code"] == "device_mismatch"
@@ -308,6 +312,16 @@ def test_access_token_rejects_an_explicit_wrong_device_binding(client):
     )
     assert response.status_code == 401
     assert response.get_json()["error"]["code"] == "device_mismatch"
+
+
+def test_access_token_requires_device_identity_header(client):
+    issued = enroll(client, "missing_device_header", "install-missing-device-header")
+    response = client.get(
+        "/api/v1/settings",
+        headers={"Authorization": f"Bearer {issued['accessToken']}"},
+    )
+    assert response.status_code == 401
+    assert response.get_json()["error"]["code"] == "device_header_required"
 
 
 def test_mobile_login_does_not_replace_web_cookie_csrf_flow(client):
@@ -337,7 +351,7 @@ def test_mobile_login_does_not_replace_web_cookie_csrf_flow(client):
     assert (
         client.get(
             "/api/v1/settings",
-            headers=bearer(mobile.get_json()["accessToken"]),
+            headers=bearer(mobile.get_json()),
         ).status_code
         == 200
     )
