@@ -28,7 +28,15 @@ async function openMicrophone(): Promise<MediaStream> {
   try {
     return await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } })
   } catch (caught) {
-    if (caught instanceof DOMException && (caught.name === 'OverconstrainedError' || caught.name === 'NotSupportedError')) {
+    // Recent Android WebView builds can report NotReadableError when Chromium
+    // cannot initialize its communication-audio processing path. Retrying with
+    // an unconstrained source lets WebView use the device's normal recorder.
+    if (caught instanceof DOMException && (
+      caught.name === 'OverconstrainedError' ||
+      caught.name === 'NotSupportedError' ||
+      caught.name === 'NotReadableError' ||
+      caught.name === 'AbortError'
+    )) {
       return navigator.mediaDevices.getUserMedia({ audio: true })
     }
     throw caught
@@ -49,7 +57,8 @@ function microphoneError(caught: unknown): string {
   if (!(caught instanceof DOMException)) return 'Xultron could not activate the microphone. Close other recording apps, then retry.'
   if (caught.name === 'NotAllowedError' || caught.name === 'SecurityError') return 'Microphone access was denied. Allow microphone access for Xultron in Android Settings, then retry.'
   if (caught.name === 'NotFoundError') return 'No microphone was found on this device.'
-  if (caught.name === 'NotReadableError' || caught.name === 'AbortError') return 'The microphone is busy or unavailable. Close other recording apps and restart Xultron.'
+  if (caught.name === 'NotReadableError') return 'Android WebView could not initialize the microphone. Allow microphone access for Xultron, update Android System WebView, then reopen Xultron.'
+  if (caught.name === 'AbortError') return 'Android interrupted the microphone request. Reopen Xultron and retry.'
   if (caught.name === 'OverconstrainedError') return 'This WebView rejected the requested microphone mode. Update Android System WebView, then retry.'
   if (caught.name === 'NotSupportedError') return 'This Android System WebView does not support microphone recording. Update it from Play Store.'
   return `Xultron could not activate the microphone (${caught.name}).`

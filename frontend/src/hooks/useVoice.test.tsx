@@ -109,13 +109,31 @@ describe('useVoice media lifecycle', () => {
     expect(result.current.recording).toBe(true)
   })
 
-  it('explains when Android cannot open a busy microphone', async () => {
-    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockRejectedValue(new DOMException('Busy', 'NotReadableError')) } })
+  it('retries without audio processing when Android WebView cannot start the communication source', async () => {
+    const stream = new FakeStream()
+    const getUserMedia = vi.fn()
+      .mockRejectedValueOnce(new DOMException('Could not start audio source', 'NotReadableError'))
+      .mockResolvedValueOnce(stream)
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } })
     const { result } = renderHook(() => useVoice(vi.fn()))
 
     await act(async () => result.current.start())
 
-    expect(result.current.error).toMatch(/busy or unavailable/i)
+    expect(getUserMedia).toHaveBeenNthCalledWith(1, { audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } })
+    expect(getUserMedia).toHaveBeenNthCalledWith(2, { audio: true })
+    expect(result.current.error).toBe('')
+    expect(result.current.recording).toBe(true)
+  })
+
+  it('explains when Android WebView still cannot initialize the microphone after fallback', async () => {
+    const getUserMedia = vi.fn().mockRejectedValue(new DOMException('Busy', 'NotReadableError'))
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } })
+    const { result } = renderHook(() => useVoice(vi.fn()))
+
+    await act(async () => result.current.start())
+
+    expect(getUserMedia).toHaveBeenCalledTimes(2)
+    expect(result.current.error).toMatch(/WebView could not initialize/i)
     expect(app.dispatchCore).toHaveBeenLastCalledWith({ type: 'FAIL' })
   })
 

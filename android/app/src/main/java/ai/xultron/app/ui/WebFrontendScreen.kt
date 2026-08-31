@@ -161,6 +161,10 @@ fun WebFrontendScreen(
                         }
                     }
 
+                    override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                        if (pendingWebPermission?.request == request) pendingWebPermission = null
+                    }
+
                     override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
                         val requestOrigin = origin.toHttpUrlOrNull()
                         if (requestOrigin == null || !WebFrontendUrl.isAllowedOrigin(requestOrigin, rootUrl)) {
