@@ -5,12 +5,19 @@
 - Codespaces/CI tabanlı Android build ortamı
 - Native mobil login, kayıt, misafir oturumu, rotating refresh ve revoke
 - Keystore anahtarıyla AES-GCM şifreli yerel session
-- Chat, konuşmalar, memory, provider ve ayarlar Compose ekranları
+- Phase 0-3 baseline olarak chat, konuşmalar, memory, provider ve ayarlar Compose ekranları
 - App-private SQLite tabanlı yerel backend modu; ağ olmadan temel hesap, chat,
   konuşma, provider ve ayar verilerini cihazda tutar
 - Loading, empty, offline, hata ve bağlantı durumları
 - Gerçek Android permission state, Settings yönlendirmeleri ve fail-closed
   Capability Engine
+
+İleri fazlarda ortak ürün UI'sı web frontend'den beslenecektir: chat, konuşmalar,
+memory, provider, standart ayarlar ve hesap görünümü React/Vite UI'sı olarak webde
+ve uygulama içindeki güvenli WebView/container'da ortak tutulur. Terminal,
+wake-word, foreground service, bildirim, overlay, MediaProjection, kamera, sensör,
+konum, SAF ve uygulama yaşam döngüsü gibi uygulamaya özel yetenekler native Android
+katmanında kalır. Token/Keystore sırları WebView JavaScript'ine aktarılmaz.
 
 Terminal, wake-word, sürekli foreground service, overlay navbar, MediaProjection,
 kamera ve sensör işlevlerinin kendisi Phase 4-7 kapsamındadır. Phase 3 yalnız izin

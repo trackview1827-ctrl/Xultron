@@ -79,32 +79,58 @@ Android manifest’i, APK pipeline’ı veya device test hedefi yoktur.
 
 ## 2. Android Architecture Decision
 
-### Karar: Native-first Jetpack Compose
+### Karar: Ortak Web Frontend + uygulamaya özel Native Android
 
 ```text
-Kotlin + Jetpack Compose
+React/Vite web frontend (ortak ürün UI'sı)
+        ↓  trusted-origin WebView veya tarayıcı
+Native Android shell + güvenli bridge
         ↓
-Native Android services and permissions
+Android servisleri, izinler ve Capability Engine
         ↓
-Central Capability Engine
+Typed API/action contracts
         ↓
-Retrofit/Ktor + OkHttp
-        ↓
-Existing Flask REST/SSE backend
+Existing Flask REST/SSE backend veya Termux loopback
 ```
 
-Native-first seçilmesinin nedenleri:
+Bu kararın kapsamı:
 
-- Foreground microphone service native lifecycle ister.
-- Wake-word ekran kapalıyken WebView içinde güvenilir şekilde çalışmaz.
-- Kamera, sensör, konum ve MediaProjection izinleri native akış ister.
-- Terminal policy native execution sınırında enforce edilmelidir.
-- Offline, battery ve process lifecycle için native kontrol gerekir.
-- Overlay ve screen capture WebView bridge üzerinden verilirse güvenlik yüzeyi büyür.
+- Web frontend, web ve Android'de ortak olan chat, konuşmalar, memory, provider,
+  standart ayarlar, bağlantı ve hesap ekranlarının tek UI kaynağıdır.
+- Android native katmanı yalnız cihaz yeteneği veya güvenlik sınırı gerektiren
+  işlevlerin sahibi olur: terminal, wake-word, mikrofon foreground service,
+  bildirim, overlay, MediaProjection, ekran paylaşımı, kamera, sensör, konum,
+  SAF ve uygulama yaşam döngüsü.
+- Native oturum/token/Keystore bilgileri JavaScript'e aktarılmaz. Web UI yalnızca
+  izin verilen UI state, typed command sonucu ve redakte edilmiş durum alır.
+- `local://xultron` gibi native-only backendler WebView'a ham URL olarak verilmez;
+  native repository adapterı veya açıkça tanımlı güvenli bridge üzerinden sunulur.
+- Web ve Android uygulaması aynı API şemalarını, hata kodlarını, capability
+  isimlerini ve acceptance senaryolarını paylaşır. UI kodu birebir paylaşılmasa da
+  davranış ve veri sözleşmesi paylaşılır.
 
-WebView tüm uygulamanın yerine kullanılmayacaktır. Gerekirse yalnızca düşük riskli,
-trusted-origin bir yüzey olarak ayrıca değerlendirilebilir. Privileged ekranlar Compose
-olacaktır.
+WebView kullanımı sınırlı ve güvenlik kontrollü olacaktır: trusted-origin allowlist,
+arbitrary navigation/pop-up engeli, origin-bound WebMessage bridge, çağrı başına
+şema ve nonce, file/content access kapalı, mixed content kapalı, release'te WebView
+debugging kapalı, Safe Browsing ve CSP açık. `addJavascriptInterface` ile sınırsız
+native API açılmayacaktır. Privileged ekranlar ve sistem izin diyalogları native
+Compose olarak kalacaktır.
+
+### UI sahipliği ve geçiş kuralı
+
+| Alan | Web frontend sahibi | Native Android sahibi |
+|---|---|---|
+| Ortak ürün UI'sı | Chat, konuşmalar, memory, provider, standart settings, hesap görünümü | Web container, lifecycle ve bağlantı adapterı |
+| Kimlik bilgileri | Form ve durum görünümü, token değil | Device auth, token rotation, Keystore, logout/revoke |
+| Cihaz yetenekleri | Durum, açıklama ve sonuç gösterimi | Permission, policy, service, sensor, camera, location |
+| Komutlar | Typed action intent ve confirmation UI | Allowlist, risk/consent, execution, audit |
+| Termux/terminal | Komut geçmişi ve sonuç görünümü | Argv broker, path/capability policy, Termux adapter |
+| Wake-word/overlay/capture | Durum ve oturum kontrolü | FGS, overlay, MediaProjection ve upload lifecycle |
+
+Yeni ortak ekran önce web frontend'de uygulanır. Yalnızca Android sistem API'si
+gerektiren parça native feature modülüne eklenir. Aynı işlev hem Compose hem Web UI
+olarak çoğaltılmayacak; birincil UI sahibi ve bridge sınırı traceability tablosunda
+belirtilecektir.
 
 Paylaşılacak şey UI kodu değil, API şemaları, capability isimleri, error code'ları,
 action schema'ları, state isimleri, feature inventory ve test senaryolarıdır.
@@ -482,25 +508,27 @@ Audit yalnız action tipi, sonuç, süre, boyut, risk ve correlation ID taşır.
 
 | Web feature | Android implementation | Katman | Backend |
 |---|---|---|---|
-| Auth/guest | Compose auth | Native | Device auth |
-| Chat/stream | Compose + SSE | Native/shared contract | Mevcut API |
-| Conversations | Compose list/detail | Native | Mevcut API |
-| Memory/auto memory | Compose + backend | Shared | Mevcut API |
-| AI/STT/TTS providers | Compose settings | Native | Mevcut API |
-| Model discovery | Compose provider UI | Native | Mevcut API |
-| Attachments/images/files | SAF/picker/upload | Native | Validation/upload |
-| Voice | Native recorder/VAD | Native | Mevcut voice API |
-| Agent actions | Typed action UI | Shared policy | Yeni device API |
-| Terminal | Native policy engine | Native | Yeni action API |
-| Tasks/state | Compose | Shared | Existing/new task API |
-| Connection/offline | Native state machine | Shared contract | Health/reconnect |
+| Auth/guest | Web form ve auth state görünümü | Native device auth, token/Keystore | Device auth |
+| Chat/stream | Ortak React/Vite chat ve SSE UI | Web container + native adapter | Mevcut API |
+| Conversations | Ortak web list/detail | Web container + lifecycle | Mevcut API |
+| Memory/auto memory | Ortak web UI | Native storage/bridge yalnız gerektiğinde | Mevcut API |
+| AI/STT/TTS providers | Ortak web settings | Native credential/session boundary | Mevcut API |
+| Model discovery | Ortak web provider UI | Native network/session adapter | Mevcut API |
+| Attachments/images/files | Web preview/status | Native SAF/picker/upload | Validation/upload |
+| Voice | Web controls/status | Native recorder/VAD/FGS | Mevcut voice API |
+| Agent actions | Web typed action UI | Native policy/consent/execution | Yeni device API |
+| Terminal | Web command/result UI | Native policy engine ve broker | Yeni action API |
+| Tasks/state | Ortak web UI | Native lifecycle adapter | Existing/new task API |
+| Connection/offline | Web durum bileşenleri | Native state machine | Health/reconnect |
 | Notifications | Android channels | Native | Push token |
 | Wake-word | Local FGS | Native | Gerekmez |
 | Sensors/camera/location | Native APIs | Native | İsteğe bağlı action |
-| Diagnostics/activity log | Compose | Native | Safe metadata |
+| Diagnostics/activity log | Web redacted log UI | Native safe metadata collector | Safe metadata |
 
-Web’deki hiçbir mevcut feature sessizce atlanmayacak. Her feature için implementation,
-backend change ve status ayrı traceability tablosunda tutulacak.
+Web’deki hiçbir mevcut feature sessizce atlanmayacak. Her feature için web owner,
+native owner, bridge/API boundary, backend change ve status ayrı traceability
+tablosunda tutulacak. Android'e özel bir özellik web frontend'e zorla açılmayacak;
+web yalnızca güvenli durum ve sonuç gösterecek.
 
 ## 11. Android Components
 
@@ -614,7 +642,9 @@ Native device auth, guest mode, token rotation, revoke, device registration.
 ### Phase 2: Android UI
 
 Dark Xultron visual language, chat, conversation, memory, provider, settings,
-offline ve connection state.
+offline ve connection state için mevcut Phase 0-3 Compose baseline'ı. Sonraki
+fazlarda bu ortak ürün ekranları React/Vite web frontend ile tek UI kaynağına
+taşınacak; Compose yalnız container ve uygulamaya özel yüzeylerde kalacaktır.
 
 ### Phase 3: Native Permission Bridge
 
@@ -624,7 +654,9 @@ fail-closed policy.
 ### Phase 4: Terminal
 
 Typed action protocol, AppProcessExecutor, dört erişim modu, path validation,
-confirmation, audit, Termux/Shizuku/root opt-in adaptörleri.
+confirmation, audit, Termux/Shizuku/root opt-in adaptörleri. Terminal komut ve
+sonuç görünümü ortak web frontend'de, execution broker ve policy native Android'de
+olacaktır.
 
 ### Phase 5: Voice/Wake Word
 
@@ -640,7 +672,8 @@ process kill, force-stop ve Samsung testleri.
 
 Sensor toggles, CameraX, Fused Location, SAF, overlay navbar, MediaProjection,
 screenshot preview ve upload. Bu fazda overlay ve projection izinleri hiçbir zaman
-sessizce verilmez.
+sessizce verilmez. Durum ve sonuç ekranları ortak web frontend'de, izin ve oturum
+ömürleri native Android'de kalır.
 
 ### Phase 8: Security Hardening
 
