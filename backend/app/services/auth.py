@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash
 
 from app.extensions import db
-from app.models import DEFAULT_SETTINGS, Session, User, UserSettings, utcnow
+from app.models import DEFAULT_SETTINGS, MobileAuthSession, Session, User, UserSettings, utcnow
 from app.security.errors import APIError
 from app.security.validation import normalize_email, normalize_username, require_object
 
@@ -213,7 +213,7 @@ def register(data):
     return user
 
 
-def login(data):
+def authenticate_credentials(data):
     data = require_object(data)
     if not isinstance(data.get("identifier"), str) or not isinstance(data.get("password"), str):
         raise APIError("validation_failed", "Identifier and password must be strings.", 422)
@@ -237,6 +237,11 @@ def login(data):
     if not user or user.is_guest or not user.check_password(password):
         message = "Kullanıcı adı veya PIN hatalı." if local_pin_login else "Invalid identifier or password."
         raise APIError("invalid_credentials", message, 401)
+    return user
+
+
+def login(data):
+    user = authenticate_credentials(data)
     from flask import g
     if g.get("current_session"):
         g.current_session.revoked_at = utcnow()
@@ -258,9 +263,16 @@ def logout():
 def cleanup_expired():
     now = utcnow()
     expired_sessions = Session.query.filter((Session.expires_at <= now) | (Session.revoked_at.isnot(None))).delete(synchronize_session=False)
+    expired_mobile_sessions = MobileAuthSession.query.filter(
+        (MobileAuthSession.expires_at <= now) | (MobileAuthSession.revoked_at.isnot(None))
+    ).delete(synchronize_session=False)
     guests = User.query.filter(User.is_guest.is_(True), User.guest_expires_at <= now).all()
     guest_count = len(guests)
     for user in guests:
         db.session.delete(user)
     db.session.commit()
-    return {"expiredSessions": expired_sessions, "expiredGuests": guest_count}
+    return {
+        "expiredSessions": expired_sessions,
+        "expiredMobileSessions": expired_mobile_sessions,
+        "expiredGuests": guest_count,
+    }

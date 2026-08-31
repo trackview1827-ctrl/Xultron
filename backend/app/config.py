@@ -79,6 +79,8 @@ class Config:
     SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", XULTRON_ENV == "production")
     PERMANENT_SESSION_LIFETIME_SECONDS = int(os.getenv("SESSION_LIFETIME_SECONDS", "2592000"))
     GUEST_LIFETIME_SECONDS = int(os.getenv("GUEST_LIFETIME_SECONDS", "86400"))
+    MOBILE_ACCESS_TOKEN_LIFETIME_SECONDS = int(os.getenv("MOBILE_ACCESS_TOKEN_LIFETIME_SECONDS", "900"))
+    MOBILE_REFRESH_TOKEN_LIFETIME_SECONDS = int(os.getenv("MOBILE_REFRESH_TOKEN_LIFETIME_SECONDS", "2592000"))
     MAX_AUDIO_BYTES = int(os.getenv("MAX_AUDIO_BYTES", "5242880"))
     MAX_CONTENT_LENGTH = max(int(os.getenv("MAX_CONTENT_LENGTH", "6291456")), MAX_AUDIO_BYTES + 1048576)
     RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "120"))
@@ -122,6 +124,10 @@ class Config:
                 raise RuntimeError("LOCAL_PIN_USERNAME is required when local PIN login is enabled")
             if not cls.LOCAL_PIN_HASH:
                 raise RuntimeError("LOCAL_PIN_HASH is required when local PIN login is enabled")
+        if cls.MOBILE_ACCESS_TOKEN_LIFETIME_SECONDS <= 0:
+            raise RuntimeError("MOBILE_ACCESS_TOKEN_LIFETIME_SECONDS must be positive")
+        if cls.MOBILE_REFRESH_TOKEN_LIFETIME_SECONDS <= 0:
+            raise RuntimeError("MOBILE_REFRESH_TOKEN_LIFETIME_SECONDS must be positive")
 
 
 class TestingConfig(Config):

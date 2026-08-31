@@ -31,6 +31,21 @@ def install_guards(app):
         request.request_id = supplied_request_id or f"req_{uuid.uuid4().hex}"
         g.current_user = None
         g.current_session = None
+        g.mobile_principal = None
+        g.current_mobile_session = None
+        g.current_device = None
+        g.auth_method = None
+        authorization = request.headers.get("Authorization")
+        if authorization:
+            from app.security.native_tokens import authenticate_bearer_header
+
+            principal = authenticate_bearer_header(authorization)
+            g.mobile_principal = principal
+            g.current_mobile_session = principal.auth_session
+            g.current_device = principal.device
+            g.current_user = principal.user
+            g.auth_method = "mobile_bearer"
+            return
         sid = session.get("sid")
         if sid:
             rec = db.session.get(Session, sid)
@@ -39,6 +54,7 @@ def install_guards(app):
             if rec and not rec.revoked_at and rec.expires_at > utcnow() and valid_csrf:
                 g.current_session = rec
                 g.current_user = rec.user
+                g.auth_method = "web_cookie"
                 rec.last_seen_at = utcnow()
             else:
                 session.pop("sid", None)
@@ -49,6 +65,10 @@ def install_guards(app):
             return None
         _rate_limit()
         if request.method in {"POST", "PATCH", "PUT", "DELETE"}:
+            if g.get("auth_method") == "mobile_bearer" or request.path.startswith(
+                "/api/v1/device-auth/"
+            ):
+                return None
             _enforce_same_origin()
             expected = session.get("csrf_token")
             supplied = request.headers.get("X-CSRF-Token")
@@ -75,7 +95,9 @@ def install_guards(app):
 
 
 def _rate_limit():
-    if request.endpoint == "api_v1.auth_login":
+    if request.endpoint == "api_v1.auth_login" or request.path.startswith(
+        "/api/v1/device-auth/"
+    ):
         limit = int(current_app.config.get("AUTH_RATE_LIMIT_PER_MINUTE", 10))
     else:
         limit = int(current_app.config.get("RATE_LIMIT_PER_MINUTE", 120))
@@ -112,6 +134,13 @@ def require_user():
     if not g.get("current_user"):
         raise APIError("authentication_required", "Authentication is required.", 401)
     return g.current_user
+
+
+def require_mobile_principal():
+    principal = g.get("mobile_principal")
+    if not principal:
+        raise APIError("mobile_authentication_required", "Mobile bearer authentication is required.", 401)
+    return principal
 
 
 def require_json():

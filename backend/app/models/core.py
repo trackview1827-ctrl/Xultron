@@ -259,24 +259,101 @@ class UserSettings(TimestampMixin, db.Model):
 
 class Device(TimestampMixin, db.Model):
     __tablename__ = "devices"
+    __table_args__ = (UniqueConstraint("user_id", "installation_id", name="uq_devices_user_installation"),)
+
     id = db.Column(db.String(40), primary_key=True, default=lambda: new_id("dev"))
     user_id = db.Column(db.String(40), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    installation_id = db.Column(db.String(128), nullable=True, index=True)
     name = db.Column(db.String(120), nullable=False)
     device_type = db.Column(db.String(60), nullable=False)
     status = db.Column(db.String(60), nullable=False, default="offline")
     device_metadata = db.Column("metadata", db.JSON, default=dict, nullable=False)
+    last_seen_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    revoked_at = db.Column(db.DateTime, nullable=True, index=True)
 
     def to_public(self):
         return {
             "id": self.id,
+            "installationId": self.installation_id,
             "name": self.name,
             "type": self.device_type,
             "deviceType": self.device_type,
             "status": self.status,
             "metadata": self.device_metadata or {},
+            "lastSeenAt": self.last_seen_at.isoformat() + "Z",
+            "revokedAt": self.revoked_at.isoformat() + "Z" if self.revoked_at else None,
             "createdAt": self.created_at.isoformat() + "Z",
             "updatedAt": self.updated_at.isoformat() + "Z",
         }
+
+
+class MobileAuthSession(db.Model):
+    __tablename__ = "mobile_auth_sessions"
+
+    id = db.Column(db.String(40), primary_key=True, default=lambda: new_id("mas"))
+    user_id = db.Column(db.String(40), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id = db.Column(db.String(40), db.ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    last_seen_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    revoked_at = db.Column(db.DateTime, nullable=True, index=True)
+    revoke_reason = db.Column(db.String(80), nullable=True)
+
+    user = relationship("User")
+    device = relationship("Device")
+
+    def to_public(self, current_id=None):
+        return {
+            "id": self.id,
+            "device": self.device.to_public(),
+            "createdAt": self.created_at.isoformat() + "Z",
+            "lastSeenAt": self.last_seen_at.isoformat() + "Z",
+            "expiresAt": self.expires_at.isoformat() + "Z",
+            "revokedAt": self.revoked_at.isoformat() + "Z" if self.revoked_at else None,
+            "current": self.id == current_id,
+        }
+
+
+class MobileAccessToken(db.Model):
+    __tablename__ = "mobile_access_tokens"
+
+    id = db.Column(db.String(40), primary_key=True, default=lambda: new_id("mat"))
+    session_id = db.Column(db.String(40), db.ForeignKey("mobile_auth_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    revoked_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    auth_session = relationship("MobileAuthSession")
+
+
+class MobileRefreshToken(db.Model):
+    __tablename__ = "mobile_refresh_tokens"
+
+    id = db.Column(db.String(40), primary_key=True, default=lambda: new_id("mrt"))
+    session_id = db.Column(db.String(40), db.ForeignKey("mobile_auth_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_id = db.Column(db.String(40), db.ForeignKey("mobile_refresh_tokens.id", ondelete="SET NULL"), nullable=True, index=True)
+    token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    consumed_at = db.Column(db.DateTime, nullable=True, index=True)
+    revoked_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    auth_session = relationship("MobileAuthSession")
+
+
+class MobileAuthEvent(db.Model):
+    __tablename__ = "mobile_auth_events"
+
+    id = db.Column(db.String(40), primary_key=True, default=lambda: new_id("mae"))
+    user_id = db.Column(db.String(40), db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    session_id = db.Column(db.String(40), db.ForeignKey("mobile_auth_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    device_id = db.Column(db.String(40), db.ForeignKey("devices.id", ondelete="SET NULL"), nullable=True, index=True)
+    event_type = db.Column(db.String(80), nullable=False, index=True)
+    ip_address = db.Column(db.String(64), nullable=True)
+    user_agent = db.Column(db.String(255), nullable=True)
+    details = db.Column(db.JSON, default=dict, nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
 
 
 class DeviceCommand(TimestampMixin, db.Model):

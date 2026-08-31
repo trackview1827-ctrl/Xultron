@@ -7,7 +7,9 @@ from dotenv import load_dotenv
 from flask import Flask, abort, send_from_directory
 
 from app.api import api_bp
+from app.auth import device_auth_bp
 from app.config import Config
+from app.devices import device_api_bp
 from app.extensions import db, install_sqlite_pragmas, migrate
 from app.security.errors import register_error_handlers
 from app.security.guards import install_guards
@@ -31,6 +33,8 @@ def create_app(config_object=None):
     install_guards(app)
     register_error_handlers(app)
     app.register_blueprint(api_bp)
+    app.register_blueprint(device_auth_bp)
+    app.register_blueprint(device_api_bp)
 
     dist_dir = Path(app.config["FRONTEND_DIST_DIR"])
 
