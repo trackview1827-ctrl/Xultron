@@ -22,8 +22,9 @@ uygulanmadı.
 - Gradle 8.9 uyumlu dağıtım veya Android Studio'nun Gradle entegrasyonu
 - Android 10/API 29 ve Android 15/API 35 emülatör/device test hedefleri
 
-Codespace içinde JDK 21, Android SDK Platform 35, Build Tools ve Gradle 8.9 wrapper
-kuruludur. Telefon/Termux üzerinde APK derlenmez. Codespace build komutu:
+`.devcontainer/devcontainer.json`, yeni Codespace oluşturulurken JDK 21, Android
+SDK Platform 35, Build Tools 35 ve Gradle 8.9 wrapper ortamını hazırlar.
+Telefon/Termux üzerinde APK derlenmez. Codespace build komutu:
 
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
@@ -31,6 +32,10 @@ export ANDROID_HOME="$HOME/android-sdk"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 ./gradlew :app:assembleDebug
 ```
+
+`app` dalına gönderilen Android değişiklikleri `.github/workflows/android.yml`
+üzerinden unit test, lint ve debug APK derlemesini de çalıştırır. CI yalnız geçici
+artifact üretir; GitHub Release yayımlamaz.
 
 İlk başarılı Codespace buildinin ortam, boyut, SHA-256 ve kapsam sınırları
 [`BUILD_EVIDENCE.md`](BUILD_EVIDENCE.md) içinde kayıtlıdır.
