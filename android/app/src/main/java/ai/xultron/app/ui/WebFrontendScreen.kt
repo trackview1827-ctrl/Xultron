@@ -38,6 +38,10 @@ import ai.xultron.app.BuildConfig
 import ai.xultron.app.core.network.BackendEndpoint
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
+internal fun locationPermissionGranted(result: Map<String, Boolean>): Boolean =
+    result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+        result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun WebFrontendScreen(
@@ -61,7 +65,7 @@ fun WebFrontendScreen(
     val geoPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         val pending = pendingGeoPermission
         pendingGeoPermission = null
-        pending?.second?.invoke(pending.first, result.values.all { it }, false)
+        pending?.second?.invoke(pending.first, locationPermissionGranted(result), false)
     }
 
     if (rootUrl == null) {
@@ -122,6 +126,13 @@ fun WebFrontendScreen(
                             request.deny()
                             return
                         }
+                        val grantableResources = request.resources.filter {
+                            it == PermissionRequest.RESOURCE_AUDIO_CAPTURE || it == PermissionRequest.RESOURCE_VIDEO_CAPTURE
+                        }
+                        if (grantableResources.isEmpty() || grantableResources.size != request.resources.size) {
+                            request.deny()
+                            return
+                        }
                         val required = buildList {
                             if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in request.resources &&
                                 ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
@@ -130,7 +141,7 @@ fun WebFrontendScreen(
                                 ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
                             ) add(Manifest.permission.CAMERA)
                         }
-                        if (required.isEmpty()) request.grant(request.resources)
+                        if (required.isEmpty()) request.grant(grantableResources.toTypedArray())
                         else {
                             pendingWebPermission?.deny()
                             pendingWebPermission = request

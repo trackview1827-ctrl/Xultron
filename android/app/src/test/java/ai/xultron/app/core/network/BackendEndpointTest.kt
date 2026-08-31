@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import ai.xultron.app.ui.WebFrontendUrl
+import ai.xultron.app.ui.locationPermissionGranted
 
 class BackendEndpointTest {
     @Test
@@ -60,6 +61,13 @@ class BackendEndpointTest {
         assertFalse(WebFrontendUrl.isAllowedOAuthNavigation("https://openai.com/oauth/authorize".toHttpUrl()))
         assertFalse(WebFrontendUrl.isAllowedOAuthNavigation("http://auth.openai.com/oauth/authorize".toHttpUrl()))
         assertFalse(WebFrontendUrl.isAllowedOAuthNavigation("https://auth.openai.com.evil.test/".toHttpUrl()))
+    }
+
+    @Test
+    fun `accepts precise or approximate location permission`() {
+        assertTrue(locationPermissionGranted(mapOf("android.permission.ACCESS_FINE_LOCATION" to true)))
+        assertTrue(locationPermissionGranted(mapOf("android.permission.ACCESS_COARSE_LOCATION" to true)))
+        assertFalse(locationPermissionGranted(mapOf("android.permission.ACCESS_FINE_LOCATION" to false, "android.permission.ACCESS_COARSE_LOCATION" to false)))
     }
 
     @Test
