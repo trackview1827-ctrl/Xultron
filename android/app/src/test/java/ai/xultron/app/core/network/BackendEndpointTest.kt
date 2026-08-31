@@ -45,7 +45,7 @@ class BackendEndpointTest {
 
     @Test
     fun `web frontend root follows the backend path`() {
-        val root = WebFrontendUrl.rootForBackend("https://example.com/x/api/v1/")
+        val root = requireNotNull(WebFrontendUrl.rootForBackend("https://example.com/x/api/v1/"))
         assertEquals("https://example.com/x/", root.toString())
         assertTrue(WebFrontendUrl.isAllowedNavigation("https://example.com/x/settings".toHttpUrl(), root))
         assertFalse(WebFrontendUrl.isAllowedNavigation("https://evil.example/x/settings".toHttpUrl(), root))
