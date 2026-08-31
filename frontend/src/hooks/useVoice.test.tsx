@@ -125,6 +125,26 @@ describe('useVoice media lifecycle', () => {
     expect(result.current.recording).toBe(true)
   })
 
+  it('coalesces repeated taps while Android is opening the microphone', async () => {
+    const stream = new FakeStream()
+    let resolveMicrophone!: (stream: FakeStream) => void
+    const getUserMedia = vi.fn(() => new Promise<FakeStream>(resolve => { resolveMicrophone = resolve }))
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } })
+    const { result } = renderHook(() => useVoice(vi.fn()))
+
+    let first!: Promise<boolean>
+    let second!: Promise<boolean>
+    act(() => {
+      first = result.current.start()
+      second = result.current.start()
+    })
+
+    expect(getUserMedia).toHaveBeenCalledTimes(1)
+    await expect(second).resolves.toBe(true)
+    await act(async () => { resolveMicrophone(stream); await first })
+    expect(result.current.recording).toBe(true)
+  })
+
   it('explains when Android WebView still cannot initialize the microphone after fallback', async () => {
     const getUserMedia = vi.fn().mockRejectedValue(new DOMException('Busy', 'NotReadableError'))
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } })

@@ -213,5 +213,16 @@ fun WebFrontendScreen(
             webView = view
             canGoBack = view.canGoBack()
         },
+        onRelease = { view ->
+            pendingWebPermission?.request?.deny()
+            pendingWebPermission = null
+            pendingGeoPermission?.let { it.second.invoke(it.first, false, false) }
+            pendingGeoPermission = null
+            if (webView === view) webView = null
+            view.stopLoading()
+            view.onPause()
+            view.removeAllViews()
+            view.destroy()
+        },
     )
 }

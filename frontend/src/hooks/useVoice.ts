@@ -68,6 +68,7 @@ export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () =
   const { coreState, dispatchCore, settings, online, networkOnline } = useApp()
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const openingRef = useRef(false)
   const captureRef = useRef<CaptureSession | null>(null)
   const analyserFrame = useRef<number | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -156,6 +157,8 @@ export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () =
       return false
     }
     if (recorderRef.current?.state === 'recording') return true
+    if (openingRef.current) return true
+    openingRef.current = true
 
     if (playbackRef.current || synthAbortRef.current) cancelPlayback(true)
     cancelCapture(false)
@@ -278,6 +281,8 @@ export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () =
       cancelCapture(false)
       dispatchCore({ type: 'FAIL' })
       return false
+    } finally {
+      openingRef.current = false
     }
   }, [cancelCapture, cancelPlayback, coreState, dispatchCore, networkOnline, onNoSpeech, onTranscript, online, releaseCapture, settings.lowDataMode, settings.reducedMotion, settings.sttLanguage])
 
