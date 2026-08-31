@@ -22,8 +22,15 @@ uygulanmadı.
 - Gradle 8.9 uyumlu dağıtım veya Android Studio'nun Gradle entegrasyonu
 - Android 10/API 29 ve Android 15/API 35 emülatör/device test hedefleri
 
-Bu çalışma ortamında Android SDK/Gradle wrapper henüz bulunmadığından APK build'i
-şimdilik çalıştırılamadı. `gradlew` Android SDK kurulumu sonrasında eklenmelidir.
+Codespace içinde JDK 21, Android SDK Platform 35, Build Tools ve Gradle 8.9 wrapper
+kuruludur. Telefon/Termux üzerinde APK derlenmez. Codespace build komutu:
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+export ANDROID_HOME="$HOME/android-sdk"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+./gradlew :app:assembleDebug
+```
 
 ## Ağ ve sertifika yaklaşımı
 

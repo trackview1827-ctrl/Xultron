@@ -1,0 +1,2 @@
+# Preserve the Gradle wrapper's Windows line endings.
+*.bat -text
