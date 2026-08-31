@@ -83,8 +83,10 @@ fun WebFrontendScreen(
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
                 webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                        !WebFrontendUrl.isAllowedNavigation(request.url, rootUrl)
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                        val parsed = request.url.toString().toHttpUrlOrNull() ?: return true
+                        return !WebFrontendUrl.isAllowedNavigation(parsed, rootUrl)
+                    }
 
                     @Deprecated("Deprecated in API 24")
                     override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
