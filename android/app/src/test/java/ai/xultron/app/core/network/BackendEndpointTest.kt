@@ -52,6 +52,14 @@ class BackendEndpointTest {
     }
 
     @Test
+    fun `web frontend allows only the explicit OpenAI authorization origin`() {
+        assertTrue(WebFrontendUrl.isAllowedOAuthNavigation("https://auth.openai.com/oauth/authorize".toHttpUrl()))
+        assertFalse(WebFrontendUrl.isAllowedOAuthNavigation("https://openai.com/oauth/authorize".toHttpUrl()))
+        assertFalse(WebFrontendUrl.isAllowedOAuthNavigation("http://auth.openai.com/oauth/authorize".toHttpUrl()))
+        assertFalse(WebFrontendUrl.isAllowedOAuthNavigation("https://auth.openai.com.evil.test/".toHttpUrl()))
+    }
+
+    @Test
     fun `session headers are bound to the exact backend origin and api base`() {
         val backend = "https://api.example.com/x/api/v1/"
         assertTrue(shouldAttachSessionHeaders("https://api.example.com/x/api/v1/conversations".toHttpUrl(), backend))

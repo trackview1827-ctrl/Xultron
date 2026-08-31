@@ -21,4 +21,8 @@ object WebFrontendUrl {
             url.host == root.host &&
             url.port == root.port &&
             url.encodedPath.startsWith(root.encodedPath)
+
+    /** OpenAI's authorization page is the only external origin needed by the web UI. */
+    fun isAllowedOAuthNavigation(url: HttpUrl): Boolean =
+        url.scheme == "https" && url.host == "auth.openai.com" && url.port == 443
 }

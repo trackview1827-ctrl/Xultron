@@ -9,6 +9,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +35,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 fun WebFrontendScreen(
     backendUrl: String,
     modifier: Modifier = Modifier,
+    onChangeBackend: () -> Unit = {},
 ) {
     val rootUrl = remember(backendUrl) {
         if (backendUrl == BackendEndpoint.LOCAL) null else WebFrontendUrl.rootForBackend(backendUrl)
@@ -61,14 +63,23 @@ fun WebFrontendScreen(
             Text("Web frontend yüklenemedi", style = MaterialTheme.typography.titleLarge)
             Text(loadError.orEmpty(), modifier = Modifier.padding(top = 8.dp))
             Button(onClick = { loadError = null }, modifier = Modifier.padding(top = 16.dp)) { Text("Yeniden dene") }
+            Button(onClick = onChangeBackend, modifier = Modifier.padding(top = 8.dp)) { Text("Backend adresini değiştir") }
         }
         return
+    }
+
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var canGoBack by remember { mutableStateOf(false) }
+    BackHandler(enabled = canGoBack) {
+        webView?.goBack()
+        canGoBack = webView?.canGoBack() == true
     }
 
     AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { context ->
             WebView(context).apply {
+                webView = this
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -85,13 +96,15 @@ fun WebFrontendScreen(
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         val parsed = request.url.toString().toHttpUrlOrNull() ?: return true
-                        return !WebFrontendUrl.isAllowedNavigation(parsed, rootUrl)
+                        return !WebFrontendUrl.isAllowedNavigation(parsed, rootUrl) &&
+                            !WebFrontendUrl.isAllowedOAuthNavigation(parsed)
                     }
 
                     @Deprecated("Deprecated in API 24")
                     override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
                         val parsed = url.toHttpUrlOrNull() ?: return true
-                        return !WebFrontendUrl.isAllowedNavigation(parsed, rootUrl)
+                        return !WebFrontendUrl.isAllowedNavigation(parsed, rootUrl) &&
+                            !WebFrontendUrl.isAllowedOAuthNavigation(parsed)
                     }
 
                     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
@@ -108,6 +121,9 @@ fun WebFrontendScreen(
                 loadUrl(rootUrl.toString())
             }
         },
-        update = {},
+        update = { view ->
+            webView = view
+            canGoBack = view.canGoBack()
+        },
     )
 }

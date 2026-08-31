@@ -31,7 +31,10 @@ fun XultronApp(container: AppContainer) {
             )
         } else {
             // The web app owns login, navigation, chat, memory, providers and settings.
-            WebFrontendScreen(backendUrl = state.backendUrl)
+            WebFrontendScreen(
+                backendUrl = state.backendUrl,
+                onChangeBackend = { rootViewModel.saveBackendUrl(BackendEndpoint.LOCAL) },
+            )
         }
     }
 }
