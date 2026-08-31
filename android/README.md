@@ -1,7 +1,18 @@
-# Xultron Android hazırlık iskeleti
+# Xultron Android
 
-Bu dal, Android uygulamasının Phase 0 temelini içerir. Tam özellikler henüz
-uygulanmadı.
+`app` dalı, uygulama planındaki Phase 0-3 kapsamını içerir:
+
+- Codespaces/CI tabanlı Android build ortamı
+- Native mobil login, kayıt, misafir oturumu, rotating refresh ve revoke
+- Keystore anahtarıyla AES-GCM şifreli yerel session
+- Chat, konuşmalar, memory, provider ve ayarlar Compose ekranları
+- Loading, empty, offline, hata ve bağlantı durumları
+- Gerçek Android permission state, Settings yönlendirmeleri ve fail-closed
+  Capability Engine
+
+Terminal, wake-word, sürekli foreground service, overlay navbar, MediaProjection,
+kamera ve sensör işlevlerinin kendisi Phase 4-7 kapsamındadır. Phase 3 yalnız izin
+durumunu ve capability politikasını hazırlar; bu sonraki özellikleri çalıştırmaz.
 
 ## Hedef platform
 

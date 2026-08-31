@@ -1,10 +1,11 @@
-# Android Phase 0 build evidence
+# Android Phase 0-3 build evidence
 
-This report records the first successful Codespace build of the Android scaffold. It does not claim that the planned product features are implemented.
+This report records the successful Codespace validation of the Android Phase 0-3 implementation. It does not claim that later phases or physical-device behavior are complete.
 
 ## Environment
 
 - Branch: `app`
+- App version: `0.3.0` (`versionCode` 3)
 - Minimum Android: API 29 / Android 10
 - Compile and target SDK: API 35
 - Build host architecture: `x86_64`
@@ -12,37 +13,43 @@ This report records the first successful Codespace build of the Android scaffold
 - Gradle Wrapper: 8.9
 - Packaged ABIs: `arm64-v8a`, `x86_64`
 
-## Command
+## Commands
 
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export ANDROID_HOME="$HOME/android-sdk"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
-./gradlew :app:assembleDebug
+./gradlew test lint assembleDebug --stacktrace
 ```
+
+Backend validation was run separately with the full `pytest` suite and a blank-SQLite migration upgrade/downgrade/upgrade round trip.
 
 ## Observed result
 
 ```text
 BUILD SUCCESSFUL
+Tasks: test, lint, assembleDebug
 Artifact: app/build/outputs/apk/debug/app-debug.apk
-Size: 28,803,064 bytes
-SHA-256: 253a92a18812e891a3e5d58af0da884249794c7deae0710183348a898f505ccb
+Size: 29,377,925 bytes
+SHA-256: 84a7d48aeb977c23e0344211ef04c9cadb1efd4d4fb9502da16641388278ea64
 ```
 
 The checksum describes the ephemeral Codespace debug artifact signed with that environment's debug key. It is evidence of the observed build, not a reproducible release checksum.
 
 ## Implemented scope
 
-- Android project and Gradle wrapper
-- Compose launcher screen
-- Android 10 minimum and 64-bit ABI policy
-- Manifest permission declarations
-- HTTPS-only network security configuration
-- Retrofit, OkHttp, Kotlin serialization, DataStore and WorkManager dependencies
+- Phase 0 Android project, Gradle wrapper, Codespace provisioning and CI workflow
+- Native mobile login, registration, guest, rotating refresh and logout session flows
+- Keystore-backed encrypted local session storage and HTTPS-only Retrofit client
+- Compose shell for chat, conversations, memory, providers and settings
+- Offline, loading, empty and error UI states
+- Android permission state model for microphone, camera, foreground/background location, sensors, notifications and overlay special access
+- Fail-closed local capability engine and Android Settings redirects
+- Android 10 minimum, API 35 target and 64-bit `arm64-v8a` plus `x86_64` packaging
+- Backup and device-transfer exclusions for application data
 
-## Not implemented yet
+## Explicitly not implemented in Phase 0-3
 
-Authentication, chat, wake word, overlay navbar, terminal execution, camera, location, sensors, screen sharing, screenshot upload, background services and the other features in `docs/ANDROID_APP_PLAN.md` remain implementation work.
+Wake-word listening, foreground services, overlay navbar, MediaProjection screen sharing, screenshot upload, terminal execution, camera capture, continuous location/sensor collection and the remaining Phase 4-7 features in `docs/ANDROID_APP_PLAN.md` are not implemented.
 
-Device or emulator installation and runtime validation have not been performed yet.
+Physical-device installation and live end-to-end operation against a deployed backend have not yet been validated. The Android public build path and backend API paths were validated independently in Codespace and backend tests.
