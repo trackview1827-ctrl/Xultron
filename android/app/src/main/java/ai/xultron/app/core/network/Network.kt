@@ -27,8 +27,12 @@ object BackendEndpoint {
         val candidate = raw.trim().trimEnd('/')
         if (candidate == LOCAL) return LOCAL
         val url = candidate.toHttpUrlOrNull() ?: return null
-        if (url.scheme != "https" || url.username.isNotEmpty() || url.password.isNotEmpty()) return null
+        if (url.username.isNotEmpty() || url.password.isNotEmpty()) return null
         if (url.query != null || url.fragment != null) return null
+        val loopback = url.host == "127.0.0.1" || url.host == "localhost"
+        val allowed = url.scheme == "https" ||
+            (url.scheme == "http" && loopback && url.port == 5000)
+        if (!allowed) return null
         val path = url.encodedPath.trimEnd('/')
         val apiPath = if (path.endsWith("/api/v1")) path else "$path/api/v1"
         return url.newBuilder().encodedPath("$apiPath/").build().toString()
@@ -73,7 +77,7 @@ class ApiFactory(private val sessionStore: SessionStore) {
 
     fun create(backendUrl: String): XultronApi {
         val normalized = BackendEndpoint.normalize(backendUrl)
-            ?: throw IllegalArgumentException("Backend URL must be HTTPS.")
+            ?: throw IllegalArgumentException("Backend URL must be HTTPS, or Termux loopback http://127.0.0.1:5000.")
         return cache.getOrPut(normalized) {
             val clientBuilder = OkHttpClient.Builder()
                 .addInterceptor(SessionHeaderInterceptor(sessionStore))

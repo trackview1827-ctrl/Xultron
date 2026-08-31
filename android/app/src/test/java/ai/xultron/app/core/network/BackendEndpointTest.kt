@@ -21,8 +21,22 @@ class BackendEndpointTest {
     }
 
     @Test
+    fun `accepts the same-device Termux backend`() {
+        assertEquals(
+            "http://127.0.0.1:5000/api/v1/",
+            BackendEndpoint.normalize("http://127.0.0.1:5000"),
+        )
+        assertEquals(
+            "http://localhost:5000/api/v1/",
+            BackendEndpoint.normalize("http://localhost:5000/"),
+        )
+    }
+
+    @Test
     fun `rejects cleartext credentials query and fragments`() {
         assertNull(BackendEndpoint.normalize("http://example.com"))
+        assertNull(BackendEndpoint.normalize("http://192.168.1.10:5000"))
+        assertNull(BackendEndpoint.normalize("http://127.0.0.1:8080"))
         assertNull(BackendEndpoint.normalize("https://user:pass@example.com"))
         assertNull(BackendEndpoint.normalize("https://example.com?token=secret"))
         assertNull(BackendEndpoint.normalize("https://example.com/#fragment"))

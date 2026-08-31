@@ -21,7 +21,7 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setBackendUrl(value: String): Result<String> {
         val normalized = BackendEndpoint.normalize(value)
-            ?: return Result.failure(IllegalArgumentException("Geçerli bir HTTPS backend URL girin."))
+            ?: return Result.failure(IllegalArgumentException("HTTPS backend URL veya Termux için http://127.0.0.1:5000 girin."))
         context.xultronDataStore.edit { it[BACKEND_URL] = normalized }
         return Result.success(normalized)
     }

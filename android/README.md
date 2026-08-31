@@ -61,8 +61,10 @@ SQLite veritabanında tutar. Yerel moddaki chat yanıtı basit yerel yanıttır;
 AI sağlayıcı çağrıları için ayarlardan HTTPS uzak backend seçilmelidir.
 
 Uzak backend kullanılırken Backend alanına yalnızca HTTPS kök adresi yazılır,
-uygulama `/api/v1` yolunu kendisi ekler. `http://IP:5000` adresleri güvenlik
-nedeniyle reddedilir. Yerel SQLite verisi uygulama kaldırılınca silinir ve backup
+uygulama `/api/v1` yolunu kendisi ekler. Aynı telefondaki Termux Flask backendine
+bağlanmak için yalnızca `http://127.0.0.1:5000` ve `http://localhost:5000`
+loopback adreslerine izin verilir. Diğer tüm HTTP/IP adresleri güvenlik nedeniyle
+reddedilir. Yerel SQLite verisi uygulama kaldırılınca silinir ve backup
 kurallarıyla dışa aktarılmaz.
 
 ## Ağ ve sertifika yaklaşımı

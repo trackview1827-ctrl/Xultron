@@ -61,8 +61,8 @@ fun AuthScreen(
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
-                label = { Text("HTTPS URL") },
-                supportingText = { Text("Örnek: https://xultron.example.com") },
+                label = { Text("Backend URL") },
+                supportingText = { Text("Uzak: https://... · Termux: http://127.0.0.1:5000") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
