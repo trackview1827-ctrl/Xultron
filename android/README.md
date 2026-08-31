@@ -32,6 +32,9 @@ export ANDROID_SDK_ROOT="$ANDROID_HOME"
 ./gradlew :app:assembleDebug
 ```
 
+İlk başarılı Codespace buildinin ortam, boyut, SHA-256 ve kapsam sınırları
+[`BUILD_EVIDENCE.md`](BUILD_EVIDENCE.md) içinde kayıtlıdır.
+
 ## Ağ ve sertifika yaklaşımı
 
 - Android tarafı `Retrofit + OkHttp` kullanır.
