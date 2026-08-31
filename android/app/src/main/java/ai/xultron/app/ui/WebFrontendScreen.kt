@@ -2,7 +2,6 @@ package ai.xultron.app.ui
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
-import android.os.Build
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebResourceError
@@ -88,8 +87,10 @@ fun WebFrontendScreen(
                         !WebFrontendUrl.isAllowedNavigation(request.url, rootUrl)
 
                     @Deprecated("Deprecated in API 24")
-                    override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
-                        !WebFrontendUrl.isAllowedNavigation(url.toHttpUrlOrNull() ?: return true, rootUrl)
+                    override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                        val parsed = url.toHttpUrlOrNull() ?: return true
+                        return !WebFrontendUrl.isAllowedNavigation(parsed, rootUrl)
+                    }
 
                     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                         loadError = null
