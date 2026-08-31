@@ -19,11 +19,13 @@ wake-word, foreground service, bildirim, overlay, MediaProjection, kamera, sens�
 konum, SAF ve uygulama yaşam döngüsü gibi uygulamaya özel yetenekler native Android
 katmanında kalır. Token/Keystore sırları WebView JavaScript'ine aktarılmaz.
 
-Android uygulamasında native katman yalnızca ilk backend bağlantı ekranını ve cihaz
-izinlerini yönetir; backend URL kaydedildikten sonra uygulamanın tamamı web frontend'i
+Android uygulamasında native katman yalnızca ilk backend bağlantı ekranını ve güvenli
+WebView yaşam döngüsünü yönetir; backend URL kaydedildikten sonra uygulamanın tamamı web frontend'i
 olarak açılır. Termux kullanırken önce backend çalışmalı ve ilk ekrandaki Backend URL
 alanına `http://127.0.0.1:5000` yazılmalıdır. Web frontend kendi web girişini yönetir,
-native bearer token WebView JavaScript'ine aktarılmaz. `local://xultron` gömülü backend
+native bearer token WebView JavaScript'ine aktarılmaz. Bu iterasyonda uygulamaya özel
+izin/terminal/wake-word kontrolleri web ekranına henüz açılmamıştır; bunlar ileride
+güvenli bridge veya ayrı native ayar yüzeyiyle eklenecektir. `local://xultron` gömülü backend
 modu web sunmadığı için tam web arayüzü için loopback veya HTTPS backend seçilmelidir.
 
 Terminal, wake-word, sürekli foreground service, overlay navbar, MediaProjection,
