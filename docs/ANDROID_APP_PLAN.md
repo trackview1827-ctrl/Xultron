@@ -1,6 +1,7 @@
 # Xultron Android App Implementation Planı
 
-> Durum: Yalnızca plan. Android kodu henüz yazılmadı.
+> Durum: Phase 0-3 Android baseline'ı repository'de mevcut; bu belge sonraki
+> web-frontend/native özellik fazlarının implementation planıdır.
 >
 > Kaynak: `xultronappplanlama.md` ve mevcut Xultron repository incelemesi.
 >
@@ -74,8 +75,9 @@ Mevcut plan hazırlanırken şu sınırlar çalıştırıldı:
 - Vite production build 457 modülle tamamlandı.
 - `bash -n scripts/bootstrap.sh` geçti.
 
-Bu testler Android’in var olduğunu göstermez. Repository’de henüz `android/` modülü,
-Android manifest’i, APK pipeline’ı veya device test hedefi yoktur.
+Bu testler Android acceptance'ını tek başına göstermez. Repository'de artık
+`android/` modülü, manifest, Gradle/APK pipeline'ı ve Phase 0-3 kaynakları vardır;
+fiziksel cihaz testleri ayrıca yürütülmelidir.
 
 ## 2. Android Architecture Decision
 
@@ -105,9 +107,9 @@ Bu kararın kapsamı:
   izin verilen UI state, typed command sonucu ve redakte edilmiş durum alır.
 - `local://xultron` gibi native-only backendler WebView'a ham URL olarak verilmez;
   native repository adapterı veya açıkça tanımlı güvenli bridge üzerinden sunulur.
-- Web ve Android uygulaması aynı API şemalarını, hata kodlarını, capability
-  isimlerini ve acceptance senaryolarını paylaşır. UI kodu birebir paylaşılmasa da
-  davranış ve veri sözleşmesi paylaşılır.
+- Web ve Android uygulaması ortak web UI kodunu ve aynı API şemalarını, hata
+  kodlarını, capability isimlerini ve acceptance senaryolarını paylaşır. Native
+  privileged UI kodu web ile paylaşılmaz.
 
 WebView kullanımı sınırlı ve güvenlik kontrollü olacaktır: trusted-origin allowlist,
 arbitrary navigation/pop-up engeli, origin-bound WebMessage bridge, çağrı başına
@@ -115,6 +117,24 @@ arbitrary navigation/pop-up engeli, origin-bound WebMessage bridge, çağrı ba�
 debugging kapalı, Safe Browsing ve CSP açık. `addJavascriptInterface` ile sınırsız
 native API açılmayacaktır. Privileged ekranlar ve sistem izin diyalogları native
 Compose olarak kalacaktır.
+
+### Web container session contract
+
+- Android native auth ve Keystore oturumu WebView JavaScript'ine aktarılmaz. Web
+  container yalnızca `protocolVersion`, `sessionState`, `backendOrigin` ve tek
+  kullanımlık `bootstrapNonce` içeren başlangıç durumunu alır.
+- Web UI API çağrısını doğrudan `fetch` ile değil, origin-bound typed bridge'e
+  `requestId`, allowlisted `routeId`, HTTP method, JSON body, nonce ve timeout ile
+  gönderir. Native katman backend host/path allowlist'ini tekrar doğrular, access
+  bearer'ı kendisi ekler ve yalnız şeması doğrulanmış redakte response döndürür.
+- SSE/chat akışı bridge üzerinden typed `state`, `delta`, `done` ve `error`
+  event'leriyle akar. Bridge hiçbir zaman raw URL, shell komutu, token, cookie,
+  Keystore verisi veya key materyali döndürmez.
+- `local://xultron` ve Termux loopback gibi native adapterlar aynı bridge
+  sözleşmesini kullanır; WebView'a doğrudan native-only URL açılmaz.
+- Tarayıcıdaki web frontend bu bridge'i kullanmaz; mevcut HttpOnly cookie + CSRF
+  oturumunu ve normal HTTPS API çağrılarını kullanır. Böylece browser ve Android
+  aynı feature UI davranışını paylaşırken farklı güvenlik oturumları korunur.
 
 ### UI sahipliği ve geçiş kuralı
 
@@ -132,8 +152,9 @@ gerektiren parça native feature modülüne eklenir. Aynı işlev hem Compose he
 olarak çoğaltılmayacak; birincil UI sahibi ve bridge sınırı traceability tablosunda
 belirtilecektir.
 
-Paylaşılacak şey UI kodu değil, API şemaları, capability isimleri, error code'ları,
-action schema'ları, state isimleri, feature inventory ve test senaryolarıdır.
+Paylaşılacak şey ortak web UI kodu ve davranışı ile API şemaları, capability isimleri,
+error code'ları, action schema'ları, state isimleri, feature inventory ve test
+senaryolarıdır. Native privileged UI kodu web ile paylaşılmaz.
 
 ### SDK seçimi
 
@@ -174,13 +195,15 @@ android/
 │   ├── datastore/
 │   ├── permissions/
 │   ├── capabilities/
-│   └── audit/
+│   ├── audit/
+│   └── webbridge/
 ├── feature-auth/
 ├── feature-chat/
 ├── feature-conversations/
 ├── feature-memory/
 ├── feature-providers/
 ├── feature-settings/
+├── feature-web/
 ├── feature-terminal/
 ├── feature-voice/
 ├── feature-sensors/
@@ -614,7 +637,8 @@ Projection Intent/result data/token Room veya DataStore’a yazılmaz.
 
 ## 13. Network Protocol
 
-- HTTPS only.
+- Remote backend için HTTPS only; aynı cihazdaki Termux geliştirme backend'i için
+  yalnız `http://127.0.0.1:5000` / `http://localhost:5000` loopback istisnası.
 - Native auth için Bearer access token.
 - Rotating refresh token.
 - Request ID, nonce, expiry ve idempotency key.
@@ -744,12 +768,14 @@ kill sonrası sonsuz çalışma garanti edilmez.
 | `android/core/audit/` | Hassas içerik olmadan local activity log |
 | `android/core/database/` | Room entities, migrations ve offline state |
 | `android/core/datastore/` | Küçük ayarların kalıcı saklanması |
-| `android/feature-auth/` | Login, register, guest ve device session ekranları |
-| `android/feature-chat/` | Chat, SSE stream ve recovery UI |
-| `android/feature-conversations/` | Conversation list/detail/history |
-| `android/feature-memory/` | Memory görüntüleme ve yönetimi |
-| `android/feature-providers/` | AI/STT/TTS provider CRUD, test ve model seçimi |
-| `android/feature-settings/` | General, voice, permission, terminal, overlay ve capture ayarları |
+| `android/feature-auth/` | Native auth/session handoff, fallback auth ve device session kontrolü; ortak form web frontend'de |
+| `android/feature-web/` | Güvenli WebView/container, trusted-origin yükleme ve ortak web UI host'u |
+| `android/core/webbridge/` | Origin-bound typed API/SSE bridge, nonce, route allowlist ve response redaction |
+| `android/feature-chat/` | Native adapter/recovery ve privileged chat işlemleri; ortak chat UI web frontend'de |
+| `android/feature-conversations/` | Native lifecycle/cache adapterı; ortak list/detail UI web frontend'de |
+| `android/feature-memory/` | Native storage adapterı; ortak memory UI web frontend'de |
+| `android/feature-providers/` | Native credential/session boundary; ortak provider CRUD UI web frontend'de |
+| `android/feature-settings/` | Native permission, voice, terminal, overlay ve capture ayarları; standart settings web frontend'de |
 | `android/feature-terminal/` | Policy, argv validation, path boundary ve execution adapter’ları |
 | `android/feature-voice/` | Wake-word enrollment, detector, VAD ve aktif voice pipeline |
 | `android/feature-sensors/` | Sensor discovery, per-sensor policy ve sampling lifecycle |
@@ -772,11 +798,18 @@ kill sonrası sonsuz çalışma garanti edilmez.
 | `backend/app/security/native_tokens.py` | Native bearer/proof-of-possession validation |
 | `backend/migrations/versions/0007_android_devices.py` | Device/session/action/audit schema |
 | `frontend/src/features/devices/` | Web device/session management |
+| `frontend/src/features/auth/` | Browser ve in-app ortak auth form/state görünümü; credential/token saklamaz |
+| `frontend/src/features/chat/` | Ortak chat ve SSE görünümü |
+| `frontend/src/features/conversations/` | Ortak conversation list/detail/history görünümü |
+| `frontend/src/features/memory/` | Ortak memory görünümü |
+| `frontend/src/features/providers/` | Ortak provider CRUD/test/model görünümü |
+| `frontend/src/features/settings/` | Ortak standart ayar görünümü; privileged ayar sonucu bridge ile gelir |
 | `frontend/src/features/permissions/` | Shared capability visibility |
 | `frontend/src/features/activity-log/` | Web redacted activity log |
 | `frontend/src/features/screen-capture/` | Web-side device capture status, not silent capture |
 | `frontend/src/services/devicesApi.ts` | Device and action API client |
 | `frontend/src/services/capabilitiesApi.ts` | Capability metadata API client |
+| `frontend/src/services/webAppBridge.ts` | Android bridge varsa typed request/event adapterı; browser'da normal API fallback'i |
 | `.devcontainer/devcontainer.json` | Codespaces JDK, Android SDK ve build araçları |
 | `.github/workflows/android.yml` | Test, lint ve debug APK pipeline |
 | `.github/workflows/android-security.yml` | Static/security checks |
