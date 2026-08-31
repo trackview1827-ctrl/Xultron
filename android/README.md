@@ -12,18 +12,19 @@
 - Gerçek Android permission state, Settings yönlendirmeleri ve fail-closed
   Capability Engine
 
-İleri fazlarda ortak ürün UI'sı web frontend'den beslenecektir: chat, konuşmalar,
-memory, provider, standart ayarlar ve hesap görünümü React/Vite UI'sı olarak webde
-ve uygulama içindeki güvenli WebView/container'da ortak tutulur. Terminal,
+Ortak ürün UI'sı React/Vite web frontend'den beslenir: giriş, chat, konuşmalar,
+memory, provider, standart ayarlar ve hesap görünümü uygulamada da tam ekran güvenli
+WebView/container içinde aynı web arayüzü olarak çalışır. Terminal,
 wake-word, foreground service, bildirim, overlay, MediaProjection, kamera, sensör,
 konum, SAF ve uygulama yaşam döngüsü gibi uygulamaya özel yetenekler native Android
 katmanında kalır. Token/Keystore sırları WebView JavaScript'ine aktarılmaz.
 
-Phase 0-3 Android uygulamasında girişten sonra `Web UI` sekmesi mevcut backend'in
-web frontend'ini güvenli container içinde açar. Termux kullanırken önce backend
-çalışmalı ve Backend URL alanında `http://127.0.0.1:5000` kayıtlı olmalıdır. Native
-Compose ekranları geçiş dönemi ve privileged özellikler için korunur; Web UI'ya
-native bearer token aktarılmaz.
+Android uygulamasında native katman yalnızca ilk backend bağlantı ekranını ve cihaz
+izinlerini yönetir; backend URL kaydedildikten sonra uygulamanın tamamı web frontend'i
+olarak açılır. Termux kullanırken önce backend çalışmalı ve ilk ekrandaki Backend URL
+alanına `http://127.0.0.1:5000` yazılmalıdır. Web frontend kendi web girişini yönetir,
+native bearer token WebView JavaScript'ine aktarılmaz. `local://xultron` gömülü backend
+modu web sunmadığı için tam web arayüzü için loopback veya HTTPS backend seçilmelidir.
 
 Terminal, wake-word, sürekli foreground service, overlay navbar, MediaProjection,
 kamera ve sensör işlevlerinin kendisi Phase 4-7 kapsamındadır. Phase 3 yalnız izin

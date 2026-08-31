@@ -7,8 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ai.xultron.app.AppContainer
-import ai.xultron.app.feature.auth.AuthScreen
-import ai.xultron.app.feature.settings.PermissionSection
+import ai.xultron.app.core.network.BackendEndpoint
 
 @Composable
 fun XultronApp(container: AppContainer) {
@@ -22,32 +21,17 @@ fun XultronApp(container: AppContainer) {
             surface = androidx.compose.ui.graphics.Color(0xFF101B22),
         ),
     ) {
-        if (state.user == null) {
-            AuthScreen(
+        if (state.backendUrl.isBlank() || state.backendUrl == BackendEndpoint.LOCAL) {
+            WebFrontendBootstrapScreen(
                 backendUrl = state.backendUrl,
-                connectionState = state.connection,
+                connection = state.connection,
                 busy = state.authBusy,
                 error = state.error,
                 onSaveBackendUrl = rootViewModel::saveBackendUrl,
-                onLogin = rootViewModel::login,
-                onEnroll = rootViewModel::enroll,
-                onGuest = rootViewModel::continueAsGuest,
-                onRetry = rootViewModel::retryConnection,
             )
         } else {
-            AuthenticatedShell(
-                container = container,
-                backendUrl = state.backendUrl,
-                connection = state.connection,
-                user = requireNotNull(state.user),
-                lowDataMode = state.lowDataMode,
-                onSetBackendUrl = rootViewModel::saveBackendUrl,
-                onLowDataModeChange = rootViewModel::setLowDataMode,
-                onLogout = rootViewModel::logout,
-                permissionsContent = {
-                    PermissionSection(container.permissionManager, container.capabilityEngine)
-                },
-            )
+            // The web app owns login, navigation, chat, memory, providers and settings.
+            WebFrontendScreen(backendUrl = state.backendUrl)
         }
     }
 }
