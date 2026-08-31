@@ -1,15 +1,22 @@
 package ai.xultron.app.ui
 
 import android.annotation.SuppressLint
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.GeolocationPermissions
+import android.webkit.PermissionRequest
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import ai.xultron.app.BuildConfig
 import ai.xultron.app.core.network.BackendEndpoint
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -41,6 +49,20 @@ fun WebFrontendScreen(
         if (backendUrl == BackendEndpoint.LOCAL) null else WebFrontendUrl.rootForBackend(backendUrl)
     }
     var loadError by remember(rootUrl) { mutableStateOf<String?>(null) }
+    var pendingWebPermission by remember { mutableStateOf<PermissionRequest?>(null) }
+    var pendingGeoPermission by remember { mutableStateOf<Pair<String, GeolocationPermissions.Callback>?>(null) }
+    val webPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val request = pendingWebPermission
+        pendingWebPermission = null
+        if (request != null) {
+            if (result.values.all { it }) request.grant(request.resources) else request.deny()
+        }
+    }
+    val geoPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val pending = pendingGeoPermission
+        pendingGeoPermission = null
+        pending?.second?.invoke(pending.first, result.values.all { it }, false)
+    }
 
     if (rootUrl == null) {
         Column(
@@ -93,6 +115,40 @@ fun WebFrontendScreen(
                 settings.setSupportMultipleWindows(false)
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
+                webChromeClient = object : WebChromeClient() {
+                    override fun onPermissionRequest(request: PermissionRequest) {
+                        val requestOrigin = request.origin.toString().toHttpUrlOrNull()
+                        if (requestOrigin == null || !WebFrontendUrl.isAllowedOrigin(requestOrigin, rootUrl)) {
+                            request.deny()
+                            return
+                        }
+                        val required = buildList {
+                            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in request.resources &&
+                                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+                            ) add(Manifest.permission.RECORD_AUDIO)
+                            if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in request.resources &&
+                                ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+                            ) add(Manifest.permission.CAMERA)
+                        }
+                        if (required.isEmpty()) request.grant(request.resources)
+                        else {
+                            pendingWebPermission?.deny()
+                            pendingWebPermission = request
+                            webPermissionLauncher.launch(required.toTypedArray())
+                        }
+                    }
+
+                    override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                        ) callback.invoke(origin, true, false)
+                        else {
+                            pendingGeoPermission?.let { it.second.invoke(it.first, false, false) }
+                            pendingGeoPermission = origin to callback
+                            geoPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                        }
+                    }
+                }
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         val parsed = request.url.toString().toHttpUrlOrNull() ?: return true

@@ -172,3 +172,24 @@
   .transmission { background:rgba(13,13,15,.9);box-shadow:inset 0 1px 0 rgba(255,255,255,.035) }
   .settings-content,.memory-field>section { background:rgba(10,10,12,.9) }
 }
+
+/* Phase 3 capability boundary */
+.capabilities-panel .settings-section-head { align-items:center }
+.capability-refresh { width:40px;height:40px;border:1px solid #294454;background:transparent;color:#7e9aa7;display:grid;place-items:center;cursor:pointer }
+.capability-refresh:hover { color:var(--accent);border-color:var(--accent) }
+.capability-refresh svg { width:17px }
+.capability-list { display:grid;gap:.75rem }
+.capability-row,.capability-tool { display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:.8rem;border:1px solid #1e3542;background:rgba(8,17,25,.55);padding:.85rem }
+.capability-icon { width:32px;height:32px;display:grid;place-items:center;color:var(--accent);border:1px solid #294858 }
+.capability-icon svg { width:17px }
+.capability-copy strong,.capability-tool strong { color:#dcebf1;font-size:.82rem }
+.capability-copy p,.capability-tool p { margin:.25rem 0;color:#728b97;font-size:.7rem;line-height:1.45 }
+.capability-copy small,.capability-tool small { color:#5d7885;font:.55rem ui-monospace,monospace;letter-spacing:.08em }
+.capability-state { display:inline-block;margin-top:.25rem }
+.capability-granted { color:#58f0bc!important }.capability-denied { color:#ff8198!important }.capability-prompt { color:#f1c56b!important }.capability-unsupported { color:#82929a!important }
+.capability-row .btn { white-space:nowrap }
+.capability-tools { display:grid;gap:.65rem;margin-top:1.5rem;padding-top:1rem;border-top:1px solid #1c303c }
+.capability-tool { grid-template-columns:1fr auto }.capability-tool small { display:block;margin-top:.35rem }
+.tool-available { color:#58f0bc;font:.55rem ui-monospace,monospace;letter-spacing:.08em }.tool-blocked { color:#ff8198;font:.55rem ui-monospace,monospace;letter-spacing:.08em }
+.capability-empty { color:#708793;font-size:.76rem }.capabilities-panel .settings-callout { margin-top:1rem }
+@media (max-width:599px) { .capability-row { grid-template-columns:auto 1fr }.capability-row .btn { grid-column:2;justify-self:start } }

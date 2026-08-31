@@ -23,9 +23,11 @@ Android uygulamasında native katman yalnızca ilk backend bağlantı ekranını
 WebView yaşam döngüsünü yönetir; backend URL kaydedildikten sonra uygulamanın tamamı web frontend'i
 olarak açılır. Termux kullanırken önce backend çalışmalı ve ilk ekrandaki Backend URL
 alanına `http://127.0.0.1:5000` yazılmalıdır. Web frontend kendi web girişini yönetir,
-native bearer token WebView JavaScript'ine aktarılmaz. Bu iterasyonda uygulamaya özel
-izin/terminal/wake-word kontrolleri web ekranına henüz açılmamıştır; bunlar ileride
-güvenli bridge veya ayrı native ayar yüzeyiyle eklenecektir. `local://xultron` gömülü backend
+native bearer token WebView JavaScript'ine aktarılmaz. `Settings > Capabilities` bölümü
+web izin durumlarını ve backend araçlarını gösterir. Mikrofon/kamera/konum istemleri
+yalnız kullanıcı `TEST` veya ilgili özelliği başlattığında açılır ve APK içinde yalnız
+configüre edilmiş backend originine bağlanır. Terminal, wake-word ve ayrı native ayar
+bridge'i bu iterasyonda etkin değildir. `local://xultron` gömülü backend
 modu web sunmadığı için tam web arayüzü için loopback veya HTTPS backend seçilmelidir.
 
 Terminal, wake-word, sürekli foreground service, overlay navbar, MediaProjection,

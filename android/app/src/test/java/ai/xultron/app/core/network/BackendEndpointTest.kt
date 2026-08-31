@@ -49,6 +49,9 @@ class BackendEndpointTest {
         assertEquals("https://example.com/x/", root.toString())
         assertTrue(WebFrontendUrl.isAllowedNavigation("https://example.com/x/settings".toHttpUrl(), root))
         assertFalse(WebFrontendUrl.isAllowedNavigation("https://evil.example/x/settings".toHttpUrl(), root))
+        assertTrue(WebFrontendUrl.isAllowedOrigin("https://example.com/".toHttpUrl(), root))
+        assertFalse(WebFrontendUrl.isAllowedOrigin("https://example.com.evil.test/".toHttpUrl(), root))
+        assertFalse(WebFrontendUrl.isAllowedOrigin("http://example.com/".toHttpUrl(), root))
     }
 
     @Test
