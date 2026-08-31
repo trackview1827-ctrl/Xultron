@@ -111,13 +111,20 @@ action schema'ları, state isimleri, feature inventory ve test senaryolarıdır.
 
 ### SDK seçimi
 
-- `minSdk = 26` (Android 8): modern foreground service, notification, storage ve
-  security API'leri için makul taban; daha eski sürümlerin ek compatibility yükü
-  bu ürünün background/voice hedeflerine değmez.
+- `minSdk = 29` (Android 10): kullanıcının minimum sürüm şartı. Android 10'un
+  background location, scoped storage ve modern permission davranışları temel
+  kabul edilir; Android 9 ve daha eski sürümler desteklenmez.
 - `compileSdk = 35` başlangıç baseline'ı: Android 15 API davranışları Phase 0'da
   derlenip test edilir.
 - `targetSdk = 35` başlangıç baseline'ı: Android 15'in güncel permission ve
   foreground-service kuralları zorunlu olarak görülür.
+- ABI hedefi yalnızca `arm64-v8a` ve `x86_64` olacaktır. `x86` ve
+  `armeabi-v7a` 32-bit hedefleri bilinçli olarak paketlenmeyecektir; `x86_64`
+  Android emülatörleri desteklenir.
+- Android istemcisi için HTTPS, Android sistem CA deposu, Retrofit/Ktor + OkHttp,
+  sıkı hostname doğrulaması ve release build'de cleartext kapalı ağ politikası
+  zorunludur. Python backend tarafında `requests` ve doğrudan `certifi`
+  bağımlılığı korunur; `certifi` Android'e pip paketi olarak taşınmaz.
 - Release öncesi `compileSdk` ve `targetSdk`, Play ve Android'in o tarihteki
   güncel zorunlu API seviyesine yükseltilir. Bu yükseltme yapılmadan release kabul
   edilmez; Android 13, 14, 15 ve güncel sürüm matrisi yeniden çalıştırılır.
