@@ -8,6 +8,7 @@ import org.junit.Test
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import ai.xultron.app.ui.WebFrontendUrl
 import ai.xultron.app.ui.locationPermissionGranted
+import ai.xultron.app.ui.requestedPermissionsGranted
 
 class BackendEndpointTest {
     @Test
@@ -68,6 +69,16 @@ class BackendEndpointTest {
         assertTrue(locationPermissionGranted(mapOf("android.permission.ACCESS_FINE_LOCATION" to true)))
         assertTrue(locationPermissionGranted(mapOf("android.permission.ACCESS_COARSE_LOCATION" to true)))
         assertFalse(locationPermissionGranted(mapOf("android.permission.ACCESS_FINE_LOCATION" to false, "android.permission.ACCESS_COARSE_LOCATION" to false)))
+    }
+
+    @Test
+    fun `web media permission requires every requested Android grant`() {
+        val microphone = "android.permission.RECORD_AUDIO"
+        val camera = "android.permission.CAMERA"
+        assertTrue(requestedPermissionsGranted(setOf(microphone), mapOf(microphone to true)))
+        assertFalse(requestedPermissionsGranted(setOf(microphone), emptyMap()))
+        assertFalse(requestedPermissionsGranted(setOf(microphone, camera), mapOf(microphone to true)))
+        assertFalse(requestedPermissionsGranted(emptySet(), emptyMap()))
     }
 
     @Test

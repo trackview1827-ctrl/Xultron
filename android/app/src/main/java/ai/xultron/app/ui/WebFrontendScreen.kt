@@ -42,9 +42,15 @@ internal fun locationPermissionGranted(result: Map<String, Boolean>): Boolean =
     result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
         result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
 
+internal fun requestedPermissionsGranted(
+    requested: Set<String>,
+    result: Map<String, Boolean>,
+): Boolean = requested.isNotEmpty() && requested.all { result[it] == true }
+
 private data class PendingWebPermission(
     val request: PermissionRequest,
     val resources: Array<String>,
+    val androidPermissions: Set<String>,
 )
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -64,7 +70,8 @@ fun WebFrontendScreen(
         val pending = pendingWebPermission
         pendingWebPermission = null
         if (pending != null) {
-            if (result.values.all { it }) pending.request.grant(pending.resources) else pending.request.deny()
+            if (requestedPermissionsGranted(pending.androidPermissions, result)) pending.request.grant(pending.resources)
+            else pending.request.deny()
         }
     }
     val geoPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -149,7 +156,7 @@ fun WebFrontendScreen(
                         if (required.isEmpty()) request.grant(grantableResources.toTypedArray())
                         else {
                             pendingWebPermission?.request?.deny()
-                            pendingWebPermission = PendingWebPermission(request, grantableResources.toTypedArray())
+                            pendingWebPermission = PendingWebPermission(request, grantableResources.toTypedArray(), required.toSet())
                             webPermissionLauncher.launch(required.toTypedArray())
                         }
                     }

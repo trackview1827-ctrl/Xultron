@@ -19,13 +19,14 @@ class FakeStream {
 class FakeRecorder {
   static instances: FakeRecorder[] = []
   static constructorArgumentCounts: number[] = []
+  static constructorMimeTypes: (string | undefined)[] = []
   static isTypeSupported = vi.fn(() => false)
   state: RecordingState = 'inactive'
   mimeType = ''
   ondataavailable: ((event: BlobEvent) => void) | null = null
   onstop: (() => void) | null = null
   onerror: (() => void) | null = null
-  constructor(_stream: MediaStream, _options?: MediaRecorderOptions) { FakeRecorder.instances.push(this); FakeRecorder.constructorArgumentCounts.push(arguments.length) }
+  constructor(_stream: MediaStream, options?: MediaRecorderOptions) { FakeRecorder.instances.push(this); FakeRecorder.constructorArgumentCounts.push(arguments.length); FakeRecorder.constructorMimeTypes.push(options?.mimeType) }
   start() { this.state = 'recording' }
   stop() { this.state = 'inactive'; const handler = this.onstop; queueMicrotask(() => handler?.()) }
   fail() { this.onerror?.() }
@@ -59,7 +60,7 @@ function setApp(coreState = 'ONLINE', settings = { ...DEFAULT_SETTINGS, reducedM
 
 describe('useVoice media lifecycle', () => {
   beforeEach(() => {
-    app.dispatchCore.mockReset(); api.transcribe.mockReset(); api.synthesize.mockReset(); FakeRecorder.instances = []; FakeRecorder.constructorArgumentCounts = []; FakeRecorder.isTypeSupported.mockReturnValue(false); FakeAudio.instances = []; FakeAudioContext.instances = []
+    app.dispatchCore.mockReset(); api.transcribe.mockReset(); api.synthesize.mockReset(); FakeRecorder.instances = []; FakeRecorder.constructorArgumentCounts = []; FakeRecorder.constructorMimeTypes = []; FakeRecorder.isTypeSupported.mockReset(); FakeRecorder.isTypeSupported.mockReturnValue(false); FakeAudio.instances = []; FakeAudioContext.instances = []
     setApp()
     Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, value: FakeRecorder })
     Object.defineProperty(globalThis, 'Audio', { configurable: true, value: FakeAudio })
@@ -116,6 +117,18 @@ describe('useVoice media lifecycle', () => {
 
     expect(result.current.error).toMatch(/busy or unavailable/i)
     expect(app.dispatchCore).toHaveBeenLastCalledWith({ type: 'FAIL' })
+  })
+
+  it('skips a broken codec probe and selects the next supported Android recorder format', async () => {
+    const stream = new FakeStream()
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue(stream) } })
+    FakeRecorder.isTypeSupported.mockImplementationOnce(() => { throw new Error('probe failed') }).mockReturnValueOnce(true)
+    const { result } = renderHook(() => useVoice(vi.fn()))
+
+    await act(async () => result.current.start())
+
+    expect(result.current.recording).toBe(true)
+    expect(FakeRecorder.constructorMimeTypes.at(-1)).toBe('audio/webm')
   })
 
   it('handles MediaRecorder errors and closes visualizer resources on unmount', async () => {
