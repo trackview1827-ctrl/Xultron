@@ -24,6 +24,37 @@ function abortError(message: string): DOMException {
   return new DOMException(message, 'AbortError')
 }
 
+async function openMicrophone(): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } })
+  } catch (caught) {
+    if (caught instanceof DOMException && (caught.name === 'OverconstrainedError' || caught.name === 'NotSupportedError')) {
+      return navigator.mediaDevices.getUserMedia({ audio: true })
+    }
+    throw caught
+  }
+}
+
+function createAudioRecorder(stream: MediaStream): MediaRecorder {
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+  for (const mimeType of candidates) {
+    try {
+      if (MediaRecorder.isTypeSupported(mimeType)) return new MediaRecorder(stream, { mimeType })
+    } catch { /* Some Android WebView versions throw while probing codecs. */ }
+  }
+  return new MediaRecorder(stream)
+}
+
+function microphoneError(caught: unknown): string {
+  if (!(caught instanceof DOMException)) return 'Xultron could not activate the microphone. Close other recording apps, then retry.'
+  if (caught.name === 'NotAllowedError' || caught.name === 'SecurityError') return 'Microphone access was denied. Allow microphone access for Xultron in Android Settings, then retry.'
+  if (caught.name === 'NotFoundError') return 'No microphone was found on this device.'
+  if (caught.name === 'NotReadableError' || caught.name === 'AbortError') return 'The microphone is busy or unavailable. Close other recording apps and restart Xultron.'
+  if (caught.name === 'OverconstrainedError') return 'This WebView rejected the requested microphone mode. Update Android System WebView, then retry.'
+  if (caught.name === 'NotSupportedError') return 'This Android System WebView does not support microphone recording. Update it from Play Store.'
+  return `Xultron could not activate the microphone (${caught.name}).`
+}
+
 export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () => void) {
   const { coreState, dispatchCore, settings, online, networkOnline } = useApp()
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -123,15 +154,14 @@ export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () =
     if (coreState === 'ERROR') dispatchCore({ type: 'RECOVER' })
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } })
+      const stream = await openMicrophone()
       if (!mountedRef.current || operationId !== captureGenerationRef.current) {
         stream.getTracks().forEach(track => track.stop())
         return false
       }
       streamRef.current = stream
 
-      const preferredMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : ''
-      const recorder = preferredMime ? new MediaRecorder(stream, { mimeType: preferredMime }) : new MediaRecorder(stream)
+      const recorder = createAudioRecorder(stream)
       const capture: CaptureSession = { id: operationId, cancelled: false }
       const chunks: Blob[] = []
       recorderRef.current = recorder
@@ -235,9 +265,7 @@ export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () =
       return true
     } catch (caught) {
       if (!mountedRef.current || operationId !== captureGenerationRef.current) return false
-      setError(caught instanceof DOMException && caught.name === 'NotAllowedError'
-        ? 'Microphone access was denied. Enable it in browser permissions, then retry.'
-        : 'Xultron could not activate the microphone.')
+      setError(microphoneError(caught))
       cancelCapture(false)
       dispatchCore({ type: 'FAIL' })
       return false

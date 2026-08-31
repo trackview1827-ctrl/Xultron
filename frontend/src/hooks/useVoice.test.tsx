@@ -93,6 +93,31 @@ describe('useVoice media lifecycle', () => {
     expect(app.dispatchCore).toHaveBeenLastCalledWith({ type: 'FAIL' })
   })
 
+  it('falls back to a simple audio constraint for Android WebView', async () => {
+    const stream = new FakeStream()
+    const getUserMedia = vi.fn()
+      .mockRejectedValueOnce(new DOMException('Constraint rejected', 'OverconstrainedError'))
+      .mockResolvedValueOnce(stream)
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } })
+    const { result } = renderHook(() => useVoice(vi.fn()))
+
+    await act(async () => result.current.start())
+
+    expect(getUserMedia).toHaveBeenNthCalledWith(1, { audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } })
+    expect(getUserMedia).toHaveBeenNthCalledWith(2, { audio: true })
+    expect(result.current.recording).toBe(true)
+  })
+
+  it('explains when Android cannot open a busy microphone', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockRejectedValue(new DOMException('Busy', 'NotReadableError')) } })
+    const { result } = renderHook(() => useVoice(vi.fn()))
+
+    await act(async () => result.current.start())
+
+    expect(result.current.error).toMatch(/busy or unavailable/i)
+    expect(app.dispatchCore).toHaveBeenLastCalledWith({ type: 'FAIL' })
+  })
+
   it('handles MediaRecorder errors and closes visualizer resources on unmount', async () => {
     const stream = new FakeStream(); Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue(stream) } }); setApp('ONLINE', { ...DEFAULT_SETTINGS, reducedMotion: false, lowDataMode: false })
     const { result, unmount } = renderHook(() => useVoice(vi.fn()))

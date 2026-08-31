@@ -42,6 +42,11 @@ internal fun locationPermissionGranted(result: Map<String, Boolean>): Boolean =
     result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
         result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
 
+private data class PendingWebPermission(
+    val request: PermissionRequest,
+    val resources: Array<String>,
+)
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun WebFrontendScreen(
@@ -53,13 +58,13 @@ fun WebFrontendScreen(
         if (backendUrl == BackendEndpoint.LOCAL) null else WebFrontendUrl.rootForBackend(backendUrl)
     }
     var loadError by remember(rootUrl) { mutableStateOf<String?>(null) }
-    var pendingWebPermission by remember { mutableStateOf<PermissionRequest?>(null) }
+    var pendingWebPermission by remember { mutableStateOf<PendingWebPermission?>(null) }
     var pendingGeoPermission by remember { mutableStateOf<Pair<String, GeolocationPermissions.Callback>?>(null) }
     val webPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        val request = pendingWebPermission
+        val pending = pendingWebPermission
         pendingWebPermission = null
-        if (request != null) {
-            if (result.values.all { it }) request.grant(request.resources) else request.deny()
+        if (pending != null) {
+            if (result.values.all { it }) pending.request.grant(pending.resources) else pending.request.deny()
         }
     }
     val geoPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -143,8 +148,8 @@ fun WebFrontendScreen(
                         }
                         if (required.isEmpty()) request.grant(grantableResources.toTypedArray())
                         else {
-                            pendingWebPermission?.deny()
-                            pendingWebPermission = request
+                            pendingWebPermission?.request?.deny()
+                            pendingWebPermission = PendingWebPermission(request, grantableResources.toTypedArray())
                             webPermissionLauncher.launch(required.toTypedArray())
                         }
                     }
