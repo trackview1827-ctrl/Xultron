@@ -29,7 +29,7 @@ import ai.xultron.app.feature.settings.SettingsScreen
 import ai.xultron.app.feature.settings.SettingsViewModel
 
 private enum class Destination(val label: String) {
-    Chat("Chat"), Conversations("Konuşmalar"), Memory("Memory"), Providers("Provider"), Settings("Ayarlar")
+    Web("Web UI"), Chat("Chat"), Conversations("Konuşmalar"), Memory("Memory"), Providers("Provider"), Settings("Ayarlar")
 }
 
 @Composable
@@ -71,6 +71,7 @@ fun AuthenticatedShell(
     ) { padding ->
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().then(Modifier.padding(padding))) {
             when (destination) {
+                Destination.Web -> WebFrontendScreen(backendUrl)
                 Destination.Chat -> ChatScreen(chatViewModel)
                 Destination.Conversations -> ConversationsScreen(
                     viewModel = viewModel<ConversationsViewModel>(key = "conversations-$backendUrl", factory = factory),

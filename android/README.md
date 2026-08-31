@@ -19,6 +19,12 @@ wake-word, foreground service, bildirim, overlay, MediaProjection, kamera, sens�
 konum, SAF ve uygulama yaşam döngüsü gibi uygulamaya özel yetenekler native Android
 katmanında kalır. Token/Keystore sırları WebView JavaScript'ine aktarılmaz.
 
+Phase 0-3 Android uygulamasında girişten sonra `Web UI` sekmesi mevcut backend'in
+web frontend'ini güvenli container içinde açar. Termux kullanırken önce backend
+çalışmalı ve Backend URL alanında `http://127.0.0.1:5000` kayıtlı olmalıdır. Native
+Compose ekranları geçiş dönemi ve privileged özellikler için korunur; Web UI'ya
+native bearer token aktarılmaz.
+
 Terminal, wake-word, sürekli foreground service, overlay navbar, MediaProjection,
 kamera ve sensör işlevlerinin kendisi Phase 4-7 kapsamındadır. Phase 3 yalnız izin
 durumunu ve capability politikasını hazırlar; bu sonraki özellikleri çalıştırmaz.

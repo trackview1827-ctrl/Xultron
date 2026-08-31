@@ -6,6 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import ai.xultron.app.ui.WebFrontendUrl
 
 class BackendEndpointTest {
     @Test
@@ -40,6 +41,14 @@ class BackendEndpointTest {
         assertNull(BackendEndpoint.normalize("https://user:pass@example.com"))
         assertNull(BackendEndpoint.normalize("https://example.com?token=secret"))
         assertNull(BackendEndpoint.normalize("https://example.com/#fragment"))
+    }
+
+    @Test
+    fun `web frontend root follows the backend path`() {
+        val root = WebFrontendUrl.rootForBackend("https://example.com/x/api/v1/")
+        assertEquals("https://example.com/x/", root.toString())
+        assertTrue(WebFrontendUrl.isAllowedNavigation("https://example.com/x/settings".toHttpUrl(), root))
+        assertFalse(WebFrontendUrl.isAllowedNavigation("https://evil.example/x/settings".toHttpUrl(), root))
     }
 
     @Test
