@@ -9,25 +9,30 @@ import ai.xultron.app.core.network.HealthDto
 import ai.xultron.app.core.network.MemoryDto
 import ai.xultron.app.core.network.MessageDto
 import ai.xultron.app.core.network.ProviderDto
+import ai.xultron.app.core.network.BackendEndpoint
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.UUID
 
-class XultronRepository(private val apiFactory: ApiFactory, private val authRepository: AuthRepository) {
-    suspend fun health(backendUrl: String): HealthDto = apiFactory.create(backendUrl).health()
-    suspend fun conversations(backendUrl: String): List<ConversationDto> = authenticated(backendUrl) { conversations().conversations }
+class XultronRepository(
+    private val apiFactory: ApiFactory,
+    private val authRepository: AuthRepository,
+    private val localBackend: LocalBackend? = null,
+) {
+    suspend fun health(backendUrl: String): HealthDto = if (isLocal(backendUrl)) localBackend!!.health() else apiFactory.create(backendUrl).health()
+    suspend fun conversations(backendUrl: String): List<ConversationDto> = if (isLocal(backendUrl)) localBackend!!.conversations(localUserId()) else authenticated(backendUrl) { conversations().conversations }
     suspend fun messages(backendUrl: String, conversationId: String): List<MessageDto> =
-        authenticated(backendUrl) { messages(conversationId).messages }
+        if (isLocal(backendUrl)) localBackend!!.messages(localUserId(), conversationId) else authenticated(backendUrl) { messages(conversationId).messages }
     suspend fun sendMessage(backendUrl: String, message: String, conversationId: String?): ChatResponse =
-        authenticated(backendUrl) { sendMessage(
+        if (isLocal(backendUrl)) localBackend!!.sendMessage(localUserId(), message, conversationId) else authenticated(backendUrl) { sendMessage(
             ChatRequest(message.trim(), "android_${UUID.randomUUID()}", conversationId),
         ) }
-    suspend fun memories(backendUrl: String): List<MemoryDto> = authenticated(backendUrl) { memories().memories }
-    suspend fun providers(backendUrl: String): List<ProviderDto> = authenticated(backendUrl) { providers().providers }
+    suspend fun memories(backendUrl: String): List<MemoryDto> = if (isLocal(backendUrl)) localBackend!!.memories(localUserId()) else authenticated(backendUrl) { memories().memories }
+    suspend fun providers(backendUrl: String): List<ProviderDto> = if (isLocal(backendUrl)) localBackend!!.providers(localUserId()) else authenticated(backendUrl) { providers().providers }
     suspend fun testProvider(backendUrl: String, providerId: String): JsonObject =
-        authenticated(backendUrl) { testProvider(providerId) }
+        if (isLocal(backendUrl)) localBackend!!.testProvider(localUserId(), providerId) else authenticated(backendUrl) { testProvider(providerId) }
     suspend fun createProvider(
         backendUrl: String,
         name: String,
@@ -36,7 +41,7 @@ class XultronRepository(private val apiFactory: ApiFactory, private val authRepo
         baseUrl: String?,
         model: String?,
         apiKey: String?,
-    ): ProviderDto = authenticated(backendUrl) {
+    ): ProviderDto = if (isLocal(backendUrl)) localBackend!!.createProvider(localUserId(), name, kind, adapter, baseUrl, model) else authenticated(backendUrl) {
         createProvider(providerPayload(name, kind, adapter, baseUrl, model, apiKey)).provider
     }
     suspend fun updateProvider(
@@ -48,19 +53,22 @@ class XultronRepository(private val apiFactory: ApiFactory, private val authRepo
         baseUrl: String?,
         model: String?,
         apiKey: String?,
-    ): ProviderDto = authenticated(backendUrl) {
+    ): ProviderDto = if (isLocal(backendUrl)) localBackend!!.updateProvider(localUserId(), providerId, name, kind, adapter, baseUrl, model) else authenticated(backendUrl) {
         patchProvider(providerId, providerPayload(name, kind, adapter, baseUrl, model, apiKey)).provider
     }
-    suspend fun deleteProvider(backendUrl: String, providerId: String) =
+    suspend fun deleteProvider(backendUrl: String, providerId: String) = if (isLocal(backendUrl)) localBackend!!.deleteProvider(localUserId(), providerId) else
         authenticated(backendUrl) { deleteProvider(providerId) }
     suspend fun providerModels(backendUrl: String, providerId: String): List<String> =
-        authenticated(backendUrl) { providerModels(providerId).models }
-    suspend fun settings(backendUrl: String): JsonObject = authenticated(backendUrl) { settings().settings }
+        if (isLocal(backendUrl)) localBackend!!.providerModels(localUserId(), providerId) else authenticated(backendUrl) { providerModels(providerId).models }
+    suspend fun settings(backendUrl: String): JsonObject = if (isLocal(backendUrl)) localBackend!!.settings(localUserId()) else authenticated(backendUrl) { settings().settings }
     suspend fun patchBooleanSetting(backendUrl: String, key: String, value: Boolean): JsonObject =
-        authenticated(backendUrl) { patchSettings(buildJsonObject { put(key, JsonPrimitive(value)) }).settings }
+        if (isLocal(backendUrl)) localBackend!!.patchBooleanSetting(localUserId(), key, value) else authenticated(backendUrl) { patchSettings(buildJsonObject { put(key, JsonPrimitive(value)) }).settings }
 
     private suspend fun <T> authenticated(backendUrl: String, call: suspend ai.xultron.app.core.network.XultronApi.() -> T): T =
         authRepository.withRefresh(backendUrl) { apiFactory.create(backendUrl).call() }
+
+    private fun isLocal(backendUrl: String) = backendUrl == BackendEndpoint.LOCAL
+    private fun localUserId() = authRepository.localUserId() ?: error("Önce yerel oturum açılmalıdır.")
 
     private fun providerPayload(
         name: String,

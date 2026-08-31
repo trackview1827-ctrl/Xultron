@@ -21,8 +21,11 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 object BackendEndpoint {
+    const val LOCAL = "local://xultron"
+
     fun normalize(raw: String): String? {
         val candidate = raw.trim().trimEnd('/')
+        if (candidate == LOCAL) return LOCAL
         val url = candidate.toHttpUrlOrNull() ?: return null
         if (url.scheme != "https" || url.username.isNotEmpty() || url.password.isNotEmpty()) return null
         if (url.query != null || url.fragment != null) return null

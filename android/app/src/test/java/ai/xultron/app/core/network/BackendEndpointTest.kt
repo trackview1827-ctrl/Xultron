@@ -16,6 +16,11 @@ class BackendEndpointTest {
     }
 
     @Test
+    fun `recognizes the app-private local backend`() {
+        assertEquals(BackendEndpoint.LOCAL, BackendEndpoint.normalize(" local://xultron/ "))
+    }
+
+    @Test
     fun `rejects cleartext credentials query and fragments`() {
         assertNull(BackendEndpoint.normalize("http://example.com"))
         assertNull(BackendEndpoint.normalize("https://user:pass@example.com"))

@@ -6,6 +6,8 @@
 - Native mobil login, kayıt, misafir oturumu, rotating refresh ve revoke
 - Keystore anahtarıyla AES-GCM şifreli yerel session
 - Chat, konuşmalar, memory, provider ve ayarlar Compose ekranları
+- App-private SQLite tabanlı yerel backend modu; ağ olmadan temel hesap, chat,
+  konuşma, provider ve ayar verilerini cihazda tutar
 - Loading, empty, offline, hata ve bağlantı durumları
 - Gerçek Android permission state, Settings yönlendirmeleri ve fail-closed
   Capability Engine
@@ -50,6 +52,18 @@ artifact üretir; GitHub Release yayımlamaz.
 
 İlk başarılı Codespace buildinin ortam, boyut, SHA-256 ve kapsam sınırları
 [`BUILD_EVIDENCE.md`](BUILD_EVIDENCE.md) içinde kayıtlıdır.
+
+## Backend modları
+
+Uygulama ilk açılışta yerel backend ile gelir. Bu mod `local://xultron` adresiyle
+Android uygulamasının içinde çalışır, ağ portu açmaz ve verileri uygulamanın özel
+SQLite veritabanında tutar. Yerel moddaki chat yanıtı basit yerel yanıttır; gerçek
+AI sağlayıcı çağrıları için ayarlardan HTTPS uzak backend seçilmelidir.
+
+Uzak backend kullanılırken Backend alanına yalnızca HTTPS kök adresi yazılır,
+uygulama `/api/v1` yolunu kendisi ekler. `http://IP:5000` adresleri güvenlik
+nedeniyle reddedilir. Yerel SQLite verisi uygulama kaldırılınca silinir ve backup
+kurallarıyla dışa aktarılmaz.
 
 ## Ağ ve sertifika yaklaşımı
 

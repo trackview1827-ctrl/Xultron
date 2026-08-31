@@ -14,7 +14,7 @@ private val Context.xultronDataStore by preferencesDataStore(name = "xultron_set
 
 class SettingsStore(private val context: Context) {
     val backendUrl: Flow<String> = context.xultronDataStore.data.map { preferences ->
-        preferences[BACKEND_URL].orEmpty()
+        preferences[BACKEND_URL] ?: BackendEndpoint.LOCAL
     }
 
     val lowDataMode: Flow<Boolean> = booleanFlow(LOW_DATA_MODE, false)

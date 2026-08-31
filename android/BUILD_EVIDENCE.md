@@ -43,6 +43,8 @@ The checksum describes the ephemeral Codespace debug artifact signed with that e
 - Keystore-backed encrypted local session storage and HTTPS-only Retrofit client
 - Compose shell for chat, conversations, memory, providers and settings
 - Offline, loading, empty and error UI states
+- App-private SQLite local backend mode for basic local auth, chat, conversations,
+  providers and settings; it opens no network listener
 - Android permission state model for microphone, camera, foreground/background location, sensors, notifications and overlay special access
 - Fail-closed local capability engine and Android Settings redirects
 - Android 10 minimum, API 35 target and 64-bit `arm64-v8a` plus `x86_64` packaging
@@ -53,3 +55,6 @@ The checksum describes the ephemeral Codespace debug artifact signed with that e
 Wake-word listening, foreground services, overlay navbar, MediaProjection screen sharing, screenshot upload, terminal execution, camera capture, continuous location/sensor collection and the remaining Phase 4-7 features in `docs/ANDROID_APP_PLAN.md` are not implemented.
 
 Physical-device installation and live end-to-end operation against a deployed backend have not yet been validated. The Android public build path and backend API paths were validated independently in Codespace and backend tests.
+
+The local backend mode is implemented in Android, but its physical-device UX and
+data migration behavior still require device acceptance testing.

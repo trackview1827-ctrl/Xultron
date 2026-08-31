@@ -11,6 +11,7 @@ import ai.xultron.app.core.permissions.AndroidPermissionManager
 import ai.xultron.app.core.security.AndroidKeystoreSecretStorage
 import ai.xultron.app.core.settings.SettingsStore
 import ai.xultron.app.data.XultronRepository
+import ai.xultron.app.data.LocalBackend
 
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext
@@ -23,7 +24,8 @@ class AppContainer(context: Context) {
         storage = AndroidKeystoreSecretStorage(appContext),
     )
     val deviceIdentity = DeviceIdentity(appContext)
+    val localBackend = LocalBackend(appContext)
     val apiFactory = ApiFactory(sessionStore)
-    val authRepository = AuthRepository(apiFactory, sessionStore, deviceIdentity)
-    val repository = XultronRepository(apiFactory, authRepository)
+    val authRepository = AuthRepository(apiFactory, sessionStore, deviceIdentity, localBackend)
+    val repository = XultronRepository(apiFactory, authRepository, localBackend)
 }

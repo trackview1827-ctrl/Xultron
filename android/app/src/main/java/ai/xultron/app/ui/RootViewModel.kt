@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import ai.xultron.app.AppContainer
 import ai.xultron.app.core.network.UserDto
+import ai.xultron.app.core.network.BackendEndpoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,6 +43,7 @@ class RootViewModel(private val container: AppContainer) : ViewModel() {
                     mutableState.value = mutableState.value.copy(backendUrl = url, error = null)
                     when {
                         url.isBlank() -> mutableState.value = mutableState.value.copy(connection = ConnectionState.NotConfigured, user = null)
+                        url == BackendEndpoint.LOCAL -> validateConnectionAndSession(url)
                         !online -> mutableState.value = mutableState.value.copy(
                             connection = ConnectionState.Offline,
                             user = container.sessionStore.current()?.user,
