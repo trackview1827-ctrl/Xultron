@@ -99,15 +99,34 @@ object VoiceSampleQuality {
         if (samples.isEmpty()) return VoiceSampleMetrics(0, 0.0, Double.NEGATIVE_INFINITY, 0.0)
         val durationMs = samples.size * 1_000L / sampleRateHz
         val peakThreshold = Short.MAX_VALUE * 0.98
-        val clippingRatio = samples.count { kotlin.math.abs(it.toInt()) >= peakThreshold }.toDouble() / samples.size
-        val rms = sqrt(samples.fold(0.0) { total, sample -> total + sample.toDouble().pow(2.0) } / samples.size)
-        val rmsDbfs = if (rms == 0.0) Double.NEGATIVE_INFINITY else 20.0 * kotlin.math.log10(rms / Short.MAX_VALUE)
+        // Iterate the caller-owned array directly. Do not create boxed/chunked waveform copies,
+        // so the caller's final samples.fill(0) clears the only retained PCM buffer.
         val frameSize = (sampleRateHz / 50).coerceAtLeast(1) // 20 ms
-        val speechFrames = samples.asList().chunked(frameSize).count { frame ->
-            val frameRms = sqrt(frame.fold(0.0) { total, sample -> total + sample.toDouble().pow(2.0) } / frame.size)
-            frameRms / Short.MAX_VALUE >= 0.01
+        var totalSquares = 0.0
+        var clipped = 0
+        var speechFrames = 0
+        var frameCount = 0
+        var frameStart = 0
+        while (frameStart < samples.size) {
+            val frameEnd = minOf(frameStart + frameSize, samples.size)
+            var frameSquares = 0.0
+            var index = frameStart
+            while (index < frameEnd) {
+                val sample = samples[index].toDouble()
+                val square = sample.pow(2.0)
+                totalSquares += square
+                frameSquares += square
+                if (kotlin.math.abs(samples[index].toInt()) >= peakThreshold) clipped += 1
+                index += 1
+            }
+            val frameRms = sqrt(frameSquares / (frameEnd - frameStart))
+            if (frameRms / Short.MAX_VALUE >= 0.01) speechFrames += 1
+            frameCount += 1
+            frameStart = frameEnd
         }
-        val frameCount = (samples.size + frameSize - 1) / frameSize
+        val rms = sqrt(totalSquares / samples.size)
+        val rmsDbfs = if (rms == 0.0) Double.NEGATIVE_INFINITY else 20.0 * kotlin.math.log10(rms / Short.MAX_VALUE)
+        val clippingRatio = clipped.toDouble() / samples.size
         return VoiceSampleMetrics(durationMs, speechFrames.toDouble() / frameCount, rmsDbfs, clippingRatio)
     }
 }
