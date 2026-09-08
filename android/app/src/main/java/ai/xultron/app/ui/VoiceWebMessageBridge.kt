@@ -7,7 +7,8 @@ import ai.xultron.app.service.VoiceServiceController
 import ai.xultron.app.service.VoiceServiceStatus
 import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.WebMessageCompat
-import androidx.webkit.WebMessageListener
+import androidx.webkit.WebViewCompat
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -56,7 +57,7 @@ internal data class PendingVoiceStart(
 internal class VoiceWebMessageBridge(
     private val controller: VoiceServiceController,
     private val onStartConfirmationRequired: (PendingVoiceStart) -> Unit,
-) : WebMessageListener {
+) : WebViewCompat.WebMessageListener {
     override fun onPostMessage(
         view: WebView,
         message: WebMessageCompat,
@@ -64,7 +65,7 @@ internal class VoiceWebMessageBridge(
         isMainFrame: Boolean,
         replyProxy: JavaScriptReplyProxy,
     ) {
-        val reply = VoiceWebReply { payload -> replyProxy.postMessage(WebMessageCompat(payload)) }
+        val reply = VoiceWebReply { payload -> replyProxy.postMessage(payload) }
         if (!isMainFrame) {
             reply.error("invalid_frame")
             return
