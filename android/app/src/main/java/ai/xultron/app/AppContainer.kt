@@ -12,6 +12,7 @@ import ai.xultron.app.core.security.AndroidKeystoreSecretStorage
 import ai.xultron.app.core.settings.SettingsStore
 import ai.xultron.app.data.XultronRepository
 import ai.xultron.app.data.LocalBackend
+import ai.xultron.app.service.VoiceServiceController
 
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext
@@ -28,4 +29,6 @@ class AppContainer(context: Context) {
     val apiFactory = ApiFactory(sessionStore)
     val authRepository = AuthRepository(apiFactory, sessionStore, deviceIdentity, localBackend)
     val repository = XultronRepository(apiFactory, authRepository, localBackend)
+    /** Safe bridge boundary for the WebView. Call start only from an explicit foreground UI action. */
+    val voiceServiceController = VoiceServiceController(appContext)
 }

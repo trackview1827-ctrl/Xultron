@@ -33,6 +33,7 @@ fun XultronApp(container: AppContainer) {
             // The web app owns login, navigation, chat, memory, providers and settings.
             WebFrontendScreen(
                 backendUrl = state.backendUrl,
+                voiceServiceController = container.voiceServiceController,
                 onChangeBackend = { rootViewModel.saveBackendUrl(BackendEndpoint.LOCAL) },
             )
         }

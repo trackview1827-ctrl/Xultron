@@ -54,5 +54,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Started only by an explicit in-app user action. No boot receiver is registered. -->
+        <service
+            android:name=".service.VoiceMonitoringForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"
+            android:stopWithTask="false" />
     </application>
 </manifest>

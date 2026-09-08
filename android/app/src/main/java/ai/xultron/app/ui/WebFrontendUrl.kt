@@ -5,6 +5,14 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Pure URL policy shared by the WebView container and its unit tests. */
 object WebFrontendUrl {
+    fun originRule(url: HttpUrl): String {
+        val defaultPort = (url.scheme == "https" && url.port == 443) || (url.scheme == "http" && url.port == 80)
+        return buildString {
+            append(url.scheme).append("://").append(url.host)
+            if (!defaultPort) append(':').append(url.port)
+        }
+    }
+
     fun rootForBackend(backendUrl: String): HttpUrl? {
         val parsed = backendUrl.toHttpUrlOrNull() ?: return null
         val apiPath = parsed.encodedPath.trimEnd('/')
