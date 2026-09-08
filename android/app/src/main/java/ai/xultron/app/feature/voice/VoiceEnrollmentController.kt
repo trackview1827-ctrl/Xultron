@@ -105,6 +105,9 @@ class VoiceEnrollmentController(context: Context) {
     }
 
     private fun captureOnce() {
+        check(ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            "Microphone permission was revoked before local enrollment could start"
+        }
         val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE_HZ, CHANNEL_CONFIG, ENCODING)
         check(bufferSize > 0) { "AudioRecord is unavailable" }
         val recorder = AudioRecord(
