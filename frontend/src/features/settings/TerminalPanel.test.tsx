@@ -17,7 +17,7 @@ describe('TerminalPanel', () => {
 
   it('explains sandbox limits and confirmation when ready', () => {
     render(<TerminalPanel />)
-    expect(screen.getByRole('status')).toHaveTextContent('UYGULAMA SANDBOX HAZIR')
+    expect(screen.getByRole('status')).toHaveTextContent('UYGULAMA SANDBOX POLİTİKASI ETKİN')
     expect(screen.getByText(/açık Android onayı ister/i)).toBeInTheDocument()
     expect(screen.getByText(/SAF belge konumları komut yolu değildir/i)).toBeInTheDocument()
   })
