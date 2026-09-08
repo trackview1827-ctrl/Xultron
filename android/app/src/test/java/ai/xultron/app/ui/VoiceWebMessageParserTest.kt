@@ -24,4 +24,12 @@ class VoiceWebMessageParserTest {
         assertNull(VoiceWebMessageParser.parse("""{"v":1,"id":"voice-12345678","action":"voice.start","input":"ignored"}"""))
         assertNull(VoiceWebMessageParser.parse("not-json"))
     }
+
+    @Test
+    fun `source must exactly match the configured trusted origin`() {
+        assertTrue(isTrustedVoiceSource("https://xultron.example", "https://xultron.example"))
+        assertTrue(isTrustedVoiceSource("https://xultron.example/", "https://xultron.example"))
+        assertTrue(!isTrustedVoiceSource("https://evil.example", "https://xultron.example"))
+        assertTrue(!isTrustedVoiceSource("https://xultron.example:444", "https://xultron.example"))
+    }
 }

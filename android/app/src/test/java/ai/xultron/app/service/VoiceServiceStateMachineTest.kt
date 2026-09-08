@@ -52,4 +52,11 @@ class VoiceServiceStateMachineTest {
         assertEquals("AudioRecord unavailable", failed.diagnostic.lastError)
         assertTrue(failed.detail.contains("AudioRecord"))
     }
+
+    @Test
+    fun `an in-flight or active session cannot be started a second time`() {
+        assertTrue(isVoiceServiceStartInFlight(VoiceServiceStatus(state = VoiceServiceState.STARTING)))
+        assertTrue(isVoiceServiceStartInFlight(VoiceServiceStatus(state = VoiceServiceState.MONITORING_EXPERIMENTAL)))
+        assertFalse(isVoiceServiceStartInFlight(VoiceServiceStatus(state = VoiceServiceState.STOPPED)))
+    }
 }

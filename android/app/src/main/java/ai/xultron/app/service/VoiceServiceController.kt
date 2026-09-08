@@ -25,6 +25,9 @@ class VoiceServiceController(
     fun status(): VoiceServiceStatus = mutableStatus.value
 
     fun start(): VoiceServiceCommandResult {
+        if (isVoiceServiceStartInFlight(VoiceServiceRuntime.status.value)) {
+            return VoiceServiceCommandResult.Accepted(VoiceServiceRuntime.status.value)
+        }
         val event = VoiceServiceEvent.StartRequested(preflightBlockReason())
         mutableStatus.value = VoiceServiceStateMachine.reduce(mutableStatus.value, event)
         if (mutableStatus.value.state == VoiceServiceState.BLOCKED) return VoiceServiceCommandResult.Blocked(mutableStatus.value)
@@ -51,6 +54,9 @@ class VoiceServiceController(
         else -> null
     }
 }
+
+internal fun isVoiceServiceStartInFlight(status: VoiceServiceStatus): Boolean =
+    status.state in setOf(VoiceServiceState.STARTING, VoiceServiceState.MONITORING_EXPERIMENTAL)
 
 sealed interface VoiceServiceCommandResult {
     data class Accepted(val status: VoiceServiceStatus) : VoiceServiceCommandResult

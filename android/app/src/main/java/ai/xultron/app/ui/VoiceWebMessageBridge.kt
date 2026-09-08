@@ -56,6 +56,7 @@ internal data class PendingVoiceStart(
 
 internal class VoiceWebMessageBridge(
     private val controller: VoiceServiceController,
+    private val trustedOrigin: String,
     private val onStartConfirmationRequired: (PendingVoiceStart) -> Unit,
 ) : WebViewCompat.WebMessageListener {
     override fun onPostMessage(
@@ -66,7 +67,7 @@ internal class VoiceWebMessageBridge(
         replyProxy: JavaScriptReplyProxy,
     ) {
         val reply = VoiceWebReply { payload -> replyProxy.postMessage(payload) }
-        if (!isMainFrame) {
+        if (!isMainFrame || !isTrustedVoiceSource(sourceOrigin.toString(), trustedOrigin)) {
             reply.error("invalid_frame")
             return
         }
@@ -78,6 +79,9 @@ internal class VoiceWebMessageBridge(
         }
     }
 }
+
+internal fun isTrustedVoiceSource(sourceOrigin: String, trustedOrigin: String): Boolean =
+    sourceOrigin.trimEnd('/') == trustedOrigin.trimEnd('/')
 
 internal fun VoiceServiceCommandResult.status(): VoiceServiceStatus = when (this) {
     is VoiceServiceCommandResult.Accepted -> status

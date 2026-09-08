@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** A transparent, local-only experimental monitor. It deliberately does not run speech-to-text. */
 class VoiceMonitoringForegroundService : Service() {
     private val active = AtomicBoolean(false)
+    private val startingOrActive = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor()
     private var recorder: AudioRecord? = null
 
@@ -34,13 +35,18 @@ class VoiceMonitoringForegroundService : Service() {
     }
 
     private fun startMonitoring() {
+        // Android can deliver multiple START intents before AudioRecord initialization completes.
+        // Keep exactly one recorder lifetime so a second command cannot orphan microphone capture.
+        if (!startingOrActive.compareAndSet(false, true)) return
         if (!VoiceWakeDetectorRegistry.detector.isModelAvailable()) {
             VoiceServiceRuntime.transition(VoiceServiceEvent.StartRequested(VoiceBlockReason.MODEL_UNAVAILABLE))
+            startingOrActive.set(false)
             stopSelf()
             return
         }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             VoiceServiceRuntime.transition(VoiceServiceEvent.StartRequested(VoiceBlockReason.MICROPHONE_PERMISSION_MISSING))
+            startingOrActive.set(false)
             stopSelf()
             return
         }
@@ -73,6 +79,7 @@ class VoiceMonitoringForegroundService : Service() {
     }
 
     private fun stopMonitoring() {
+        startingOrActive.set(false)
         val wasActive = active.getAndSet(false)
         runCatching { recorder?.stop() }
         recorder?.release()

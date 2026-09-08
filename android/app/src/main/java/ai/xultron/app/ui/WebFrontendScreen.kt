@@ -192,7 +192,7 @@ fun WebFrontendScreen(
                         this,
                         "XultronVoicePort",
                         setOf(WebFrontendUrl.originRule(rootUrl)),
-                        VoiceWebMessageBridge(voiceServiceController) { pending ->
+                        VoiceWebMessageBridge(voiceServiceController, WebFrontendUrl.originRule(rootUrl)) { pending ->
                             post {
                                 if (pendingVoiceStart == null && pendingVoicePermissionStart == null) pendingVoiceStart = pending
                                 else pending.reply.error("voice_request_in_progress")
