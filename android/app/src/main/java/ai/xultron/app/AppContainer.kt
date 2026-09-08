@@ -12,6 +12,7 @@ import ai.xultron.app.core.security.AndroidKeystoreSecretStorage
 import ai.xultron.app.core.settings.SettingsStore
 import ai.xultron.app.data.XultronRepository
 import ai.xultron.app.data.LocalBackend
+import ai.xultron.app.feature.voice.VoiceEnrollmentController
 import ai.xultron.app.service.VoiceServiceController
 
 class AppContainer(context: Context) {
@@ -31,4 +32,6 @@ class AppContainer(context: Context) {
     val repository = XultronRepository(apiFactory, authRepository, localBackend)
     /** Safe bridge boundary for the WebView. Call start only from an explicit foreground UI action. */
     val voiceServiceController = VoiceServiceController(appContext)
+    /** Stores derived enrollment metrics encrypted in app-private storage. It never stores raw audio. */
+    val voiceEnrollmentController = VoiceEnrollmentController(appContext)
 }

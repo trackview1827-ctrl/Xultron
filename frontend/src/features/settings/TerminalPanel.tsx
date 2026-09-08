@@ -7,7 +7,7 @@ export function TerminalPanel({ availability = 'sandbox-ready' }: { availability
   const { t } = useLocale()
   const enabled = availability === 'sandbox-ready'
   const status = enabled
-    ? t('APP SANDBOX READY', 'UYGULAMA SANDBOX HAZIR')
+    ? t('APP SANDBOX POLICY ACTIVE', 'UYGULAMA SANDBOX POLİTİKASI ETKİN')
     : availability === 'disabled'
       ? t('TERMINAL DISABLED', 'TERMİNAL DEVRE DIŞI')
       : t('ADVANCED ADAPTER UNAVAILABLE', 'GELİŞMİŞ BAĞDAŞTIRICI KULLANILAMIYOR')

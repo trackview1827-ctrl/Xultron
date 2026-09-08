@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nativeVoiceServiceBridge } from './nativeVoiceBridge'
+import { nativeVoiceEnrollmentBridge, nativeVoiceServiceBridge } from './nativeVoiceBridge'
 
 class FakePort extends EventTarget {
   posted: string[] = []
@@ -39,5 +39,20 @@ describe('nativeVoiceServiceBridge', () => {
     expect(settle).not.toHaveBeenCalled()
     port.reply({ id: request.id, error: 'blocked' })
     await expect(pending).rejects.toThrow('blocked')
+  })
+})
+
+describe('nativeVoiceEnrollmentBridge', () => {
+  it('sends only a fixed enrollment action and never includes phrase or audio fields', async () => {
+    const port = new FakePort()
+    window.XultronVoicePort = port
+    const bridge = nativeVoiceEnrollmentBridge()!
+    const pending = bridge.captureEnrollmentSample()
+    const request = JSON.parse(port.posted[0]!) as { v: number; id: string; action: string; phrase?: string; audio?: string }
+    expect(request).toMatchObject({ v: 1, action: 'voice.enrollment.capture' })
+    expect(request.phrase).toBeUndefined()
+    expect(request.audio).toBeUndefined()
+    port.reply({ id: request.id, enrollment: { state: 'COLLECTING', attempts: 1, acceptedAttempts: 1, requiredAttempts: 5, detail: 'Local only.' } })
+    await expect(pending).resolves.toMatchObject({ attempts: 1, acceptedAttempts: 1 })
   })
 })

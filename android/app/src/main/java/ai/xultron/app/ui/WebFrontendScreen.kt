@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import ai.xultron.app.BuildConfig
+import ai.xultron.app.feature.voice.VoiceEnrollmentController
+import ai.xultron.app.feature.voice.VoiceEnrollmentSnapshot
 import ai.xultron.app.core.network.BackendEndpoint
 import ai.xultron.app.service.VoiceServiceController
 import ai.xultron.app.service.VoiceServiceState
@@ -65,14 +67,20 @@ private data class PendingVoicePermissionStart(
     val permissions: Set<String>,
 )
 
+private data class PendingVoiceEnrollmentPermission(
+    val enrollment: PendingVoiceEnrollment,
+)
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun WebFrontendScreen(
     backendUrl: String,
     voiceServiceController: VoiceServiceController,
+    voiceEnrollmentController: VoiceEnrollmentController,
     modifier: Modifier = Modifier,
     onChangeBackend: () -> Unit = {},
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val rootUrl = remember(backendUrl) {
         if (backendUrl == BackendEndpoint.LOCAL) null else WebFrontendUrl.rootForBackend(backendUrl)
     }
@@ -81,6 +89,8 @@ fun WebFrontendScreen(
     var pendingGeoPermission by remember { mutableStateOf<Pair<String, GeolocationPermissions.Callback>?>(null) }
     var pendingVoiceStart by remember { mutableStateOf<PendingVoiceStart?>(null) }
     var pendingVoicePermissionStart by remember { mutableStateOf<PendingVoicePermissionStart?>(null) }
+    var pendingVoiceEnrollment by remember { mutableStateOf<PendingVoiceEnrollment?>(null) }
+    var pendingVoiceEnrollmentPermission by remember { mutableStateOf<PendingVoiceEnrollmentPermission?>(null) }
     val webPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         val pending = pendingWebPermission
         pendingWebPermission = null
@@ -94,10 +104,46 @@ fun WebFrontendScreen(
         pendingGeoPermission = null
         pending?.second?.invoke(pending.first, locationPermissionGranted(result), false)
     }
-    val voicePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+    val voicePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         val pending = pendingVoicePermissionStart
         pendingVoicePermissionStart = null
-        if (pending != null) pending.start.reply.status(pending.start.id, voiceServiceController.start().status())
+        if (pending != null) {
+            if (requestedPermissionsGranted(pending.permissions, result)) pending.start.reply.status(pending.start.id, voiceServiceController.start().status())
+            else pending.start.reply.error("microphone_or_notification_permission_denied")
+        }
+    }
+    val enrollmentPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val pending = pendingVoiceEnrollmentPermission
+        pendingVoiceEnrollmentPermission = null
+        if (pending != null) {
+            if (requestedPermissionsGranted(setOf(Manifest.permission.RECORD_AUDIO), result)) {
+                val started = voiceEnrollmentController.capture { snapshot -> pending.enrollment.reply.enrollment(pending.enrollment.id, snapshot) }
+                if (started.state != VoiceEnrollmentSnapshot.State.CAPTURING) pending.enrollment.reply.enrollment(pending.enrollment.id, started)
+            } else pending.enrollment.reply.error("microphone_permission_denied")
+        }
+    }
+
+    fun beginEnrollmentCapture(pending: PendingVoiceEnrollment) {
+        if (voiceEnrollmentController.snapshot().state == VoiceEnrollmentSnapshot.State.CAPTURING) {
+            pending.reply.error("enrollment_capture_in_progress")
+            return
+        }
+        val started = voiceEnrollmentController.capture { snapshot -> pending.reply.enrollment(pending.id, snapshot) }
+        if (started.state != VoiceEnrollmentSnapshot.State.CAPTURING) pending.reply.enrollment(pending.id, started)
+    }
+
+    fun requestEnrollment(pending: PendingVoiceEnrollment) {
+        when (pending.operation) {
+            PendingVoiceEnrollment.Operation.CLEAR -> pending.reply.enrollment(pending.id, voiceEnrollmentController.clear())
+            PendingVoiceEnrollment.Operation.CAPTURE -> {
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    beginEnrollmentCapture(pending)
+                } else {
+                    pendingVoiceEnrollmentPermission = PendingVoiceEnrollmentPermission(pending)
+                    enrollmentPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                }
+            }
+        }
     }
 
     fun requestVoiceServiceStart(pending: PendingVoiceStart) {
@@ -133,6 +179,22 @@ fun WebFrontendScreen(
                     pending.reply.status(pending.id, voiceServiceController.status())
                 }) { Text("İPTAL") }
             },
+        )
+    }
+
+    pendingVoiceEnrollment?.let { pending ->
+        val capture = pending.operation == PendingVoiceEnrollment.Operation.CAPTURE
+        AlertDialog(
+            onDismissRequest = { pendingVoiceEnrollment = null; pending.reply.error("enrollment_not_confirmed") },
+            title = { Text(if (capture) "Yerel ses profili örneği" else "Yerel ses profilini sil") },
+            text = {
+                Text(
+                    if (capture) "Xultron yaklaşık iki saniyelik tek bir örneği yalnızca kalite analizi için bellekte tutar. Ham ses yüklenmez, kaydedilmez ve iş bittiğinde silinir. Beş kabul edilmiş örnek yalnızca şifreli deneysel profil oluşturur, uyandırma modeli oluşturmaz."
+                    else "Şifreli deneysel ses profili ve kayıt ilerlemesi bu cihazdan silinecek. Ham ses zaten tutulmaz.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { pendingVoiceEnrollment = null; requestEnrollment(pending) }) { Text(if (capture) "KAYDET" else "SİL") } },
+            dismissButton = { TextButton(onClick = { pendingVoiceEnrollment = null; pending.reply.error("enrollment_not_confirmed") }) { Text("İPTAL") } },
         )
     }
 
@@ -192,12 +254,23 @@ fun WebFrontendScreen(
                         this,
                         "XultronVoicePort",
                         setOf(WebFrontendUrl.originRule(rootUrl)),
-                        VoiceWebMessageBridge(voiceServiceController, WebFrontendUrl.originRule(rootUrl)) { pending ->
-                            post {
-                                if (pendingVoiceStart == null && pendingVoicePermissionStart == null) pendingVoiceStart = pending
-                                else pending.reply.error("voice_request_in_progress")
-                            }
-                        },
+                        VoiceWebMessageBridge(
+                            voiceServiceController,
+                            voiceEnrollmentController,
+                            WebFrontendUrl.originRule(rootUrl),
+                            onStartConfirmationRequired = { pending ->
+                                post {
+                                    if (pendingVoiceStart == null && pendingVoicePermissionStart == null) pendingVoiceStart = pending
+                                    else pending.reply.error("voice_request_in_progress")
+                                }
+                            },
+                            onEnrollmentConfirmationRequired = { pending ->
+                                post {
+                                    if (pendingVoiceEnrollment == null && pendingVoiceEnrollmentPermission == null) pendingVoiceEnrollment = pending
+                                    else pending.reply.error("enrollment_request_in_progress")
+                                }
+                            },
+                        ),
                     )
                 }
                 webChromeClient = object : WebChromeClient() {
@@ -294,6 +367,14 @@ fun WebFrontendScreen(
             pendingVoicePermissionStart?.let {
                 it.start.reply.status(it.start.id, voiceServiceController.status())
                 pendingVoicePermissionStart = null
+            }
+            pendingVoiceEnrollment?.let {
+                it.reply.error("webview_released")
+                pendingVoiceEnrollment = null
+            }
+            pendingVoiceEnrollmentPermission?.let {
+                it.enrollment.reply.error("webview_released")
+                pendingVoiceEnrollmentPermission = null
             }
             if (webView === view) webView = null
             view.stopLoading()

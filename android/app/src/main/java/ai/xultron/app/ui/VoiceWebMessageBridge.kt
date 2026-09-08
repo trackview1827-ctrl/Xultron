@@ -2,6 +2,8 @@ package ai.xultron.app.ui
 
 import android.net.Uri
 import android.webkit.WebView
+import ai.xultron.app.feature.voice.VoiceEnrollmentController
+import ai.xultron.app.feature.voice.VoiceEnrollmentSnapshot
 import ai.xultron.app.service.VoiceServiceCommandResult
 import ai.xultron.app.service.VoiceServiceController
 import ai.xultron.app.service.VoiceServiceStatus
@@ -18,14 +20,18 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * A deliberately tiny, origin-bound WebMessage bridge. It accepts no raw audio, shell input,
- * URLs, tokens, or arbitrary method names. A start request is held until native UI confirms it.
+ * A deliberately small, origin-bound WebMessage bridge. It accepts no raw audio, shell input,
+ * URLs, tokens, phrase text, or arbitrary method names. Sensitive microphone operations wait for
+ * native confirmation. Enrollment audio never crosses this bridge.
  */
 internal sealed interface VoiceWebMessage {
     val id: String
     data class Status(override val id: String) : VoiceWebMessage
     data class Start(override val id: String) : VoiceWebMessage
     data class Stop(override val id: String) : VoiceWebMessage
+    data class EnrollmentStatus(override val id: String) : VoiceWebMessage
+    data class EnrollmentCapture(override val id: String) : VoiceWebMessage
+    data class EnrollmentClear(override val id: String) : VoiceWebMessage
 }
 
 internal object VoiceWebMessageParser {
@@ -42,6 +48,9 @@ internal object VoiceWebMessageParser {
             "voice.status" -> VoiceWebMessage.Status(id)
             "voice.start" -> VoiceWebMessage.Start(id)
             "voice.stop" -> VoiceWebMessage.Stop(id)
+            "voice.enrollment.status" -> VoiceWebMessage.EnrollmentStatus(id)
+            "voice.enrollment.capture" -> VoiceWebMessage.EnrollmentCapture(id)
+            "voice.enrollment.clear" -> VoiceWebMessage.EnrollmentClear(id)
             else -> null
         }
     }.getOrNull()
@@ -49,15 +58,21 @@ internal object VoiceWebMessageParser {
 
 internal fun interface VoiceWebReply { fun post(payload: String) }
 
-internal data class PendingVoiceStart(
+internal data class PendingVoiceStart(val id: String, val reply: VoiceWebReply)
+internal data class PendingVoiceEnrollment(
     val id: String,
+    val operation: Operation,
     val reply: VoiceWebReply,
-)
+) {
+    enum class Operation { CAPTURE, CLEAR }
+}
 
 internal class VoiceWebMessageBridge(
     private val controller: VoiceServiceController,
+    private val enrollmentController: VoiceEnrollmentController,
     private val trustedOrigin: String,
     private val onStartConfirmationRequired: (PendingVoiceStart) -> Unit,
+    private val onEnrollmentConfirmationRequired: (PendingVoiceEnrollment) -> Unit,
 ) : WebViewCompat.WebMessageListener {
     override fun onPostMessage(
         view: WebView,
@@ -66,7 +81,7 @@ internal class VoiceWebMessageBridge(
         isMainFrame: Boolean,
         replyProxy: JavaScriptReplyProxy,
     ) {
-        val reply = VoiceWebReply { payload -> replyProxy.postMessage(payload) }
+        val reply = VoiceWebReply { payload -> view.post { replyProxy.postMessage(payload) } }
         if (!isMainFrame || !isTrustedVoiceSource(sourceOrigin.toString(), trustedOrigin)) {
             reply.error("invalid_frame")
             return
@@ -75,6 +90,13 @@ internal class VoiceWebMessageBridge(
             is VoiceWebMessage.Status -> reply.status(request.id, controller.status())
             is VoiceWebMessage.Start -> onStartConfirmationRequired(PendingVoiceStart(request.id, reply))
             is VoiceWebMessage.Stop -> reply.status(request.id, controller.stop().status())
+            is VoiceWebMessage.EnrollmentStatus -> reply.enrollment(request.id, enrollmentController.snapshot())
+            is VoiceWebMessage.EnrollmentCapture -> onEnrollmentConfirmationRequired(
+                PendingVoiceEnrollment(request.id, PendingVoiceEnrollment.Operation.CAPTURE, reply),
+            )
+            is VoiceWebMessage.EnrollmentClear -> onEnrollmentConfirmationRequired(
+                PendingVoiceEnrollment(request.id, PendingVoiceEnrollment.Operation.CLEAR, reply),
+            )
             null -> reply.error("invalid_request")
         }
     }
@@ -105,6 +127,22 @@ internal fun VoiceWebReply.status(id: String, status: VoiceServiceStatus) = post
                     put("rawAudioPersisted", status.diagnostic.rawAudioPersisted)
                     status.diagnostic.lastError?.let { put("lastError", it) }
                 })
+            })
+        },
+    ),
+)
+
+internal fun VoiceWebReply.enrollment(id: String, snapshot: VoiceEnrollmentSnapshot) = post(
+    Json.encodeToString(
+        buildJsonObject {
+            put("id", id)
+            put("enrollment", buildJsonObject {
+                put("state", snapshot.state.name)
+                put("attempts", snapshot.attempts)
+                put("acceptedAttempts", snapshot.acceptedAttempts)
+                put("requiredAttempts", snapshot.requiredAttempts)
+                put("detail", snapshot.detail)
+                snapshot.lastRejection?.let { put("lastRejection", it.name) }
             })
         },
     ),

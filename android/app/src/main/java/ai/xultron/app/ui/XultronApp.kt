@@ -34,6 +34,7 @@ fun XultronApp(container: AppContainer) {
             WebFrontendScreen(
                 backendUrl = state.backendUrl,
                 voiceServiceController = container.voiceServiceController,
+                voiceEnrollmentController = container.voiceEnrollmentController,
                 onChangeBackend = { rootViewModel.saveBackendUrl(BackendEndpoint.LOCAL) },
             )
         }

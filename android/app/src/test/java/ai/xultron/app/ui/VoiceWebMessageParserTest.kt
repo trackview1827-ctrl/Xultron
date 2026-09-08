@@ -12,8 +12,8 @@ class VoiceWebMessageParserTest {
             VoiceWebMessageParser.parse("""{"v":1,"id":"voice-12345678","action":"voice.status"}"""),
         )
         assertEquals(
-            VoiceWebMessage.Start("voice-12345678"),
-            VoiceWebMessageParser.parse("""{"v":1,"id":"voice-12345678","action":"voice.start"}"""),
+            VoiceWebMessage.EnrollmentCapture("voice-12345678"),
+            VoiceWebMessageParser.parse("""{"v":1,"id":"voice-12345678","action":"voice.enrollment.capture"}"""),
         )
     }
 
@@ -22,6 +22,7 @@ class VoiceWebMessageParserTest {
         assertNull(VoiceWebMessageParser.parse("""{"v":1,"id":"voice-12345678","action":"terminal.exec"}"""))
         assertNull(VoiceWebMessageParser.parse("""{"v":1,"id":"short","action":"voice.start"}"""))
         assertNull(VoiceWebMessageParser.parse("""{"v":1,"id":"voice-12345678","action":"voice.start","input":"ignored"}"""))
+        assertNull(VoiceWebMessageParser.parse("""{"v":1,"id":"voice-12345678","action":"voice.enrollment.capture","phrase":"never-crosses-bridge"}"""))
         assertNull(VoiceWebMessageParser.parse("not-json"))
     }
 

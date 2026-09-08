@@ -193,3 +193,9 @@
 .tool-available { color:#58f0bc;font:.55rem ui-monospace,monospace;letter-spacing:.08em }.tool-blocked { color:#ff8198;font:.55rem ui-monospace,monospace;letter-spacing:.08em }
 .capability-empty { color:#708793;font-size:.76rem }.capabilities-panel .settings-callout { margin-top:1rem }
 @media (max-width:599px) { .capability-row { grid-template-columns:auto 1fr }.capability-row .btn { grid-column:2;justify-self:start } }
+
+/* Explicit local voice-profile enrollment actions remain compact on mobile and never imply browser microphone capture. */
+.settings-callout__actions { display:flex;flex-wrap:wrap;gap:.65rem;align-items:center;margin-top:1rem }
+.settings-callout__actions .btn { flex:1 1 180px }
+.settings-callout .field-label { display:block;margin-top:1rem;color:#a9b3bb;font-size:.72rem }
+.settings-callout .field { width:100%;margin-top:.4rem }

@@ -71,7 +71,11 @@ fun AuthenticatedShell(
     ) { padding ->
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().then(Modifier.padding(padding))) {
             when (destination) {
-                Destination.Web -> WebFrontendScreen(backendUrl, voiceServiceController = container.voiceServiceController)
+                Destination.Web -> WebFrontendScreen(
+                    backendUrl,
+                    voiceServiceController = container.voiceServiceController,
+                    voiceEnrollmentController = container.voiceEnrollmentController,
+                )
                 Destination.Chat -> ChatScreen(chatViewModel)
                 Destination.Conversations -> ConversationsScreen(
                     viewModel = viewModel<ConversationsViewModel>(key = "conversations-$backendUrl", factory = factory),
