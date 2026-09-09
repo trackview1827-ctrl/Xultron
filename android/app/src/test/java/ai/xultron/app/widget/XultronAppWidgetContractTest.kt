@@ -10,17 +10,17 @@ import org.junit.Test
  */
 class XultronAppWidgetContractTest {
     @Test
-    fun `provider metadata declares a resizable four by two home screen widget`() {
+    fun `provider metadata declares a resizable four by three home screen widget`() {
         val metadata = androidFile("src/main/res/xml/xultron_app_widget_info.xml").readText()
 
         assertContains(metadata, "android:initialLayout=\"@layout/xultron_app_widget\"")
         assertContains(metadata, "android:minWidth=\"250dp\"")
-        assertContains(metadata, "android:minHeight=\"110dp\"")
+        assertContains(metadata, "android:minHeight=\"132dp\"")
         assertContains(metadata, "android:minResizeWidth=\"110dp\"")
-        assertContains(metadata, "android:minResizeHeight=\"110dp\"")
+        assertContains(metadata, "android:minResizeHeight=\"132dp\"")
         assertContains(metadata, "android:resizeMode=\"horizontal|vertical\"")
         assertContains(metadata, "android:targetCellWidth=\"4\"")
-        assertContains(metadata, "android:targetCellHeight=\"2\"")
+        assertContains(metadata, "android:targetCellHeight=\"3\"")
         assertContains(metadata, "android:widgetCategory=\"home_screen\"")
     }
 

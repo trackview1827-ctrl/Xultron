@@ -1,0 +1,8 @@
+<resources>
+    <string name="xultron_widget_name">Xultron</string>
+    <string name="xultron_widget_description">Xultron uygulamasını açan bir kısayol.</string>
+    <string name="xultron_widget_status">UYGULAMA KISAYOLU</string>
+    <string name="xultron_widget_action">Xultron’u aç</string>
+    <string name="xultron_widget_detail">Devam etmek için uygulamayı açın.</string>
+    <string name="xultron_widget_content_description">Xultron widget'ı. Uygulamayı açmak için dokunun.</string>
+</resources>
