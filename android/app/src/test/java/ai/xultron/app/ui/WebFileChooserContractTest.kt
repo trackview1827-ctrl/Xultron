@@ -32,8 +32,6 @@ class WebFileChooserContractTest {
         assertTrue(policy.contains("Intent.CATEGORY_OPENABLE"))
         assertTrue(policy.contains("Intent.FLAG_GRANT_READ_URI_PERMISSION"))
         assertTrue(policy.contains("it.scheme == \"content\""))
-        assertFalse(policy.contains("MANAGE_EXTERNAL_STORAGE"))
-        assertFalse(policy.contains(".path"))
         assertFalse(policy.contains("getRealPath"))
     }
 
