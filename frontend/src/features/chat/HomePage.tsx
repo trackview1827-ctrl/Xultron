@@ -15,13 +15,34 @@ import { tasksApi } from '../../services/tasksApi'
 
 function id(): string { return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}` }
 function normalizeProviderList(data: { providers: Provider[] } | Provider[]): Provider[] { return Array.isArray(data) ? data : data.providers }
+export function isCoreCompact(
+  messageCount: number,
+  composerFocused: boolean,
+  touchDevice: boolean,
+  virtualKeyboardVisible: boolean,
+): boolean {
+  if (messageCount > 0) return true
+  if (!composerFocused) return false
+  // On a touch device, focus can remain after Android dismisses the IME. The core must
+  // return to its full size then instead of treating a retained draft as keyboard-open.
+  return !touchDevice || virtualKeyboardVisible
+}
+
+function isTouchDevice(): boolean {
+  return typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0
+}
+
+function virtualKeyboardIsVisible(layoutHeight: number, visibleHeight: number): boolean {
+  const minimumKeyboardInset = Math.max(120, Math.round(layoutHeight * 0.18))
+  return layoutHeight > 0 && visibleHeight > 0 && layoutHeight - visibleHeight >= minimumKeyboardInset
+}
 
 export function HomePage() {
   const context = useApp(); const [fallbackMessages, setFallbackMessages] = useState<Message[]>([]); const [fallbackInput, setFallbackInput] = useState(''); const [fallbackConversationId, setFallbackConversationId] = useState<string>();
   const { coreState, dispatchCore, settings, online, networkOnline, setPage } = context; const conversationId = context.activeConversationId ?? fallbackConversationId; const setConversationId = context.setActiveConversationId ?? setFallbackConversationId; const messages = context.activeMessages ?? fallbackMessages; const setMessages = context.setActiveMessages ?? setFallbackMessages; const input = context.activeDraft ?? fallbackInput; const setInput = context.setActiveDraft ?? setFallbackInput; const setActiveConversation = context.setActiveConversation ?? (() => undefined); const [conversations, setConversations] = useState<Conversation[]>([])
   const { t, locale } = useLocale()
   const [aiReady, setAiReady] = useState<boolean | null>(null)
-  const [sttReady, setSttReady] = useState(false); const [ttsReady, setTtsReady] = useState(false); const [error, setError] = useState(''); const [streaming, setStreaming] = useState(false); const [historyOpen, setHistoryOpen] = useState(false); const [composerFocused, setComposerFocused] = useState(false); const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false); const [attachmentStatus, setAttachmentStatus] = useState(''); const [attachmentUploading, setAttachmentUploading] = useState(false)
+  const [sttReady, setSttReady] = useState(false); const [ttsReady, setTtsReady] = useState(false); const [error, setError] = useState(''); const [streaming, setStreaming] = useState(false); const [historyOpen, setHistoryOpen] = useState(false); const [composerFocused, setComposerFocused] = useState(false); const [virtualKeyboardVisible, setVirtualKeyboardVisible] = useState(false); const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false); const [attachmentStatus, setAttachmentStatus] = useState(''); const [attachmentUploading, setAttachmentUploading] = useState(false)
   const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const photoInputRef = useRef<HTMLInputElement | null>(null); const fileInputRef = useRef<HTMLInputElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0); const liveConversationRef = useRef(false)
   const [liveConversation, setLiveConversation] = useState(false); const [liveTranscript, setLiveTranscript] = useState(''); const [liveRetry, setLiveRetry] = useState(0)
   const handleVoiceTranscript = useCallback((text: string) => {
@@ -119,8 +140,20 @@ export function HomePage() {
   useEffect(() => {
     if (!online && liveConversation) stopLiveConversation()
   }, [liveConversation, online])
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) return
+    const updateKeyboardState = () => setVirtualKeyboardVisible(virtualKeyboardIsVisible(window.innerHeight, viewport.height))
+    updateKeyboardState()
+    viewport.addEventListener('resize', updateKeyboardState)
+    window.addEventListener('resize', updateKeyboardState)
+    return () => {
+      viewport.removeEventListener('resize', updateKeyboardState)
+      window.removeEventListener('resize', updateKeyboardState)
+    }
+  }, [])
   const hasComposerText = Boolean(input.trim())
-  const coreCompact = messages.length > 0 || composerFocused || hasComposerText
+  const coreCompact = isCoreCompact(messages.length, composerFocused, isTouchDevice(), virtualKeyboardVisible)
   const uploadAttachment = async (event: ChangeEvent<HTMLInputElement>, kind: 'photo' | 'file') => {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
