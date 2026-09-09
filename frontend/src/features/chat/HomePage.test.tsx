@@ -8,9 +8,11 @@ const app = vi.hoisted(() => ({ dispatchCore: vi.fn(), value: {} as Record<strin
 const chat = vi.hoisted(() => ({ conversations: vi.fn(), messages: vi.fn(), stream: vi.fn() }))
 const providers = vi.hoisted(() => ({ list: vi.fn() }))
 const voice = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), speak: vi.fn(), stopSpeaking: vi.fn(), clearError: vi.fn(), onTranscript: undefined as ((text: string) => void) | undefined, recording: false, speaking: false, level: 0, error: '' }))
+const tasks = vi.hoisted(() => ({ upload: vi.fn() }))
 vi.mock('../../stores/AppContext', () => ({ useApp: () => app.value }))
 vi.mock('../../services/chatApi', () => ({ chatApi: chat }))
 vi.mock('../../services/providersApi', () => ({ providersApi: providers }))
+vi.mock('../../services/tasksApi', () => ({ tasksApi: tasks }))
 vi.mock('../../hooks/useVoice', () => ({ useVoice: (onTranscript: (text: string) => void) => { voice.onTranscript = onTranscript; return voice } }))
 
 const conversationA = { id: 'a', title: 'Sequence A', createdAt: '2026-08-24T00:00:00Z', updatedAt: '2026-08-24T01:00:00Z' }
@@ -26,6 +28,7 @@ describe('HomePage response and history lifecycle', () => {
     chat.conversations.mockResolvedValue({ conversations: [] })
     chat.messages.mockResolvedValue({ messages: [] })
     chat.stream.mockReset()
+    tasks.upload.mockReset().mockResolvedValue({ attachment: { id: 'attachment-note', name: 'note.txt' } })
     voice.start.mockReset().mockResolvedValue(true)
     voice.stop.mockReset(); voice.speak.mockReset().mockResolvedValue(undefined); voice.stopSpeaking.mockReset(); voice.clearError.mockReset(); voice.onTranscript = undefined
   })
@@ -97,5 +100,42 @@ describe('HomePage response and history lifecycle', () => {
     await user.click(screen.getByRole('button', { name: 'Stop live conversation' }))
     expect(voice.stop).toHaveBeenCalled()
     expect(voice.stopSpeaking).toHaveBeenCalled()
+  })
+
+  it('swaps the send position between live voice and send while compacting the reactor for composer focus', async () => {
+    const user = userEvent.setup(); const { container } = render(<HomePage />)
+    const input = await screen.findByLabelText('Message Xultron')
+    expect(screen.getByRole('button', { name: 'Start live conversation' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Send message' })).not.toBeInTheDocument()
+
+    await user.click(input)
+    expect(container.querySelector('.core-stage')).toHaveClass('compact')
+    await user.type(input, 'Hello')
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Start live conversation' })).not.toBeInTheDocument()
+
+    await user.clear(input)
+    expect(screen.getByRole('button', { name: 'Start live conversation' })).toBeInTheDocument()
+  })
+
+  it('offers exactly Photo, File, and Camera and routes File through the safe attachment flow', async () => {
+    const user = userEvent.setup(); const { container } = render(<HomePage />)
+    await user.click(await screen.findByRole('button', { name: 'Add attachment' }))
+    const menu = screen.getByRole('group', { name: 'Attachment options' })
+    expect(menu.querySelectorAll('button')).toHaveLength(3)
+    expect(menu).toHaveTextContent('Photo')
+    expect(menu).toHaveTextContent('File')
+    expect(menu).toHaveTextContent('Camera')
+    expect(menu).toHaveTextContent('up to 6 MB')
+
+    const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]')
+    expect(inputs).toHaveLength(2)
+    expect(inputs[0]).toHaveAttribute('accept', 'image/*')
+    fireEvent.change(inputs[1]!, { target: { files: [new File(['note'], 'note.txt', { type: 'text/plain' })] } })
+    await waitFor(() => expect(tasks.upload).toHaveBeenCalledWith(expect.any(File)))
+    expect(await screen.findByRole('status')).toHaveTextContent('note.txt was processed safely')
+
+    await user.click(screen.getByRole('button', { name: 'Camera' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Camera capture is not available')
   })
 })
