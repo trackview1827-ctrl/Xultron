@@ -14,6 +14,7 @@ from app.security.validation import require_object, string_field
 from app.services.auto_memory import remember_from_message
 from app.services.providers import adapter_call, default_provider
 from app.services.settings import get_settings
+from app.services.time_context import time_context_prompt
 from app.services.verification import ANSWER_POLICY, BEST_EFFORT_ANSWER_POLICY, capability_prompt, deterministic_plan, direct_answer, execute as execute_verification
 
 MAX_MESSAGE_CHARS = 8000
@@ -153,6 +154,11 @@ def _provider_context(user_id: str, conversation_id: str | None, message: str, s
             target.append({"role": role, "content": bounded})
             remaining -= len(bounded)
 
+    # This is server-derived context, not user-provided prompt content. It remains
+    # available even in low-data mode and when prior context exhausts the budget.
+    trusted_time = time_context_prompt(settings.get("timeZone"))
+    prefix.append({"role": "system", "content": trusted_time})
+    remaining = max(remaining - len(trusted_time), 0)
     if settings.get("memoryEnabled", True):
         memory_limit = 5 if low_data else 20
         memories = MemoryItem.query.filter_by(user_id=user_id).order_by(MemoryItem.updated_at.desc()).limit(memory_limit).all()

@@ -46,7 +46,16 @@ def query_limit(default: int, max_value: int) -> int:
 
 @api_bp.get("/system/health")
 def health():
-    return ok({"status": "online", "version": current_app.config.get("VERSION", "0.1.0"), "time": datetime.now(UTC).isoformat().replace("+00:00", "Z")})
+    utc_now = datetime.now(UTC)
+    utc_time = utc_now.isoformat().replace("+00:00", "Z")
+    return ok({
+        "status": "online",
+        "version": current_app.config.get("VERSION", "0.1.0"),
+        # Keep the established ISO field while exposing the canonical Unix clock.
+        "time": utc_time,
+        "utcTime": utc_time,
+        "unixTime": int(utc_now.timestamp()),
+    })
 
 
 @api_bp.get("/auth/session")
