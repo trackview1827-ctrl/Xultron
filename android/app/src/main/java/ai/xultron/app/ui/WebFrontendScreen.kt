@@ -17,6 +17,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -71,6 +72,11 @@ private data class PendingVoiceEnrollmentPermission(
     val enrollment: PendingVoiceEnrollment,
 )
 
+private data class PendingFileChooser(
+    val callback: android.webkit.ValueCallback<Array<android.net.Uri>>,
+    val trustedOrigin: String,
+)
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun WebFrontendScreen(
@@ -91,6 +97,21 @@ fun WebFrontendScreen(
     var pendingVoicePermissionStart by remember { mutableStateOf<PendingVoicePermissionStart?>(null) }
     var pendingVoiceEnrollment by remember { mutableStateOf<PendingVoiceEnrollment?>(null) }
     var pendingVoiceEnrollmentPermission by remember { mutableStateOf<PendingVoiceEnrollmentPermission?>(null) }
+    var pendingFileChooser by remember { mutableStateOf<PendingFileChooser?>(null) }
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    val fileChooserLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
+        val pending = pendingFileChooser
+        pendingFileChooser = null
+        val currentUrl = webView?.url?.toHttpUrlOrNull()
+        val trustedCurrentOrigin = currentUrl?.let(WebFrontendUrl::originRule)
+        val selected = if (
+            result.resultCode == android.app.Activity.RESULT_OK &&
+            trustedCurrentOrigin == pending?.trustedOrigin
+        ) WebFileChooserPolicy.selectedContentUris(result.data) else null
+        // A cancelled picker, navigation away from the trusted origin, or an invalid result
+        // never supplies a URI to the renderer.
+        pending?.callback?.onReceiveValue(selected)
+    }
     val webPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         val pending = pendingWebPermission
         pendingWebPermission = null
@@ -224,7 +245,6 @@ fun WebFrontendScreen(
         return
     }
 
-    var webView by remember { mutableStateOf<WebView?>(null) }
     var canGoBack by remember { mutableStateOf(false) }
     BackHandler(enabled = canGoBack) {
         webView?.goBack()
@@ -274,6 +294,27 @@ fun WebFrontendScreen(
                     )
                 }
                 webChromeClient = object : WebChromeClient() {
+                    override fun onShowFileChooser(
+                        view: WebView,
+                        filePathCallback: android.webkit.ValueCallback<Array<android.net.Uri>>,
+                        fileChooserParams: FileChooserParams,
+                    ): Boolean {
+                        val currentUrl = view.url?.toHttpUrlOrNull()
+                        val trustedOrigin = currentUrl?.let(WebFrontendUrl::originRule)
+                        // The callback does not include an origin. Bind it to the currently
+                        // rendered, configured origin and reject concurrent chooser requests.
+                        if (
+                            trustedOrigin != WebFrontendUrl.originRule(rootUrl) ||
+                            pendingFileChooser != null
+                        ) {
+                            filePathCallback.onReceiveValue(null)
+                            return true
+                        }
+                        pendingFileChooser = PendingFileChooser(filePathCallback, trustedOrigin)
+                        fileChooserLauncher.launch(WebFileChooserPolicy.openDocumentIntent(fileChooserParams))
+                        return true
+                    }
+
                     override fun onPermissionRequest(request: PermissionRequest) {
                         val requestOrigin = request.origin.toString().toHttpUrlOrNull()
                         if (requestOrigin == null || !WebFrontendUrl.isAllowedOrigin(requestOrigin, rootUrl)) {
@@ -358,6 +399,8 @@ fun WebFrontendScreen(
         onRelease = { view ->
             pendingWebPermission?.request?.deny()
             pendingWebPermission = null
+            pendingFileChooser?.callback?.onReceiveValue(null)
+            pendingFileChooser = null
             pendingGeoPermission?.let { it.second.invoke(it.first, false, false) }
             pendingGeoPermission = null
             pendingVoiceStart?.let {
