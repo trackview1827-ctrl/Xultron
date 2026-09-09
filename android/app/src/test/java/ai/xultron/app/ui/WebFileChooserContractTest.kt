@@ -46,6 +46,7 @@ class WebFileChooserContractTest {
         assertTrue(screen.contains("trustedCurrentOrigin == pending?.trustedOrigin"))
         assertTrue(screen.contains("filePathCallback.onReceiveValue(null)"))
         assertTrue(screen.contains("pendingFileChooser?.callback?.onReceiveValue(null)"))
+        assertTrue(screen.contains("settings.allowContentAccess = true"))
         assertFalse(screen.contains("Manifest.permission.READ_MEDIA_IMAGES"))
         assertFalse(screen.contains("Manifest.permission.READ_MEDIA_VIDEO"))
     }

@@ -264,7 +264,10 @@ fun WebFrontendScreen(
                 settings.domStorageEnabled = true
                 settings.cacheMode = WebSettings.LOAD_DEFAULT
                 settings.allowFileAccess = false
-                settings.allowContentAccess = false
+                // HTML file inputs receive only vetted ACTION_OPEN_DOCUMENT content:// URIs.
+                // WebView needs content access enabled to stream that selected URI to the trusted
+                // current origin. File URLs stay disabled and chooser callbacks reject all others.
+                settings.allowContentAccess = true
                 settings.javaScriptCanOpenWindowsAutomatically = false
                 settings.setSupportMultipleWindows(false)
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW

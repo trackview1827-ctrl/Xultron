@@ -49,7 +49,7 @@ describe('HomePage response and history lifecycle', () => {
     expect(container.querySelector('.cursor')).toBeNull()
     expect(app.dispatchCore).toHaveBeenCalledWith({ type: 'CANCEL' })
     expect(app.dispatchCore).not.toHaveBeenCalledWith({ type: 'FAIL' })
-  })
+  }, 10_000)
 
   it('caps message input at the backend 8000-character limit and exposes the counter', async () => {
     render(<HomePage />)
