@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../services/settingsApi'
-import { HomePage } from './HomePage'
+import { HomePage, isCoreCompact } from './HomePage'
 
 const app = vi.hoisted(() => ({ dispatchCore: vi.fn(), value: {} as Record<string, unknown> }))
 const chat = vi.hoisted(() => ({ conversations: vi.fn(), messages: vi.fn(), stream: vi.fn() }))
@@ -116,6 +116,13 @@ describe('HomePage response and history lifecycle', () => {
 
     await user.clear(input)
     expect(screen.getByRole('button', { name: 'Start live conversation' })).toBeInTheDocument()
+  })
+
+  it('expands the reactor when Android dismisses a virtual keyboard while a draft remains focused', () => {
+    expect(isCoreCompact(0, true, true, true)).toBe(true)
+    expect(isCoreCompact(0, true, true, false)).toBe(false)
+    expect(isCoreCompact(0, true, false, false)).toBe(true)
+    expect(isCoreCompact(1, false, true, false)).toBe(true)
   })
 
   it('offers exactly Photo, File, and Camera and routes File through the safe attachment flow', async () => {
