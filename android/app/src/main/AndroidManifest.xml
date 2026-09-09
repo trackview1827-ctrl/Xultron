@@ -54,6 +54,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- A passive home-screen shortcut. It does not start or expose any background capability. -->
+        <receiver
+            android:name=".widget.XultronAppWidgetProvider"
+            android:exported="false"
+            android:label="@string/xultron_widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/xultron_app_widget_info" />
+        </receiver>
         <!-- Started only by an explicit in-app user action. No boot receiver is registered. -->
         <service
             android:name=".service.VoiceMonitoringForegroundService"

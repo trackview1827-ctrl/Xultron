@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">Xultron</string>
+    <string name="xultron_widget_name">Xultron</string>
+    <string name="xultron_widget_description">A shortcut that opens Xultron.</string>
+    <string name="xultron_widget_status">APP SHORTCUT</string>
+    <string name="xultron_widget_action">Open Xultron</string>
+    <string name="xultron_widget_detail">Open the app to continue.</string>
+    <string name="xultron_widget_content_description">Xultron widget. Tap to open the app.</string>
 </resources>
