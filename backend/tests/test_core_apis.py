@@ -1,9 +1,14 @@
 from tests.conftest import delete_json, patch_json, post_json, register
+from datetime import UTC, datetime
 from io import BytesIO
 
 
 def test_health_settings_memory_devices(user_client):
-    assert user_client.get("/api/v1/system/health").get_json()["status"] == "online"
+    health = user_client.get("/api/v1/system/health").get_json()
+    assert health["status"] == "online"
+    assert isinstance(health["unixTime"], int)
+    assert health["time"] == health["utcTime"]
+    assert int(datetime.fromisoformat(health["utcTime"].replace("Z", "+00:00")).replace(tzinfo=UTC).timestamp()) == health["unixTime"]
     settings = user_client.get("/api/v1/settings")
     assert settings.status_code == 200
     assert settings.get_json()["settings"]["analytics"] is False
