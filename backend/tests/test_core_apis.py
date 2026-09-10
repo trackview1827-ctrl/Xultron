@@ -79,7 +79,6 @@ def test_attachment_returns_metadata_and_extracts_only_text(user_client):
     assert text.status_code == 201
     attachment = text.get_json()["attachment"]
     assert attachment["size"] == 11 and attachment["text"] == "hello\nworld"
-    image = user_client.post("/api/v1/attachments", data={"file": (BytesIO(b"not-an-image"), "screen.png")}, headers={"X-CSRF-Token": csrf}, content_type="multipart/form-data")
-    assert image.status_code == 201
-    assert image.get_json()["attachment"]["text"] is None
-    assert image.get_json()["attachment"]["extraction"] == "not_available"
+    image = user_client.post("/api/v1/attachments", data={"file": (BytesIO(b"not-an-image"), "screen.png", "image/png")}, headers={"X-CSRF-Token": csrf}, content_type="multipart/form-data")
+    assert image.status_code == 422
+    assert image.get_json()["error"]["code"] == "unsupported_attachment"

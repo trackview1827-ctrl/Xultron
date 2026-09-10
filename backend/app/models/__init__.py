@@ -1,4 +1,5 @@
 from .core import (
+    Attachment,
     Conversation,
     DEFAULT_SETTINGS,
     Device,
@@ -22,6 +23,7 @@ from .core import (
 )
 
 __all__ = [
+    "Attachment",
     "User",
     "Session",
     "Task",
