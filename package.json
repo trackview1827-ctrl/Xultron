@@ -35,5 +35,5 @@
     "installer",
     "termux"
   ],
-  "license": "UNLICENSED"
+  "license": "MIT"
 }

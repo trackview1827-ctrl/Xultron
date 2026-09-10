@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Xultron product overview</title>
+  <desc id="desc">An illustrative dark mobile-first Xultron interface showing a secure AI conversation, live status, privacy controls, and an activity signal.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07111f"/><stop offset=".5" stop-color="#101a35"/><stop offset="1" stop-color="#1a1035"/></linearGradient>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#172446" stop-opacity=".95"/><stop offset="1" stop-color="#0b142b" stop-opacity=".95"/></linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#a78bfa"/><stop offset="1" stop-color="#5eead4"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="18"/></filter>
+    <filter id="shadow"><feDropShadow dx="0" dy="22" stdDeviation="22" flood-color="#020617" flood-opacity=".55"/></filter>
+  </defs>
+  <rect width="1600" height="900" fill="url(#background)"/>
+  <circle cx="210" cy="130" r="190" fill="#7c3aed" opacity=".24" filter="url(#glow)"/>
+  <circle cx="1400" cy="780" r="260" fill="#14b8a6" opacity=".17" filter="url(#glow)"/>
+  <g opacity=".18" stroke="#a5b4fc"><path d="M0 100H1600M0 300H1600M0 500H1600M0 700H1600"/><path d="M160 0V900M480 0V900M800 0V900M1120 0V900M1440 0V900"/></g>
+  <g filter="url(#shadow)">
+    <rect x="136" y="80" width="1328" height="740" rx="40" fill="#081225" stroke="#6676a6" stroke-opacity=".4"/>
+    <rect x="136" y="80" width="1328" height="82" rx="40" fill="#111d39"/>
+    <circle cx="193" cy="121" r="10" fill="#fb7185"/><circle cx="225" cy="121" r="10" fill="#fbbf24"/><circle cx="257" cy="121" r="10" fill="#5eead4"/>
+    <text x="310" y="129" fill="#e2e8f0" font-size="26" font-weight="700" font-family="Arial, sans-serif" letter-spacing="5">XULTRON</text>
+    <text x="1325" y="128" fill="#5eead4" font-size="18" font-family="Arial, sans-serif">● SECURE SESSION</text>
+    <rect x="168" y="194" width="272" height="586" rx="26" fill="#0d1931"/>
+    <text x="202" y="245" fill="#a78bfa" font-size="18" font-weight="700" font-family="Arial, sans-serif" letter-spacing="2">SIGNAL SPINE</text>
+    <circle cx="221" cy="302" r="12" fill="#5eead4"/><text x="252" y="309" fill="#f8fafc" font-size="21" font-family="Arial, sans-serif">ONLINE</text>
+    <rect x="198" y="342" width="212" height="1" fill="#334155"/>
+    <text x="202" y="390" fill="#94a3b8" font-size="16" font-family="Arial, sans-serif">WORKSPACE</text>
+    <rect x="194" y="414" width="220" height="52" rx="14" fill="#202d4f"/><text x="218" y="447" fill="#e2e8f0" font-size="18" font-family="Arial, sans-serif">AI Assistant</text>
+    <text x="202" y="519" fill="#94a3b8" font-size="16" font-family="Arial, sans-serif">PRIVACY</text>
+    <text x="202" y="558" fill="#e2e8f0" font-size="18" font-family="Arial, sans-serif">Encrypted keys</text><text x="202" y="590" fill="#e2e8f0" font-size="18" font-family="Arial, sans-serif">Memory control</text><text x="202" y="622" fill="#e2e8f0" font-size="18" font-family="Arial, sans-serif">Guest mode</text>
+    <rect x="470" y="194" width="650" height="586" rx="28" fill="url(#surface)"/>
+    <text x="510" y="250" fill="#f8fafc" font-size="30" font-weight="700" font-family="Arial, sans-serif">How can I help today?</text>
+    <text x="510" y="284" fill="#94a3b8" font-size="18" font-family="Arial, sans-serif">Provider-agnostic AI, streamed safely to your device.</text>
+    <rect x="510" y="332" width="405" height="88" rx="22" fill="#25345c"/><text x="538" y="369" fill="#e2e8f0" font-size="19" font-family="Arial, sans-serif">Summarize my project status and</text><text x="538" y="398" fill="#e2e8f0" font-size="19" font-family="Arial, sans-serif">suggest the next secure step.</text>
+    <rect x="658" y="448" width="406" height="158" rx="22" fill="#172b4d" stroke="#5eead4" stroke-opacity=".35"/>
+    <text x="688" y="487" fill="#5eead4" font-size="17" font-weight="700" font-family="Arial, sans-serif">XULTRON · STREAMING</text><text x="688" y="524" fill="#e2e8f0" font-size="19" font-family="Arial, sans-serif">I verified your project state first.</text><text x="688" y="555" fill="#e2e8f0" font-size="19" font-family="Arial, sans-serif">Here is a focused, privacy-aware plan.</text>
+    <rect x="510" y="684" width="570" height="62" rx="20" fill="#0b1428" stroke="#46577f"/><text x="540" y="723" fill="#64748b" font-size="18" font-family="Arial, sans-serif">Ask Xultron anything…</text><circle cx="1035" cy="715" r="18" fill="url(#violet)"/>
+    <rect x="1152" y="194" width="280" height="586" rx="26" fill="#0d1931"/>
+    <text x="1188" y="245" fill="#a78bfa" font-size="18" font-weight="700" font-family="Arial, sans-serif" letter-spacing="2">LIVE ACTIVITY</text>
+    <text x="1188" y="294" fill="#e2e8f0" font-size="20" font-family="Arial, sans-serif">SSE connected</text><text x="1188" y="322" fill="#5eead4" font-size="16" font-family="Arial, sans-serif">● Real-time response</text>
+    <path d="M1188 402h30l14-36 23 77 20-52 19 30h42" fill="none" stroke="url(#violet)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="1188" y="478" width="202" height="1" fill="#334155"/><text x="1188" y="524" fill="#94a3b8" font-size="16" font-family="Arial, sans-serif">MOBILE FIRST</text><text x="1188" y="559" fill="#e2e8f0" font-size="18" font-family="Arial, sans-serif">PWA ready</text><text x="1188" y="592" fill="#e2e8f0" font-size="18" font-family="Arial, sans-serif">Offline shell</text><text x="1188" y="625" fill="#e2e8f0" font-size="18" font-family="Arial, sans-serif">Termux friendly</text>
+  </g>
+  <text x="800" y="865" text-anchor="middle" fill="#cbd5e1" font-size="19" font-family="Arial, sans-serif">Illustrative product overview · not a live session capture</text>
+</svg>
