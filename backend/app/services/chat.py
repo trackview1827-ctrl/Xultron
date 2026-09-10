@@ -49,7 +49,19 @@ def handle_message(user, data):
     message = string_field(data, "message", required=True, min_len=1, max_len=MAX_MESSAGE_CHARS)
     request_id = string_field(data, "requestId", required=True, min_len=1, max_len=MAX_REQUEST_ID_CHARS)
     conv_id = string_field(data, "conversationId", max_len=40, default=None)
-    attachments = attachment_records(user.id, data.get("attachments"))
+    # The public web/mobile client sends opaque attachment IDs, never attachment
+    # objects or file bytes. Keep the older `attachments` spelling temporarily
+    # compatible for already-installed clients, but fail closed if both fields
+    # disagree rather than silently analysing an unintended file.
+    attachment_ids_payload = data.get("attachmentIds")
+    legacy_attachment_ids_payload = data.get("attachments")
+    if attachment_ids_payload is not None and legacy_attachment_ids_payload is not None:
+        if attachment_ids_payload != legacy_attachment_ids_payload:
+            raise APIError("validation_failed", "attachmentIds and attachments must match when both are supplied.", 422)
+    attachments = attachment_records(
+        user.id,
+        attachment_ids_payload if attachment_ids_payload is not None else legacy_attachment_ids_payload,
+    )
     attachment_ids = [attachment.id for attachment in attachments]
     fingerprint = _fingerprint(message, conv_id, attachment_ids)
     if len(message) > MAX_MESSAGE_CHARS:

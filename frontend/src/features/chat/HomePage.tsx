@@ -244,12 +244,14 @@ export function HomePage() {
       attachmentPreviewRef.current = readyPreview
       setAttachmentPreview(current => current?.localId === preview.localId ? readyPreview : current)
       setAttachmentStatus(t(`${attachment.name} is ready.`, `${attachment.name} hazır.`))
-    } catch {
+    } catch (caught) {
       if (generation !== attachmentGenerationRef.current) return
       const failedPreview = { ...preview, uploadState: 'failed' as const }
       attachmentPreviewRef.current = failedPreview
       setAttachmentPreview(current => current?.localId === preview.localId ? failedPreview : current)
-      setAttachmentStatus(t('The attachment could not be processed. The backend accepts files up to 6 MB.', 'Ek işlenemedi. Arka uç en fazla 6 MB dosya kabul eder.'))
+      setAttachmentStatus(caught instanceof ApiError
+        ? caught.message
+        : t('The attachment could not be processed. Choose a supported file and try again.', 'Ek işlenemedi. Desteklenen bir dosya seçip yeniden dene.'))
     } finally {
       if (generation === attachmentGenerationRef.current) setAttachmentUploading(false)
     }
