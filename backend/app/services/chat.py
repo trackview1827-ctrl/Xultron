@@ -12,6 +12,7 @@ from app.models import Conversation, IdempotencyKey, MemoryItem, Message, new_id
 from app.security.errors import APIError
 from app.security.validation import require_object, string_field
 from app.services.auto_memory import remember_from_message
+from app.services.attachments import attachment_records, ensure_provider_supports_attachments, provider_user_content, public_metadata
 from app.services.providers import adapter_call, default_provider
 from app.services.settings import get_settings
 from app.services.time_context import time_context_prompt
@@ -48,7 +49,9 @@ def handle_message(user, data):
     message = string_field(data, "message", required=True, min_len=1, max_len=MAX_MESSAGE_CHARS)
     request_id = string_field(data, "requestId", required=True, min_len=1, max_len=MAX_REQUEST_ID_CHARS)
     conv_id = string_field(data, "conversationId", max_len=40, default=None)
-    fingerprint = _fingerprint(message, conv_id)
+    attachments = attachment_records(user.id, data.get("attachments"))
+    attachment_ids = [attachment.id for attachment in attachments]
+    fingerprint = _fingerprint(message, conv_id, attachment_ids)
     if len(message) > MAX_MESSAGE_CHARS:
         raise APIError("validation_failed", "Message is too large.", 422)
     existing = IdempotencyKey.query.filter_by(user_id=user.id, request_id=request_id).first()
@@ -63,8 +66,10 @@ def handle_message(user, data):
     if ephemeral:
         return ephemeral
     conv = owned_conversation(conv_id, user.id) if conv_id else Conversation(user_id=user.id, title=(message[:80] if history_enabled else "Private conversation"))
-    provider_messages = _provider_context(user.id, conv.id if conv_id else None, message, settings, low_data)
     provider = default_provider(user.id, "ai")
+    ensure_provider_supports_attachments(provider, attachments)
+    current_content = provider_user_content(message, attachments, low_data)
+    provider_messages = _provider_context(user.id, conv.id if conv_id else None, current_content, settings, low_data)
     if provider:
         assistant_text = _verified_complete(provider, provider_messages, message, settings.get("locale", "tr"), settings)
         provider_id = provider.id
@@ -76,8 +81,16 @@ def handle_message(user, data):
     assistant_text = assistant_text.strip()[: current_app.config.get("MAX_PROVIDER_TEXT_CHARS", 200000)]
     conv.updated_at = utcnow()
     db.session.add(conv)
+    attachment_metadata = public_metadata(attachments)
     if history_enabled:
-        user_msg = Message(user_id=user.id, conversation=conv, role="user", content=message, request_id=request_id)
+        user_msg = Message(
+            user_id=user.id,
+            conversation=conv,
+            role="user",
+            content=message,
+            request_id=request_id,
+            meta={"attachments": attachment_metadata} if attachment_metadata else {},
+        )
         assistant = Message(user_id=user.id, conversation=conv, role="assistant", content=assistant_text, request_id=request_id, provider_id=provider_id)
         db.session.add_all([user_msg, assistant])
         db.session.flush()
@@ -85,8 +98,18 @@ def handle_message(user, data):
     else:
         db.session.flush()
         now = conv.updated_at.isoformat() + "Z"
+        user_message = {
+            "id": new_id("msg"),
+            "conversationId": conv.id,
+            "role": "user",
+            "content": message,
+            "createdAt": now,
+            "requestId": request_id,
+        }
+        if attachment_metadata:
+            user_message["attachments"] = attachment_metadata
         messages = [
-            {"id": new_id("msg"), "conversationId": conv.id, "role": "user", "content": message, "createdAt": now, "requestId": request_id},
+            user_message,
             {"id": new_id("msg"), "conversationId": conv.id, "role": "assistant", "content": assistant_text, "createdAt": now, "requestId": request_id},
         ]
     response = {"conversation": conv.to_public(), "messages": messages}
@@ -139,11 +162,11 @@ def _clean_visible_answer(answer: str, locale: str) -> str:
     return "Yanıt hazırlanamadı. Lütfen tekrar dene." if locale == "tr" else "The answer could not be prepared. Please try again."
 
 
-def _provider_context(user_id: str, conversation_id: str | None, message: str, settings: dict, low_data: bool) -> list[dict]:
+def _provider_context(user_id: str, conversation_id: str | None, current_content: str | list[dict], settings: dict, low_data: bool) -> list[dict]:
     prefix: list[dict] = []
     history_context: list[dict] = []
     total_budget = 3000 if low_data else 12000
-    remaining = max(total_budget - len(message), 0)
+    remaining = max(total_budget - _content_text_length(current_content), 0)
 
     def add(target: list[dict], role: str, content: str):
         nonlocal remaining
@@ -179,11 +202,23 @@ def _provider_context(user_id: str, conversation_id: str | None, message: str, s
             if remaining == before and remaining <= 0:
                 break
         history_context.extend(reversed(selected))
-    return prefix + history_context + [{"role": "user", "content": message}]
+    return prefix + history_context + [{"role": "user", "content": current_content}]
 
 
-def _fingerprint(message: str, conversation_id: str | None) -> str:
-    payload = json.dumps({"message": message, "conversationId": conversation_id}, sort_keys=True, separators=(",", ":"))
+def _content_text_length(content: str | list[dict]) -> int:
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, list):
+        return sum(len(part.get("text", "")) for part in content if isinstance(part, dict) and isinstance(part.get("text"), str))
+    return 0
+
+
+def _fingerprint(message: str, conversation_id: str | None, attachment_ids: list[str]) -> str:
+    payload = json.dumps(
+        {"message": message, "conversationId": conversation_id, "attachments": attachment_ids},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(payload.encode()).hexdigest()
 
 

@@ -1,5 +1,4 @@
 import json
-import hashlib
 from datetime import UTC, datetime
 
 from flask import Blueprint, Response, current_app, g, jsonify, request, session, stream_with_context
@@ -11,6 +10,7 @@ from app.security.errors import APIError
 from app.security.guards import require_json, require_user
 from app.security.validation import enum_field, string_field
 from app.services.auth import cleanup_expired, create_guest, ensure_csrf, login, logout, register
+from app.services.attachments import create_attachment
 from app.services.chat import create_conversation, handle_message, owned_conversation
 from app.services.providers import adapter_call, create_provider, default_provider, update_provider, _owned as owned_provider
 from app.services.openai_oauth import callback as openai_oauth_callback, clear as clear_openai_oauth, start as start_openai_oauth
@@ -21,7 +21,6 @@ from app.services.tasks import claim_task, create_task, execute_task, owned_task
 from app.services.planner import approve_plan, generate_plan
 
 api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
-ATTACHMENT_TEXT_TYPES = {"text/plain", "text/markdown", "application/json", "text/csv"}
 MEMORY_CATEGORIES = {"personal", "preferences", "important", "temporary"}
 PROVIDER_KINDS = {"ai", "stt", "tts"}
 DEVICE_STATUSES = {"offline", "online", "paired", "error"}
@@ -162,25 +161,8 @@ def post_message():
 
 @api_bp.post("/attachments")
 def upload_attachment():
-    """Accept bounded text attachments; binary/vision processing is intentionally not faked."""
-    require_user()
-    upload = request.files.get("file")
-    if not upload or not upload.filename:
-        raise APIError("validation_failed", "file is required.", 422)
-    data = upload.read(current_app.config.get("MAX_CONTENT_LENGTH", 6291456) + 1)
-    if len(data) > current_app.config.get("MAX_CONTENT_LENGTH", 6291456):
-        raise APIError("payload_too_large", "Attachment is too large.", 413)
-    content_type = (upload.mimetype or "application/octet-stream").lower()
-    metadata = {"name": secure_filename(upload.filename), "contentType": content_type, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
-    if content_type in ATTACHMENT_TEXT_TYPES:
-        try:
-            metadata["text"] = data.decode("utf-8")[:current_app.config.get("MAX_PROVIDER_TEXT_CHARS", 200000)]
-        except UnicodeDecodeError:
-            raise APIError("unsupported_attachment", "Attachment is not valid UTF-8 text.", 422)
-    else:
-        metadata["text"] = None
-        metadata["extraction"] = "not_available"
-    return ok({"attachment": metadata}, 201)
+    attachment = create_attachment(require_user().id, request.files.get("file"))
+    return ok({"attachment": attachment.to_upload_public()}, 201)
 
 
 @api_bp.post("/chat/stream")

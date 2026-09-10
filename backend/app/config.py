@@ -77,6 +77,14 @@ class Config:
     GUEST_LIFETIME_SECONDS = int(os.getenv("GUEST_LIFETIME_SECONDS", "86400"))
     MAX_AUDIO_BYTES = int(os.getenv("MAX_AUDIO_BYTES", "5242880"))
     MAX_CONTENT_LENGTH = max(int(os.getenv("MAX_CONTENT_LENGTH", "6291456")), MAX_AUDIO_BYTES + 1048576)
+    MAX_ATTACHMENT_BYTES = int(os.getenv("MAX_ATTACHMENT_BYTES", str(3 * 1024 * 1024)))
+    MAX_ATTACHMENT_TOTAL_BYTES = int(os.getenv("MAX_ATTACHMENT_TOTAL_BYTES", str(4 * 1024 * 1024)))
+    MAX_ATTACHMENTS_PER_MESSAGE = int(os.getenv("MAX_ATTACHMENTS_PER_MESSAGE", "4"))
+    MAX_ATTACHMENT_TEXT_CHARS = int(os.getenv("MAX_ATTACHMENT_TEXT_CHARS", "100000"))
+    MAX_PROVIDER_ATTACHMENT_TEXT_CHARS = int(os.getenv("MAX_PROVIDER_ATTACHMENT_TEXT_CHARS", "8000"))
+    MAX_ATTACHMENT_IMAGE_PIXELS = int(os.getenv("MAX_ATTACHMENT_IMAGE_PIXELS", "20000000"))
+    MAX_ATTACHMENT_VIDEO_FRAME_BYTES = int(os.getenv("MAX_ATTACHMENT_VIDEO_FRAME_BYTES", str(3 * 1024 * 1024)))
+    ATTACHMENT_MEDIA_TIMEOUT_SECONDS = int(os.getenv("ATTACHMENT_MEDIA_TIMEOUT_SECONDS", "8"))
     RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "120"))
     AUTH_RATE_LIMIT_PER_MINUTE = int(os.getenv("AUTH_RATE_LIMIT_PER_MINUTE", "10"))
     PROVIDER_TIMEOUT_SECONDS = int(os.getenv("PROVIDER_TIMEOUT_SECONDS", "45"))
@@ -118,6 +126,22 @@ class Config:
                 raise RuntimeError("LOCAL_PIN_USERNAME is required when local PIN login is enabled")
             if not cls.LOCAL_PIN_HASH:
                 raise RuntimeError("LOCAL_PIN_HASH is required when local PIN login is enabled")
+        if cls.MOBILE_ACCESS_TOKEN_LIFETIME_SECONDS <= 0:
+            raise RuntimeError("MOBILE_ACCESS_TOKEN_LIFETIME_SECONDS must be positive")
+        if cls.MOBILE_REFRESH_TOKEN_LIFETIME_SECONDS <= 0:
+            raise RuntimeError("MOBILE_REFRESH_TOKEN_LIFETIME_SECONDS must be positive")
+        attachment_limits = (
+            "MAX_ATTACHMENT_BYTES",
+            "MAX_ATTACHMENT_TOTAL_BYTES",
+            "MAX_ATTACHMENTS_PER_MESSAGE",
+            "MAX_ATTACHMENT_TEXT_CHARS",
+            "MAX_PROVIDER_ATTACHMENT_TEXT_CHARS",
+            "MAX_ATTACHMENT_IMAGE_PIXELS",
+            "MAX_ATTACHMENT_VIDEO_FRAME_BYTES",
+            "ATTACHMENT_MEDIA_TIMEOUT_SECONDS",
+        )
+        if any(getattr(cls, name) <= 0 for name in attachment_limits):
+            raise RuntimeError("Attachment limits must be positive")
 
 
 class TestingConfig(Config):
