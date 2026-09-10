@@ -159,6 +159,11 @@ describe('HomePage response and history lifecycle', () => {
     await user.keyboard('{Escape}')
     expect(trigger).toHaveFocus()
     expect(screen.queryByRole('group', { name: 'Attachment options' })).not.toBeInTheDocument()
+
+    await user.click(trigger)
+    await user.keyboard('{Escape}')
+    expect(trigger).toHaveFocus()
+    expect(screen.queryByRole('group', { name: 'Attachment options' })).not.toBeInTheDocument()
   })
 
   it('classifies image, video, archive, and ordinary document attachment previews', () => {
