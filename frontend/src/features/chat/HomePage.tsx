@@ -290,8 +290,8 @@ export function HomePage() {
             <button type="button" onClick={() => chooseAttachment('video')}>{t('Video', 'Video')}</button>
             <button type="button" onClick={() => chooseAttachment('file')}>{t('File', 'Dosya')}</button>
           </div>}
-          <input ref={photoInputRef} className="attachment-file-input" type="file" accept="image/*" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
-          <input ref={videoInputRef} className="attachment-file-input" type="file" accept="video/*" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
+          <input ref={photoInputRef} className="attachment-file-input" type="file" accept="image/png,image/jpeg,image/gif" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
+          <input ref={videoInputRef} className="attachment-file-input" type="file" accept="video/mp4,video/webm,video/quicktime" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
           <input ref={fileInputRef} className="attachment-file-input" type="file" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
         </div>
         <div className="input-line">
