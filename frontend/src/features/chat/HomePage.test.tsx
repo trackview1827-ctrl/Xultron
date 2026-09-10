@@ -137,8 +137,8 @@ describe('HomePage response and history lifecycle', () => {
 
     const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]')
     expect(inputs).toHaveLength(3)
-    expect(inputs[0]).toHaveAttribute('accept', 'image/*')
-    expect(inputs[1]).toHaveAttribute('accept', 'video/*')
+    expect(inputs[0]).toHaveAttribute('accept', 'image/png,image/jpeg,image/gif')
+    expect(inputs[1]).toHaveAttribute('accept', 'video/mp4,video/webm,video/quicktime')
     fireEvent.change(inputs[2]!, { target: { files: [new File(['note'], 'note.txt', { type: 'text/plain' })] } })
     await waitFor(() => expect(tasks.upload).toHaveBeenCalledWith(expect.any(File)))
     expect(await screen.findByRole('status')).toHaveTextContent('note.txt is ready')
