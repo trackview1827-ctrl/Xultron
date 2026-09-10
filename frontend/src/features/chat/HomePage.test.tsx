@@ -141,10 +141,24 @@ describe('HomePage response and history lifecycle', () => {
     fireEvent.change(inputs[1]!, { target: { files: [new File(['note'], 'note.txt', { type: 'text/plain' })] } })
     await waitFor(() => expect(tasks.upload).toHaveBeenCalledWith(expect.any(File)))
     expect(await screen.findByRole('status')).toHaveTextContent('note.txt is ready')
-    expect(screen.getByRole('region', { name: 'Selected attachment: note.txt' })).toHaveTextContent('FILE')
+    const preview = screen.getByRole('region', { name: 'Selected attachment: note.txt' })
+    expect(preview).toHaveTextContent('FILE')
+    expect(preview.parentElement?.firstElementChild).toBe(preview)
 
     await user.click(screen.getByRole('button', { name: 'Camera' }))
     expect(screen.getByRole('status')).toHaveTextContent('Camera capture is not available')
+    expect(screen.getByRole('button', { name: 'Add attachment' })).toHaveFocus()
+  })
+
+  it('returns focus to the attachment trigger when the attachment menu closes with Escape', async () => {
+    const user = userEvent.setup(); render(<HomePage />)
+    const trigger = await screen.findByRole('button', { name: 'Add attachment' })
+    await user.click(trigger)
+    const media = screen.getByRole('button', { name: 'Photo or video' })
+    media.focus()
+    await user.keyboard('{Escape}')
+    expect(trigger).toHaveFocus()
+    expect(screen.queryByRole('group', { name: 'Attachment options' })).not.toBeInTheDocument()
   })
 
   it('classifies image, video, archive, and ordinary document attachment previews', () => {
