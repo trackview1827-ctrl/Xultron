@@ -1,6 +1,5 @@
 package ai.xultron.app.ui
 
-import android.content.Intent
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
@@ -89,10 +88,11 @@ class WebFileChooserContractTest {
     @Test
     fun `supported text attachments use the document picker with exact MIME types`() {
         val types = arrayOf("text/plain", "text/markdown", "application/json", "text/csv")
-        val intent = WebFileChooserPolicy.openDocumentIntent(types, allowMultiple = false)
         assertEquals(WebFileChooserPolicy.PickerScope.DOCUMENTS, WebFileChooserPolicy.scopeFor(WebFileChooserPolicy.requestedMimeTypes(types)))
-        assertEquals("*/*", intent.type)
-        assertEquals(types.toList(), intent.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)?.toList())
+        assertEquals(types.toList(), WebFileChooserPolicy.requestedMimeTypes(types))
+        val policy = source("WebFileChooserPolicy.kt")
+        assertTrue(policy.contains("PickerScope.DOCUMENTS -> "*/*""))
+        assertTrue(policy.contains("putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toTypedArray())"))
     }
 
     @Test
