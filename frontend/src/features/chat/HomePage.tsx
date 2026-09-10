@@ -15,6 +15,26 @@ import { tasksApi } from '../../services/tasksApi'
 
 function id(): string { return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}` }
 function normalizeProviderList(data: { providers: Provider[] } | Provider[]): Provider[] { return Array.isArray(data) ? data : data.providers }
+
+export type AttachmentPreviewKind = 'image' | 'video' | 'archive' | 'file'
+type AttachmentPreview = {
+  id: string
+  name: string
+  kind: AttachmentPreviewKind
+  objectUrl?: string
+  uploadState: 'checking' | 'ready' | 'failed'
+}
+
+export function attachmentPreviewKind(file: Pick<File, 'name' | 'type'>): AttachmentPreviewKind {
+  if (file.type.startsWith('image/')) return 'image'
+  if (file.type.startsWith('video/')) return 'video'
+  if (/\.(zip|7z|rar|tar|gz|bz2|xz)$/i.test(file.name)) return 'archive'
+  return 'file'
+}
+
+function canCreateObjectUrl(): boolean {
+  return typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+}
 export function isCoreCompact(
   messageCount: number,
   composerFocused: boolean,
@@ -42,8 +62,8 @@ export function HomePage() {
   const { coreState, dispatchCore, settings, online, networkOnline, setPage } = context; const conversationId = context.activeConversationId ?? fallbackConversationId; const setConversationId = context.setActiveConversationId ?? setFallbackConversationId; const messages = context.activeMessages ?? fallbackMessages; const setMessages = context.setActiveMessages ?? setFallbackMessages; const input = context.activeDraft ?? fallbackInput; const setInput = context.setActiveDraft ?? setFallbackInput; const setActiveConversation = context.setActiveConversation ?? (() => undefined); const [conversations, setConversations] = useState<Conversation[]>([])
   const { t, locale } = useLocale()
   const [aiReady, setAiReady] = useState<boolean | null>(null)
-  const [sttReady, setSttReady] = useState(false); const [ttsReady, setTtsReady] = useState(false); const [error, setError] = useState(''); const [streaming, setStreaming] = useState(false); const [historyOpen, setHistoryOpen] = useState(false); const [composerFocused, setComposerFocused] = useState(false); const [virtualKeyboardVisible, setVirtualKeyboardVisible] = useState(false); const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false); const [attachmentStatus, setAttachmentStatus] = useState(''); const [attachmentUploading, setAttachmentUploading] = useState(false)
-  const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const photoInputRef = useRef<HTMLInputElement | null>(null); const fileInputRef = useRef<HTMLInputElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0); const liveConversationRef = useRef(false)
+  const [sttReady, setSttReady] = useState(false); const [ttsReady, setTtsReady] = useState(false); const [error, setError] = useState(''); const [streaming, setStreaming] = useState(false); const [historyOpen, setHistoryOpen] = useState(false); const [composerFocused, setComposerFocused] = useState(false); const [virtualKeyboardVisible, setVirtualKeyboardVisible] = useState(false); const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false); const [attachmentStatus, setAttachmentStatus] = useState(''); const [attachmentUploading, setAttachmentUploading] = useState(false); const [attachmentPreview, setAttachmentPreview] = useState<AttachmentPreview | null>(null)
+  const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const photoInputRef = useRef<HTMLInputElement | null>(null); const fileInputRef = useRef<HTMLInputElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0); const liveConversationRef = useRef(false); const attachmentPreviewRef = useRef<AttachmentPreview | null>(null); const attachmentGenerationRef = useRef(0)
   const [liveConversation, setLiveConversation] = useState(false); const [liveTranscript, setLiveTranscript] = useState(''); const [liveRetry, setLiveRetry] = useState(0)
   const handleVoiceTranscript = useCallback((text: string) => {
     if (liveConversationRef.current) { setLiveTranscript(text); return }
@@ -75,7 +95,7 @@ export function HomePage() {
   const stopLiveConversation = () => {
     liveConversationRef.current = false; setLiveConversation(false); setLiveTranscript(''); setLiveRetry(0); voice.stop(); voice.stopSpeaking(); cancelActiveResponse(true)
   }
-  useEffect(() => () => { historyAbortRef.current?.abort(); const active = activeResponseRef.current; if (active) { active.stopped = true; abortRef.current?.abort(); dispatchCore({ type: 'CANCEL' }) } }, [dispatchCore])
+  useEffect(() => () => { historyAbortRef.current?.abort(); const active = activeResponseRef.current; if (active) { active.stopped = true; abortRef.current?.abort(); dispatchCore({ type: 'CANCEL' }) } const preview = attachmentPreviewRef.current; if (preview?.objectUrl) URL.revokeObjectURL(preview.objectUrl) }, [dispatchCore])
   const selectConversation = async (conversation: Conversation) => {
     cancelActiveResponse(false); historyAbortRef.current?.abort(); const generation = ++selectionGenerationRef.current; const controller = new AbortController(); historyAbortRef.current = controller
     setHistoryOpen(false); setConversationId(conversation.id); setActiveConversation(conversation); setMessages([]); setError('')
@@ -154,21 +174,42 @@ export function HomePage() {
   }, [])
   const hasComposerText = Boolean(input.trim())
   const coreCompact = isCoreCompact(messages.length, composerFocused, isTouchDevice(), virtualKeyboardVisible)
-  const uploadAttachment = async (event: ChangeEvent<HTMLInputElement>, kind: 'photo' | 'file') => {
+  const clearAttachmentPreview = () => {
+    attachmentGenerationRef.current += 1
+    const preview = attachmentPreviewRef.current
+    if (preview?.objectUrl) URL.revokeObjectURL(preview.objectUrl)
+    attachmentPreviewRef.current = null
+    setAttachmentPreview(null)
+    setAttachmentStatus('')
+  }
+  const uploadAttachment = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
     if (!file) return
+    const previous = attachmentPreviewRef.current
+    if (previous?.objectUrl) URL.revokeObjectURL(previous.objectUrl)
+    const kind = attachmentPreviewKind(file)
+    const preview: AttachmentPreview = {
+      id: id(), name: file.name, kind,
+      objectUrl: (kind === 'image' || kind === 'video') && canCreateObjectUrl() ? URL.createObjectURL(file) : undefined,
+      uploadState: 'checking',
+    }
+    attachmentPreviewRef.current = preview
+    setAttachmentPreview(preview)
+    const generation = ++attachmentGenerationRef.current
     setAttachmentUploading(true)
     setAttachmentStatus(t('Checking attachment…', 'Ek kontrol ediliyor…'))
     try {
       const { attachment } = await tasksApi.upload(file)
-      setAttachmentStatus(kind === 'photo'
-        ? t(`${attachment.name} was checked, but image analysis is not available yet, so it was not added to this conversation.`, `${attachment.name} kontrol edildi, ancak görsel analizi henüz kullanılamıyor; bu nedenle sohbete eklenmedi.`)
-        : t(`${attachment.name} was processed safely. Its contents are not added to this conversation automatically.`, `${attachment.name} güvenli biçimde işlendi. İçeriği sohbete otomatik olarak eklenmez.`))
+      if (generation !== attachmentGenerationRef.current) return
+      setAttachmentPreview(current => current?.id === preview.id ? { ...current, uploadState: 'ready', name: attachment.name } : current)
+      setAttachmentStatus(t(`${attachment.name} is ready.`, `${attachment.name} hazır.`))
     } catch {
+      if (generation !== attachmentGenerationRef.current) return
+      setAttachmentPreview(current => current?.id === preview.id ? { ...current, uploadState: 'failed' } : current)
       setAttachmentStatus(t('The attachment could not be processed. The backend accepts files up to 6 MB.', 'Ek işlenemedi. Arka uç en fazla 6 MB dosya kabul eder.'))
     } finally {
-      setAttachmentUploading(false)
+      if (generation === attachmentGenerationRef.current) setAttachmentUploading(false)
     }
   }
   const chooseAttachment = (kind: 'photo' | 'file' | 'camera') => {
@@ -197,12 +238,12 @@ export function HomePage() {
           <button type="button" className="attachment-trigger" aria-label={t('Add attachment', 'Ek ekle')} aria-expanded={attachmentMenuOpen} aria-controls="attachment-menu" onClick={() => setAttachmentMenuOpen(open => !open)} disabled={!online || streaming || liveConversation || attachmentUploading}><Icon name="plus" /></button>
           {attachmentMenuOpen && <div id="attachment-menu" className="attachment-menu" role="group" aria-label={t('Attachment options', 'Ek seçenekleri')} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setAttachmentMenuOpen(false) } }}>
             <p>{t('The backend accepts files up to 6 MB.', 'Arka uç en fazla 6 MB dosya kabul eder.')}</p>
-            <button type="button" onClick={() => chooseAttachment('photo')}>{t('Photo', 'Fotoğraf')}</button>
+            <button type="button" onClick={() => chooseAttachment('photo')}>{t('Photo or video', 'Fotoğraf veya video')}</button>
             <button type="button" onClick={() => chooseAttachment('file')}>{t('File', 'Dosya')}</button>
             <button type="button" onClick={() => chooseAttachment('camera')}>{t('Camera', 'Kamera')}</button>
           </div>}
-          <input ref={photoInputRef} className="attachment-file-input" type="file" accept="image/*" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event, 'photo')} />
-          <input ref={fileInputRef} className="attachment-file-input" type="file" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event, 'file')} />
+          <input ref={photoInputRef} className="attachment-file-input" type="file" accept="image/*,video/*" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
+          <input ref={fileInputRef} className="attachment-file-input" type="file" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
         </div>
         <div className="input-line">
           <textarea id="command-input" rows={1} value={input} maxLength={8000} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} onChange={event => setInput(event.target.value.slice(0, 8000))} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={online ? t('Ask Xultron…', 'Xultron’a sor…') : t('Reconnect to transmit…', 'Göndermek için yeniden bağlan…')} aria-label={t('Message Xultron', 'Xultron’a mesaj gönder')} disabled={!online || streaming || liveConversation} />
@@ -216,6 +257,15 @@ export function HomePage() {
               ? <button className="send-button" onClick={() => void send()} disabled={!online || liveConversation} aria-label={t('Send message', 'Mesaj gönder')}>{aiReady === null ? <Spinner /> : <Icon name="send" />}</button>
               : <button className={`live-voice-button ${liveConversation ? 'active' : ''}`} onClick={() => liveConversation ? stopLiveConversation() : void startLiveConversation()} disabled={liveConversation ? false : !online || !sttReady || !ttsReady || aiReady !== true} aria-pressed={liveConversation} aria-label={liveConversation ? t('Stop live conversation', 'Anlık konuşmayı durdur') : t('Start live conversation', 'Anlık konuşmayı başlat')}><span className="live-waveform" aria-hidden="true"><span /><span /><span /><span /><span /></span></button>}
         </div>
+        {attachmentPreview && <section className={`attachment-preview attachment-preview--${attachmentPreview.kind}`} aria-label={t(`Selected attachment: ${attachmentPreview.name}`, `Seçili ek: ${attachmentPreview.name}`)}>
+          <div className="attachment-preview__visual" aria-hidden="true">
+            {attachmentPreview.kind === 'image' && attachmentPreview.objectUrl ? <img src={attachmentPreview.objectUrl} alt="" />
+              : attachmentPreview.kind === 'video' && attachmentPreview.objectUrl ? <video src={attachmentPreview.objectUrl} muted preload="metadata" />
+                : <><Icon name={attachmentPreview.kind === 'archive' ? 'archive' : 'file'} /><span>{attachmentPreview.kind === 'archive' ? 'ZIP' : 'FILE'}</span></>}
+          </div>
+          <div className="attachment-preview__details"><strong>{attachmentPreview.name}</strong><small>{attachmentPreview.kind === 'image' ? t('Image', 'Görsel') : attachmentPreview.kind === 'video' ? t('Video', 'Video') : attachmentPreview.kind === 'archive' ? t('Archive', 'Arşiv') : t('Document', 'Belge')} · {attachmentPreview.uploadState === 'checking' ? t('Checking…', 'Kontrol ediliyor…') : attachmentPreview.uploadState === 'ready' ? t('Ready', 'Hazır') : t('Could not process', 'İşlenemedi')}</small></div>
+          <button type="button" className="attachment-preview__remove" onClick={clearAttachmentPreview} aria-label={t(`Remove ${attachmentPreview.name}`, `${attachmentPreview.name} ekini kaldır`)}><Icon name="close" /></button>
+        </section>}
         {attachmentStatus && <p className="attachment-status" role="status">{attachmentStatus}</p>}
       </div>
     </section>
