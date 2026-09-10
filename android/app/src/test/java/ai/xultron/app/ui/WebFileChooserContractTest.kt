@@ -91,7 +91,7 @@ class WebFileChooserContractTest {
         assertEquals(WebFileChooserPolicy.PickerScope.DOCUMENTS, WebFileChooserPolicy.scopeFor(WebFileChooserPolicy.requestedMimeTypes(types)))
         assertEquals(types.toList(), WebFileChooserPolicy.requestedMimeTypes(types))
         val policy = source("WebFileChooserPolicy.kt")
-        assertTrue(policy.contains("PickerScope.DOCUMENTS -> "*/*""))
+        assertTrue(policy.contains("PickerScope.DOCUMENTS -> \"*/*\""))
         assertTrue(policy.contains("putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toTypedArray())"))
     }
 
