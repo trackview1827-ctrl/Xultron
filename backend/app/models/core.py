@@ -150,14 +150,6 @@ class Attachment(TimestampMixin, db.Model):
             "extraction": "available" if self.kind == "text" else "not_available",
         }
 
-    def to_upload_public(self):
-        result = self.to_public()
-        # Retain the existing upload response contract while chat/history only use
-        # to_public(), which never contains attachment content.
-        result["text"] = self.extracted_text if self.kind == "text" else None
-        return result
-
-
 class Task(TimestampMixin, db.Model):
     """Durable unit of agent work and its observable lifecycle state."""
     __tablename__ = "tasks"

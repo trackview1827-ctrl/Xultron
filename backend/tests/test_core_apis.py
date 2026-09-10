@@ -78,7 +78,7 @@ def test_attachment_returns_metadata_and_extracts_only_text(user_client):
     text = user_client.post("/api/v1/attachments", data={"file": (BytesIO(b"hello\nworld"), "notes.txt")}, headers={"X-CSRF-Token": csrf}, content_type="multipart/form-data")
     assert text.status_code == 201
     attachment = text.get_json()["attachment"]
-    assert attachment["size"] == 11 and attachment["text"] == "hello\nworld"
+    assert attachment["size"] == 11 and "text" not in attachment
     image = user_client.post("/api/v1/attachments", data={"file": (BytesIO(b"not-an-image"), "screen.png", "image/png")}, headers={"X-CSRF-Token": csrf}, content_type="multipart/form-data")
     assert image.status_code == 422
     assert image.get_json()["error"]["code"] == "unsupported_attachment"
