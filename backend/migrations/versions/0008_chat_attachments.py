@@ -4,7 +4,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "0008_chat_attachments"
-down_revision = "0007_android_devices"
+down_revision = "0006_whisper_port"
 branch_labels = None
 depends_on = None
 
