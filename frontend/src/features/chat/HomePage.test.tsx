@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../services/settingsApi'
-import { HomePage, isCoreCompact } from './HomePage'
+import { attachmentPreviewKind, HomePage, isCoreCompact } from './HomePage'
 
 const app = vi.hoisted(() => ({ dispatchCore: vi.fn(), value: {} as Record<string, unknown> }))
 const chat = vi.hoisted(() => ({ conversations: vi.fn(), messages: vi.fn(), stream: vi.fn() }))
@@ -125,24 +125,32 @@ describe('HomePage response and history lifecycle', () => {
     expect(isCoreCompact(1, false, true, false)).toBe(true)
   })
 
-  it('offers exactly Photo, File, and Camera and routes File through the safe attachment flow', async () => {
+  it('offers media, file, and camera choices and routes files through the safe attachment flow', async () => {
     const user = userEvent.setup(); const { container } = render(<HomePage />)
     await user.click(await screen.findByRole('button', { name: 'Add attachment' }))
     const menu = screen.getByRole('group', { name: 'Attachment options' })
     expect(menu.querySelectorAll('button')).toHaveLength(3)
-    expect(menu).toHaveTextContent('Photo')
+    expect(menu).toHaveTextContent('Photo or video')
     expect(menu).toHaveTextContent('File')
     expect(menu).toHaveTextContent('Camera')
     expect(menu).toHaveTextContent('up to 6 MB')
 
     const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]')
     expect(inputs).toHaveLength(2)
-    expect(inputs[0]).toHaveAttribute('accept', 'image/*')
+    expect(inputs[0]).toHaveAttribute('accept', 'image/*,video/*')
     fireEvent.change(inputs[1]!, { target: { files: [new File(['note'], 'note.txt', { type: 'text/plain' })] } })
     await waitFor(() => expect(tasks.upload).toHaveBeenCalledWith(expect.any(File)))
-    expect(await screen.findByRole('status')).toHaveTextContent('note.txt was processed safely')
+    expect(await screen.findByRole('status')).toHaveTextContent('note.txt is ready')
+    expect(screen.getByRole('region', { name: 'Selected attachment: note.txt' })).toHaveTextContent('FILE')
 
     await user.click(screen.getByRole('button', { name: 'Camera' }))
     expect(screen.getByRole('status')).toHaveTextContent('Camera capture is not available')
+  })
+
+  it('classifies image, video, archive, and ordinary document attachment previews', () => {
+    expect(attachmentPreviewKind(new File(['image'], 'scan.png', { type: 'image/png' }))).toBe('image')
+    expect(attachmentPreviewKind(new File(['video'], 'walk.mp4', { type: 'video/mp4' }))).toBe('video')
+    expect(attachmentPreviewKind(new File(['zip'], 'logs.zip', { type: 'application/zip' }))).toBe('archive')
+    expect(attachmentPreviewKind(new File(['text'], 'notes.txt', { type: 'text/plain' }))).toBe('file')
   })
 })
