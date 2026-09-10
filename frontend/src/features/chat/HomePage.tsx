@@ -286,7 +286,6 @@ export function HomePage() {
         <div className="attachment-control">
           <button ref={attachmentTriggerRef} type="button" className="attachment-trigger" aria-label={t('Add attachment', 'Ek ekle')} aria-expanded={attachmentMenuOpen} aria-controls="attachment-menu" onClick={() => setAttachmentMenuOpen(open => !open)} onKeyDown={event => { if (event.key === 'Escape' && attachmentMenuOpen) { event.preventDefault(); setAttachmentMenuOpen(false) } }} disabled={!online || streaming || liveConversation || attachmentUploading}><Icon name="plus" /></button>
           {attachmentMenuOpen && <div id="attachment-menu" className="attachment-menu" role="group" aria-label={t('Attachment options', 'Ek seçenekleri')} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setAttachmentMenuOpen(false); attachmentTriggerRef.current?.focus() } }}>
-            <p>{t('The backend accepts files up to 6 MB.', 'Arka uç en fazla 6 MB dosya kabul eder.')}</p>
             <button type="button" onClick={() => chooseAttachment('photo')}>{t('Photo', 'Fotoğraf')}</button>
             <button type="button" onClick={() => chooseAttachment('video')}>{t('Video', 'Video')}</button>
             <button type="button" onClick={() => chooseAttachment('file')}>{t('File', 'Dosya')}</button>

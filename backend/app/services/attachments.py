@@ -8,10 +8,13 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import warnings
 from collections.abc import Iterable
+from io import BytesIO
 from pathlib import Path
 
 from flask import current_app
+from PIL import Image, UnidentifiedImageError
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
@@ -188,20 +191,31 @@ def _content_type(value: object) -> str:
 
 
 def _validate_image(data: bytes, content_type: str, max_pixels: int) -> None:
-    if content_type == "image/png":
-        if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR" or not data.endswith(b"IEND\xaeB`\x82"):
-            _invalid_image()
-        width, height = struct.unpack(">II", data[16:24])
-    elif content_type == "image/gif":
-        if len(data) < 14 or data[:6] not in {b"GIF87a", b"GIF89a"} or data[-1:] != b";":
-            _invalid_image()
-        width, height = struct.unpack("<HH", data[6:10])
-    elif content_type == "image/jpeg":
-        width, height = _jpeg_dimensions(data)
-    else:  # Kept defensive even though callers gate to IMAGE_TYPES.
+    # Structural headers are not enough: providers must never receive malformed
+    # image bytes. Pillow verifies the declared decoder then fully loads the
+    # bounded image, while the explicit pixel ceiling prevents decompression
+    # bombs from using unbounded memory.
+    expected_format = {"image/png": "PNG", "image/jpeg": "JPEG", "image/gif": "GIF"}.get(content_type)
+    if not expected_format:
         _invalid_image()
-    if not width or not height or width * height > max_pixels:
-        raise APIError("unsupported_attachment", "Image dimensions are invalid or too large.", 422)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(data)) as image:
+                if image.format != expected_format:
+                    _invalid_image()
+                width, height = image.size
+                if not width or not height or width * height > max_pixels:
+                    raise APIError("unsupported_attachment", "Image dimensions are invalid or too large.", 422)
+                image.verify()
+            # verify() invalidates the decoder state. Reopen and load all pixels
+            # so truncated payloads are rejected before a provider sees them.
+            with Image.open(BytesIO(data)) as image:
+                image.load()
+    except APIError:
+        raise
+    except (OSError, SyntaxError, UnidentifiedImageError, Image.DecompressionBombError, ValueError, IndexError):
+        _invalid_image()
 
 
 def _jpeg_dimensions(data: bytes) -> tuple[int, int]:
