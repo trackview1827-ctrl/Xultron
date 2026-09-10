@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: android-${{ github.ref }}
@@ -29,6 +29,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify debug-release tag targets app history
+        if: startsWith(github.ref, 'refs/tags/android-debug-')
+        run: |
+          git fetch origin app
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/app
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
