@@ -63,7 +63,7 @@ export function HomePage() {
   const { t, locale } = useLocale()
   const [aiReady, setAiReady] = useState<boolean | null>(null)
   const [sttReady, setSttReady] = useState(false); const [ttsReady, setTtsReady] = useState(false); const [error, setError] = useState(''); const [streaming, setStreaming] = useState(false); const [historyOpen, setHistoryOpen] = useState(false); const [composerFocused, setComposerFocused] = useState(false); const [virtualKeyboardVisible, setVirtualKeyboardVisible] = useState(false); const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false); const [attachmentStatus, setAttachmentStatus] = useState(''); const [attachmentUploading, setAttachmentUploading] = useState(false); const [attachmentPreview, setAttachmentPreview] = useState<AttachmentPreview | null>(null)
-  const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const photoInputRef = useRef<HTMLInputElement | null>(null); const fileInputRef = useRef<HTMLInputElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0); const liveConversationRef = useRef(false); const attachmentPreviewRef = useRef<AttachmentPreview | null>(null); const attachmentGenerationRef = useRef(0)
+  const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const attachmentTriggerRef = useRef<HTMLButtonElement | null>(null); const photoInputRef = useRef<HTMLInputElement | null>(null); const fileInputRef = useRef<HTMLInputElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0); const liveConversationRef = useRef(false); const attachmentPreviewRef = useRef<AttachmentPreview | null>(null); const attachmentGenerationRef = useRef(0)
   const [liveConversation, setLiveConversation] = useState(false); const [liveTranscript, setLiveTranscript] = useState(''); const [liveRetry, setLiveRetry] = useState(0)
   const handleVoiceTranscript = useCallback((text: string) => {
     if (liveConversationRef.current) { setLiveTranscript(text); return }
@@ -216,6 +216,7 @@ export function HomePage() {
     setAttachmentMenuOpen(false)
     if (kind === 'camera') {
       setAttachmentStatus(t('Camera capture is not available in this app yet. Grant camera permission when capture support is added.', 'Kamera çekimi bu uygulamada henüz kullanılamıyor. Çekim desteği eklendiğinde kamera izni verin.'))
+      attachmentTriggerRef.current?.focus()
       return
     }
     ;(kind === 'photo' ? photoInputRef : fileInputRef).current?.click()
@@ -234,9 +235,18 @@ export function HomePage() {
       {(aiReady === false || (!online && messages.length === 0)) && <div className="system-notice"><span className="notice-code">{!online ? 'LINK / 00' : 'PROVIDER / 00'}</span><div><strong>{!online ? 'Connection unavailable' : 'No AI provider configured'}</strong><p>{!online ? 'The interface remains available. AI actions resume after reconnection.' : 'Connect an intelligence provider to activate conversations.'}</p></div>{online && <Button variant="secondary" onClick={() => setPage('settings')}>CONFIGURE PROVIDER</Button>}</div>}
       {(error || voice.error) && <div className="command-error" role="alert"><span>{error || voice.error}</span><button onClick={() => { setError(''); voice.clearError() }} aria-label="Dismiss error"><Icon name="close" /></button></div>}
       <div className={`command-dock ${coreCompact ? 'engaged' : ''} ${conserveMotion ? 'motion-reduced' : ''}`}>
+        {attachmentPreview && <section className={`attachment-preview attachment-preview--${attachmentPreview.kind}`} aria-label={t(`Selected attachment: ${attachmentPreview.name}`, `Seçili ek: ${attachmentPreview.name}`)}>
+          <div className="attachment-preview__visual" aria-hidden="true">
+            {attachmentPreview.kind === 'image' && attachmentPreview.objectUrl ? <img src={attachmentPreview.objectUrl} alt="" />
+              : attachmentPreview.kind === 'video' && attachmentPreview.objectUrl ? <video src={attachmentPreview.objectUrl} muted preload="metadata" />
+                : <><Icon name={attachmentPreview.kind === 'archive' ? 'archive' : 'file'} /><span>{attachmentPreview.kind === 'archive' ? 'ZIP' : 'FILE'}</span></>}
+          </div>
+          <div className="attachment-preview__details"><strong>{attachmentPreview.name}</strong><small>{attachmentPreview.kind === 'image' ? t('Image', 'Görsel') : attachmentPreview.kind === 'video' ? t('Video', 'Video') : attachmentPreview.kind === 'archive' ? t('Archive', 'Arşiv') : t('Document', 'Belge')} · {attachmentPreview.uploadState === 'checking' ? t('Checking…', 'Kontrol ediliyor…') : attachmentPreview.uploadState === 'ready' ? t('Ready', 'Hazır') : t('Could not process', 'İşlenemedi')}</small></div>
+          <button type="button" className="attachment-preview__remove" onClick={clearAttachmentPreview} aria-label={t(`Remove ${attachmentPreview.name}`, `${attachmentPreview.name} ekini kaldır`)}><Icon name="close" /></button>
+        </section>}
         <div className="attachment-control">
-          <button type="button" className="attachment-trigger" aria-label={t('Add attachment', 'Ek ekle')} aria-expanded={attachmentMenuOpen} aria-controls="attachment-menu" onClick={() => setAttachmentMenuOpen(open => !open)} disabled={!online || streaming || liveConversation || attachmentUploading}><Icon name="plus" /></button>
-          {attachmentMenuOpen && <div id="attachment-menu" className="attachment-menu" role="group" aria-label={t('Attachment options', 'Ek seçenekleri')} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setAttachmentMenuOpen(false) } }}>
+          <button ref={attachmentTriggerRef} type="button" className="attachment-trigger" aria-label={t('Add attachment', 'Ek ekle')} aria-expanded={attachmentMenuOpen} aria-controls="attachment-menu" onClick={() => setAttachmentMenuOpen(open => !open)} disabled={!online || streaming || liveConversation || attachmentUploading}><Icon name="plus" /></button>
+          {attachmentMenuOpen && <div id="attachment-menu" className="attachment-menu" role="group" aria-label={t('Attachment options', 'Ek seçenekleri')} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setAttachmentMenuOpen(false); attachmentTriggerRef.current?.focus() } }}>
             <p>{t('The backend accepts files up to 6 MB.', 'Arka uç en fazla 6 MB dosya kabul eder.')}</p>
             <button type="button" onClick={() => chooseAttachment('photo')}>{t('Photo or video', 'Fotoğraf veya video')}</button>
             <button type="button" onClick={() => chooseAttachment('file')}>{t('File', 'Dosya')}</button>
@@ -257,15 +267,6 @@ export function HomePage() {
               ? <button className="send-button" onClick={() => void send()} disabled={!online || liveConversation} aria-label={t('Send message', 'Mesaj gönder')}>{aiReady === null ? <Spinner /> : <Icon name="send" />}</button>
               : <button className={`live-voice-button ${liveConversation ? 'active' : ''}`} onClick={() => liveConversation ? stopLiveConversation() : void startLiveConversation()} disabled={liveConversation ? false : !online || !sttReady || !ttsReady || aiReady !== true} aria-pressed={liveConversation} aria-label={liveConversation ? t('Stop live conversation', 'Anlık konuşmayı durdur') : t('Start live conversation', 'Anlık konuşmayı başlat')}><span className="live-waveform" aria-hidden="true"><span /><span /><span /><span /><span /></span></button>}
         </div>
-        {attachmentPreview && <section className={`attachment-preview attachment-preview--${attachmentPreview.kind}`} aria-label={t(`Selected attachment: ${attachmentPreview.name}`, `Seçili ek: ${attachmentPreview.name}`)}>
-          <div className="attachment-preview__visual" aria-hidden="true">
-            {attachmentPreview.kind === 'image' && attachmentPreview.objectUrl ? <img src={attachmentPreview.objectUrl} alt="" />
-              : attachmentPreview.kind === 'video' && attachmentPreview.objectUrl ? <video src={attachmentPreview.objectUrl} muted preload="metadata" />
-                : <><Icon name={attachmentPreview.kind === 'archive' ? 'archive' : 'file'} /><span>{attachmentPreview.kind === 'archive' ? 'ZIP' : 'FILE'}</span></>}
-          </div>
-          <div className="attachment-preview__details"><strong>{attachmentPreview.name}</strong><small>{attachmentPreview.kind === 'image' ? t('Image', 'Görsel') : attachmentPreview.kind === 'video' ? t('Video', 'Video') : attachmentPreview.kind === 'archive' ? t('Archive', 'Arşiv') : t('Document', 'Belge')} · {attachmentPreview.uploadState === 'checking' ? t('Checking…', 'Kontrol ediliyor…') : attachmentPreview.uploadState === 'ready' ? t('Ready', 'Hazır') : t('Could not process', 'İşlenemedi')}</small></div>
-          <button type="button" className="attachment-preview__remove" onClick={clearAttachmentPreview} aria-label={t(`Remove ${attachmentPreview.name}`, `${attachmentPreview.name} ekini kaldır`)}><Icon name="close" /></button>
-        </section>}
         {attachmentStatus && <p className="attachment-status" role="status">{attachmentStatus}</p>}
       </div>
     </section>
