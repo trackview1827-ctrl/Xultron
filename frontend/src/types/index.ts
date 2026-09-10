@@ -9,7 +9,8 @@ export interface IdentityResponse { user: User; csrfToken: string; expiresAt?: s
 export interface LogoutResponse { ok: boolean; csrfToken: string }
 export interface SessionDevice { id: string; current: boolean; createdAt: string; lastSeenAt: string; expiresAt: string }
 export interface Conversation { id: string; title: string; createdAt: string; updatedAt: string }
-export interface Message { id: string; conversationId: string; role: 'user' | 'assistant' | 'system'; content: string; createdAt: string; pending?: boolean; failed?: boolean; cancelled?: boolean }
+export interface MessageAttachment extends Attachment { previewUrl?: string }
+export interface Message { id: string; conversationId: string; role: 'user' | 'assistant' | 'system'; content: string; createdAt: string; pending?: boolean; failed?: boolean; cancelled?: boolean; attachments?: MessageAttachment[] }
 export interface ProviderCredential { configured: boolean; masked: string | null; authMethod?: 'api_key' | 'codex_oauth' | null; accountId?: string | null; expiresAt?: number | null }
 export interface Provider {
   id: string; name: string; kind: ProviderKind; adapter: string; baseUrl: string | null; model: string | null;
@@ -34,5 +35,6 @@ export interface DataUsage { downloaded: number; uploaded: number }
 export interface TaskStep { id: string; action: string; status: string }
 export interface AgentTask { id: string; title: string; instruction: string; status: string; result: unknown; error: string | null; workerId: string | null; leaseExpiresAt: string | null }
 export interface ToolDescription { name: string; description: string; requiredPermissions: string[]; sideEffect: boolean; riskLevel: string; available: boolean }
-export interface Attachment { name: string; contentType: string; size: number; sha256: string; text: string | null; extraction?: string }
+/** The additive attachment contract returned by the upload endpoint. */
+export interface Attachment { id: string; name: string; contentType: string; size: number; sha256: string; text?: string | null; extraction?: string }
 export type PageId = 'home' | 'memory' | 'settings'

@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
-import type { Conversation, Message, Provider } from '../../types'
+import type { Attachment, Conversation, Message, MessageAttachment, Provider } from '../../types'
 import { chatApi } from '../../services/chatApi'
 import { providersApi } from '../../services/providersApi'
 import { ApiError } from '../../services/apiClient'
@@ -18,10 +18,11 @@ function normalizeProviderList(data: { providers: Provider[] } | Provider[]): Pr
 
 export type AttachmentPreviewKind = 'image' | 'video' | 'archive' | 'file'
 type AttachmentPreview = {
-  id: string
+  localId: string
   name: string
   kind: AttachmentPreviewKind
   objectUrl?: string
+  attachment?: Attachment
   uploadState: 'checking' | 'ready' | 'failed'
 }
 
@@ -34,6 +35,31 @@ export function attachmentPreviewKind(file: Pick<File, 'name' | 'type'>): Attach
 
 function canCreateObjectUrl(): boolean {
   return typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+}
+
+function attachmentKindLabel(kind: AttachmentPreviewKind, t: (english: string, turkish: string) => string): string {
+  if (kind === 'image') return t('Image', 'Görsel')
+  if (kind === 'video') return t('Video', 'Video')
+  if (kind === 'archive') return t('Archive', 'Arşiv')
+  return t('Document', 'Belge')
+}
+
+function formatAttachmentSize(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function MessageAttachmentCard({ attachment, t }: { attachment: MessageAttachment; t: (english: string, turkish: string) => string }) {
+  const kind = attachmentPreviewKind({ name: attachment.name, type: attachment.contentType })
+  return <section className={`message-attachment-card message-attachment-card--${kind}`} aria-label={t(`Attached ${attachmentKindLabel(kind, t).toLowerCase()}: ${attachment.name}`, `Ekli ${attachmentKindLabel(kind, t).toLowerCase()}: ${attachment.name}`)}>
+    <div className="message-attachment-card__visual">
+      {kind === 'image' && attachment.previewUrl ? <img src={attachment.previewUrl} alt={attachment.name} />
+        : kind === 'video' && attachment.previewUrl ? <video src={attachment.previewUrl} controls preload="metadata" aria-label={t(`Video attachment: ${attachment.name}`, `Video eki: ${attachment.name}`)} />
+          : <><Icon name={kind === 'archive' ? 'archive' : 'file'} /><span>{kind === 'archive' ? 'ZIP' : 'FILE'}</span></>}
+    </div>
+    <div className="message-attachment-card__details"><strong>{attachment.name}</strong><small>{attachmentKindLabel(kind, t)} · {formatAttachmentSize(attachment.size)}</small></div>
+  </section>
 }
 export function isCoreCompact(
   messageCount: number,
@@ -63,7 +89,7 @@ export function HomePage() {
   const { t, locale } = useLocale()
   const [aiReady, setAiReady] = useState<boolean | null>(null)
   const [sttReady, setSttReady] = useState(false); const [ttsReady, setTtsReady] = useState(false); const [error, setError] = useState(''); const [streaming, setStreaming] = useState(false); const [historyOpen, setHistoryOpen] = useState(false); const [composerFocused, setComposerFocused] = useState(false); const [virtualKeyboardVisible, setVirtualKeyboardVisible] = useState(false); const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false); const [attachmentStatus, setAttachmentStatus] = useState(''); const [attachmentUploading, setAttachmentUploading] = useState(false); const [attachmentPreview, setAttachmentPreview] = useState<AttachmentPreview | null>(null)
-  const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const attachmentTriggerRef = useRef<HTMLButtonElement | null>(null); const photoInputRef = useRef<HTMLInputElement | null>(null); const fileInputRef = useRef<HTMLInputElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0); const liveConversationRef = useRef(false); const attachmentPreviewRef = useRef<AttachmentPreview | null>(null); const attachmentGenerationRef = useRef(0)
+  const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const attachmentTriggerRef = useRef<HTMLButtonElement | null>(null); const photoInputRef = useRef<HTMLInputElement | null>(null); const videoInputRef = useRef<HTMLInputElement | null>(null); const fileInputRef = useRef<HTMLInputElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0); const liveConversationRef = useRef(false); const attachmentPreviewRef = useRef<AttachmentPreview | null>(null); const attachmentGenerationRef = useRef(0); const sentAttachmentUrlsRef = useRef(new Set<string>())
   const [liveConversation, setLiveConversation] = useState(false); const [liveTranscript, setLiveTranscript] = useState(''); const [liveRetry, setLiveRetry] = useState(0)
   const handleVoiceTranscript = useCallback((text: string) => {
     if (liveConversationRef.current) { setLiveTranscript(text); return }
@@ -95,25 +121,35 @@ export function HomePage() {
   const stopLiveConversation = () => {
     liveConversationRef.current = false; setLiveConversation(false); setLiveTranscript(''); setLiveRetry(0); voice.stop(); voice.stopSpeaking(); cancelActiveResponse(true)
   }
-  useEffect(() => () => { historyAbortRef.current?.abort(); const active = activeResponseRef.current; if (active) { active.stopped = true; abortRef.current?.abort(); dispatchCore({ type: 'CANCEL' }) } const preview = attachmentPreviewRef.current; if (preview?.objectUrl) URL.revokeObjectURL(preview.objectUrl) }, [dispatchCore])
+  const revokeSentAttachmentUrls = () => {
+    sentAttachmentUrlsRef.current.forEach(url => URL.revokeObjectURL(url))
+    sentAttachmentUrlsRef.current.clear()
+  }
+  useEffect(() => () => { historyAbortRef.current?.abort(); const active = activeResponseRef.current; if (active) { active.stopped = true; abortRef.current?.abort(); dispatchCore({ type: 'CANCEL' }) } const preview = attachmentPreviewRef.current; if (preview?.objectUrl) URL.revokeObjectURL(preview.objectUrl); revokeSentAttachmentUrls() }, [dispatchCore])
   const selectConversation = async (conversation: Conversation) => {
     cancelActiveResponse(false); historyAbortRef.current?.abort(); const generation = ++selectionGenerationRef.current; const controller = new AbortController(); historyAbortRef.current = controller
-    setHistoryOpen(false); setConversationId(conversation.id); setActiveConversation(conversation); setMessages([]); setError('')
+    setHistoryOpen(false); revokeSentAttachmentUrls(); setConversationId(conversation.id); setActiveConversation(conversation); setMessages([]); setError('')
     try { const result = await chatApi.messages(conversation.id, settings.lowDataMode ? 20 : 50, undefined, controller.signal); if (generation === selectionGenerationRef.current) setMessages(result.messages) }
     catch (caught) { if (!(caught instanceof DOMException && caught.name === 'AbortError') && generation === selectionGenerationRef.current) setError(caught instanceof Error ? caught.message : 'Conversation could not be loaded.') }
     finally { if (generation === selectionGenerationRef.current) historyAbortRef.current = null }
   }
-  const newConversation = () => { cancelActiveResponse(false); selectionGenerationRef.current += 1; historyAbortRef.current?.abort(); historyAbortRef.current = null; setConversationId(undefined); setActiveConversation(undefined); setMessages([]); setError(''); setHistoryOpen(false) }
+  const newConversation = () => { cancelActiveResponse(false); selectionGenerationRef.current += 1; historyAbortRef.current?.abort(); historyAbortRef.current = null; revokeSentAttachmentUrls(); setConversationId(undefined); setActiveConversation(undefined); setMessages([]); setError(''); setHistoryOpen(false) }
   const send = async (overrideText?: string, liveTurn = false) => {
-    const text = (overrideText ?? input).trim(); if (!text || streaming) return; if (!online) { setError(networkOnline ? t('The Xultron backend is unavailable. Retry the link before sending.', 'Xultron backend kullanılamıyor. Göndermeden önce bağlantıyı yenile.') : t('Xultron is offline. Reconnect before sending.', 'Xultron çevrimdışı. Göndermeden önce yeniden bağlan.')); if (!networkOnline) dispatchCore({ type: 'NETWORK_LOST' }); if (liveTurn) stopLiveConversation(); return }
+    const readyAttachment = !liveTurn && attachmentPreviewRef.current?.uploadState === 'ready' && attachmentPreviewRef.current.attachment?.id ? attachmentPreviewRef.current : null
+    const text = (overrideText ?? input).trim() || (readyAttachment ? t('Please review the attached file.', 'Lütfen ekli dosyayı inceleyin.') : '')
+    if (!text || streaming) return; if (!online) { setError(networkOnline ? t('The Xultron backend is unavailable. Retry the link before sending.', 'Xultron backend kullanılamıyor. Göndermeden önce bağlantıyı yenile.') : t('Xultron is offline. Reconnect before sending.', 'Xultron çevrimdışı. Göndermeden önce yeniden bağlan.')); if (!networkOnline) dispatchCore({ type: 'NETWORK_LOST' }); if (liveTurn) stopLiveConversation(); return }
     if (aiReady !== true) { setError(t('No AI provider is configured.', 'AI sağlayıcısı yapılandırılmadı.')); if (liveTurn) stopLiveConversation(); return }
-    const requestId = id(); const userMessage: Message = { id: `local-${requestId}`, conversationId: conversationId ?? '', role: 'user', content: text, createdAt: new Date().toISOString() }
+    const attachmentIds = readyAttachment?.attachment ? [readyAttachment.attachment.id] : undefined
+    const attachments: MessageAttachment[] | undefined = readyAttachment?.attachment ? [{ ...readyAttachment.attachment, previewUrl: readyAttachment.objectUrl }] : undefined
+    if (readyAttachment?.objectUrl) sentAttachmentUrlsRef.current.add(readyAttachment.objectUrl)
+    if (readyAttachment) { attachmentGenerationRef.current += 1; attachmentPreviewRef.current = null; setAttachmentPreview(null); setAttachmentStatus(''); setAttachmentUploading(false) }
+    const requestId = id(); const userMessage: Message = { id: `local-${requestId}`, conversationId: conversationId ?? '', role: 'user', content: text, createdAt: new Date().toISOString(), attachments }
     const assistantId = `stream-${requestId}`; setMessages(current => [...current, userMessage, { id: assistantId, conversationId: conversationId ?? '', role: 'assistant', content: '', createdAt: new Date().toISOString(), pending: true }]); setInput(''); setError(''); setStreaming(true)
     if (coreState === 'ERROR') dispatchCore({ type: 'RECOVER' })
     dispatchCore({ type: 'THINK' })
     const controller = new AbortController(); abortRef.current = controller; activeResponseRef.current = { requestId, assistantId, stopped: false }; let streamError = ''; let failed = false; let assistantOutput = ''
     const acceptsStreamEvent = () => activeResponseRef.current?.requestId === requestId && !activeResponseRef.current.stopped
-    try { await chatApi.stream({ conversationId, message: text, requestId }, {
+    try { await chatApi.stream({ conversationId, message: text, requestId, attachmentIds }, {
       onState: state => { if (acceptsStreamEvent() && state.toLowerCase() === 'thinking') dispatchCore({ type: 'THINK' }) },
       onConversation: conversation => { if (!acceptsStreamEvent()) return; setConversationId(conversation.id); setConversations(current => [conversation, ...current.filter(item => item.id !== conversation.id)]) },
       onDelta: delta => { if (acceptsStreamEvent()) { assistantOutput += delta; setMessages(current => current.map(item => item.id === assistantId ? { ...item, content: item.content + delta } : item)) } },
@@ -173,6 +209,7 @@ export function HomePage() {
     }
   }, [])
   const hasComposerText = Boolean(input.trim())
+  const hasSendableAttachment = attachmentPreview?.uploadState === 'ready' && Boolean(attachmentPreview.attachment?.id)
   const coreCompact = isCoreCompact(messages.length, composerFocused, isTouchDevice(), virtualKeyboardVisible)
   const clearAttachmentPreview = () => {
     attachmentGenerationRef.current += 1
@@ -181,6 +218,7 @@ export function HomePage() {
     attachmentPreviewRef.current = null
     setAttachmentPreview(null)
     setAttachmentStatus('')
+    setAttachmentUploading(false)
   }
   const uploadAttachment = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0]
@@ -190,7 +228,7 @@ export function HomePage() {
     if (previous?.objectUrl) URL.revokeObjectURL(previous.objectUrl)
     const kind = attachmentPreviewKind(file)
     const preview: AttachmentPreview = {
-      id: id(), name: file.name, kind,
+      localId: id(), name: file.name, kind,
       objectUrl: (kind === 'image' || kind === 'video') && canCreateObjectUrl() ? URL.createObjectURL(file) : undefined,
       uploadState: 'checking',
     }
@@ -202,24 +240,23 @@ export function HomePage() {
     try {
       const { attachment } = await tasksApi.upload(file)
       if (generation !== attachmentGenerationRef.current) return
-      setAttachmentPreview(current => current?.id === preview.id ? { ...current, uploadState: 'ready', name: attachment.name } : current)
+      const readyPreview = { ...preview, uploadState: 'ready' as const, name: attachment.name, attachment }
+      attachmentPreviewRef.current = readyPreview
+      setAttachmentPreview(current => current?.localId === preview.localId ? readyPreview : current)
       setAttachmentStatus(t(`${attachment.name} is ready.`, `${attachment.name} hazır.`))
     } catch {
       if (generation !== attachmentGenerationRef.current) return
-      setAttachmentPreview(current => current?.id === preview.id ? { ...current, uploadState: 'failed' } : current)
+      const failedPreview = { ...preview, uploadState: 'failed' as const }
+      attachmentPreviewRef.current = failedPreview
+      setAttachmentPreview(current => current?.localId === preview.localId ? failedPreview : current)
       setAttachmentStatus(t('The attachment could not be processed. The backend accepts files up to 6 MB.', 'Ek işlenemedi. Arka uç en fazla 6 MB dosya kabul eder.'))
     } finally {
       if (generation === attachmentGenerationRef.current) setAttachmentUploading(false)
     }
   }
-  const chooseAttachment = (kind: 'photo' | 'file' | 'camera') => {
+  const chooseAttachment = (kind: 'photo' | 'video' | 'file') => {
     setAttachmentMenuOpen(false)
-    if (kind === 'camera') {
-      setAttachmentStatus(t('Camera capture is not available in this app yet. Grant camera permission when capture support is added.', 'Kamera çekimi bu uygulamada henüz kullanılamıyor. Çekim desteği eklendiğinde kamera izni verin.'))
-      attachmentTriggerRef.current?.focus()
-      return
-    }
-    ;(kind === 'photo' ? photoInputRef : fileInputRef).current?.click()
+    ;(kind === 'photo' ? photoInputRef : kind === 'video' ? videoInputRef : fileInputRef).current?.click()
   }
   return <div className="home-page">
     <aside className={`conversation-ledger ${historyOpen ? 'open' : ''}`} aria-label={t('Conversation history', 'Sohbet geçmişi')}><div className="ledger-head"><span>{t('CONVERSATION LOG', 'SOHBET KAYDI')}</span><button onClick={() => setHistoryOpen(false)} aria-label={t('Close history', 'Geçmişi kapat')}><Icon name="close" /></button></div><button className="new-thread" onClick={newConversation}><Icon name="plus" /> {t('NEW THREAD', 'YENİ SOHBET')}</button><div className="ledger-list">{conversations.map(item => <button key={item.id} className={item.id === conversationId ? 'active' : ''} onClick={() => void selectConversation(item)}><span>{item.title || t('Untitled sequence', 'Adsız sohbet')}</span><small>{new Date(item.updatedAt).toLocaleDateString(locale)}</small></button>)}{!conversations.length && <p>{t('No previous sequences.', 'Önceki sohbet yok.')}</p>}</div></aside>
@@ -229,7 +266,7 @@ export function HomePage() {
       <motion.div layout={!conserveMotion} transition={{ duration: conserveMotion ? 0 : .3 }} className={`core-stage ${coreCompact ? 'compact' : ''} ${conserveMotion ? 'motion-reduced' : ''}`}><XultronCore state={coreState} reducedMotion={conserveMotion} compact={coreCompact} level={voice.level} />{!coreCompact && <motion.div className="core-intro" initial={conserveMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: conserveMotion ? 0 : .32 }}><h1>{t('How can I assist you?', 'Sana nasıl yardımcı olabilirim?')}</h1><p>{t('Voice, thought, and memory aligned.', 'Ses, düşünce ve hafıza birlikte çalışır.')}</p></motion.div>}</motion.div>
       <div className="timeline" ref={timelineRef} aria-live="polite">
         <AnimatePresence initial={false}>{messages.map((message, index) => <motion.article key={message.id} className={`transmission ${message.role} ${message.failed ? 'failed' : ''} ${message.cancelled ? 'cancelled' : ''}`} initial={conserveMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: conserveMotion ? 0 : .18 }}>
-          <header><span>{message.role === 'assistant' ? 'XULTRON' : t('YOU', 'SEN')}</span><span>{message.cancelled ? t('STOPPED · ', 'DURDU · ') : ''}{String(index + 1).padStart(2, '0')} / {new Date(message.createdAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}</span></header><div className="transmission-line" /><p>{message.content}{message.pending && <span className="cursor" />}</p>{message.role === 'assistant' && !message.pending && message.content && ttsReady && <button className="speak-action" onClick={() => voice.speaking ? voice.stopSpeaking() : void voice.speak(message.content)}><Icon name={voice.speaking ? 'stop' : 'voice'} /> {voice.speaking ? t('STOP VOICE', 'SESİ DURDUR') : t('PLAY VOICE', 'SESLENDİR')}</button>}
+          <header><span>{message.role === 'assistant' ? 'XULTRON' : t('YOU', 'SEN')}</span><span>{message.cancelled ? t('STOPPED · ', 'DURDU · ') : ''}{String(index + 1).padStart(2, '0')} / {new Date(message.createdAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}</span></header><div className="transmission-line" />{message.attachments?.map(attachment => <MessageAttachmentCard key={attachment.id} attachment={attachment} t={t} />)}<p>{message.content}{message.pending && <span className="cursor" />}</p>{message.role === 'assistant' && !message.pending && message.content && ttsReady && <button className="speak-action" onClick={() => voice.speaking ? voice.stopSpeaking() : void voice.speak(message.content)}><Icon name={voice.speaking ? 'stop' : 'voice'} /> {voice.speaking ? t('STOP VOICE', 'SESİ DURDUR') : t('PLAY VOICE', 'SESLENDİR')}</button>}
         </motion.article>)}</AnimatePresence>
       </div>
       {(aiReady === false || (!online && messages.length === 0)) && <div className="system-notice"><span className="notice-code">{!online ? 'LINK / 00' : 'PROVIDER / 00'}</span><div><strong>{!online ? 'Connection unavailable' : 'No AI provider configured'}</strong><p>{!online ? 'The interface remains available. AI actions resume after reconnection.' : 'Connect an intelligence provider to activate conversations.'}</p></div>{online && <Button variant="secondary" onClick={() => setPage('settings')}>CONFIGURE PROVIDER</Button>}</div>}
@@ -241,18 +278,19 @@ export function HomePage() {
               : attachmentPreview.kind === 'video' && attachmentPreview.objectUrl ? <video src={attachmentPreview.objectUrl} muted preload="metadata" />
                 : <><Icon name={attachmentPreview.kind === 'archive' ? 'archive' : 'file'} /><span>{attachmentPreview.kind === 'archive' ? 'ZIP' : 'FILE'}</span></>}
           </div>
-          <div className="attachment-preview__details"><strong>{attachmentPreview.name}</strong><small>{attachmentPreview.kind === 'image' ? t('Image', 'Görsel') : attachmentPreview.kind === 'video' ? t('Video', 'Video') : attachmentPreview.kind === 'archive' ? t('Archive', 'Arşiv') : t('Document', 'Belge')} · {attachmentPreview.uploadState === 'checking' ? t('Checking…', 'Kontrol ediliyor…') : attachmentPreview.uploadState === 'ready' ? t('Ready', 'Hazır') : t('Could not process', 'İşlenemedi')}</small></div>
+          <div className="attachment-preview__details"><strong>{attachmentPreview.name}</strong><small>{attachmentKindLabel(attachmentPreview.kind, t)} · {attachmentPreview.uploadState === 'checking' ? t('Checking…', 'Kontrol ediliyor…') : attachmentPreview.uploadState === 'ready' ? t('Ready', 'Hazır') : t('Could not process', 'İşlenemedi')}</small>{attachmentStatus && <span className="attachment-preview__status" role="status">{attachmentStatus}</span>}</div>
           <button type="button" className="attachment-preview__remove" onClick={clearAttachmentPreview} aria-label={t(`Remove ${attachmentPreview.name}`, `${attachmentPreview.name} ekini kaldır`)}><Icon name="close" /></button>
         </section>}
         <div className="attachment-control">
           <button ref={attachmentTriggerRef} type="button" className="attachment-trigger" aria-label={t('Add attachment', 'Ek ekle')} aria-expanded={attachmentMenuOpen} aria-controls="attachment-menu" onClick={() => setAttachmentMenuOpen(open => !open)} onKeyDown={event => { if (event.key === 'Escape' && attachmentMenuOpen) { event.preventDefault(); setAttachmentMenuOpen(false) } }} disabled={!online || streaming || liveConversation || attachmentUploading}><Icon name="plus" /></button>
           {attachmentMenuOpen && <div id="attachment-menu" className="attachment-menu" role="group" aria-label={t('Attachment options', 'Ek seçenekleri')} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setAttachmentMenuOpen(false); attachmentTriggerRef.current?.focus() } }}>
             <p>{t('The backend accepts files up to 6 MB.', 'Arka uç en fazla 6 MB dosya kabul eder.')}</p>
-            <button type="button" onClick={() => chooseAttachment('photo')}>{t('Photo or video', 'Fotoğraf veya video')}</button>
+            <button type="button" onClick={() => chooseAttachment('photo')}>{t('Photo', 'Fotoğraf')}</button>
+            <button type="button" onClick={() => chooseAttachment('video')}>{t('Video', 'Video')}</button>
             <button type="button" onClick={() => chooseAttachment('file')}>{t('File', 'Dosya')}</button>
-            <button type="button" onClick={() => chooseAttachment('camera')}>{t('Camera', 'Kamera')}</button>
           </div>}
-          <input ref={photoInputRef} className="attachment-file-input" type="file" accept="image/*,video/*" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
+          <input ref={photoInputRef} className="attachment-file-input" type="file" accept="image/*" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
+          <input ref={videoInputRef} className="attachment-file-input" type="file" accept="video/*" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
           <input ref={fileInputRef} className="attachment-file-input" type="file" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
         </div>
         <div className="input-line">
@@ -263,11 +301,10 @@ export function HomePage() {
           <button className={`voice-button ${voice.recording ? 'recording' : ''}`} onClick={() => voice.recording ? voice.stop() : void voice.start()} disabled={!online || !sttReady || streaming || liveConversation} aria-label={voice.recording ? t('Stop recording', 'Kaydı durdur') : sttReady ? t('Start voice input', 'Sesli girişi başlat') : t('Configure an STT provider first', 'Önce bir STT sağlayıcısı yapılandır')}>{voice.recording ? <Icon name="stop" /> : <Icon name="mic" />}</button>
           {streaming
             ? <button className="send-button stop" onClick={stop} aria-label={t('Stop response', 'Yanıtı durdur')}><Icon name="stop" /></button>
-            : hasComposerText
+            : hasComposerText || hasSendableAttachment
               ? <button className="send-button" onClick={() => void send()} disabled={!online || liveConversation} aria-label={t('Send message', 'Mesaj gönder')}>{aiReady === null ? <Spinner /> : <Icon name="send" />}</button>
               : <button className={`live-voice-button ${liveConversation ? 'active' : ''}`} onClick={() => liveConversation ? stopLiveConversation() : void startLiveConversation()} disabled={liveConversation ? false : !online || !sttReady || !ttsReady || aiReady !== true} aria-pressed={liveConversation} aria-label={liveConversation ? t('Stop live conversation', 'Anlık konuşmayı durdur') : t('Start live conversation', 'Anlık konuşmayı başlat')}><span className="live-waveform" aria-hidden="true"><span /><span /><span /><span /><span /></span></button>}
         </div>
-        {attachmentStatus && <p className="attachment-status" role="status">{attachmentStatus}</p>}
       </div>
     </section>
   </div>
