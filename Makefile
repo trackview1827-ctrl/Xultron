@@ -7,7 +7,7 @@ dev:
 	bash ./scripts/dev.sh
 
 migrate:
-	cd backend && .venv/bin/flask --app run.py db upgrade
+	cd backend && .venv/bin/python -m flask --app run.py db upgrade
 
 test:
 	cd backend && .venv/bin/pytest -q
