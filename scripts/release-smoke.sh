@@ -3,11 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="$ROOT/backend/.venv/bin/python"
-FLASK="$ROOT/backend/.venv/bin/flask"
 DIST="$ROOT/frontend/dist"
 SCRATCH_ROOT="${JCODE_SCRATCH_DIR:-${TMPDIR:-/tmp}}"
 
-if [[ ! -x "$PYTHON" || ! -x "$FLASK" ]]; then
+if [[ ! -x "$PYTHON" ]]; then
   echo "Backend dependencies are missing. Run: make setup" >&2
   exit 1
 fi
@@ -63,13 +62,13 @@ export PYTHONUNBUFFERED=1
 printf 'Applying clean production migrations...\n'
 (
   cd "$ROOT/backend"
-  "$FLASK" --app run.py db upgrade
+  "$PYTHON" -m flask --app run.py db upgrade
 ) >"$SERVER_LOG" 2>&1
 
 printf 'Starting isolated production server on http://127.0.0.1:%s...\n' "$PORT"
 (
   cd "$ROOT/backend"
-  "$FLASK" --app run.py run --host 127.0.0.1 --port "$PORT" --no-reload --no-debugger
+  "$PYTHON" -m flask --app run.py run --host 127.0.0.1 --port "$PORT" --no-reload --no-debugger
 ) >>"$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 

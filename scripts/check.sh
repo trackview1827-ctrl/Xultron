@@ -13,7 +13,7 @@ npm --prefix "$ROOT" run pack:check >/dev/null
 echo "[3/9] Backend tests"
 (
   cd "$ROOT/backend"
-  .venv/bin/pytest -q
+  .venv/bin/python -m pytest -q
 )
 
 echo "[4/9] Backend compile check"
