@@ -162,7 +162,7 @@ def post_message():
 @api_bp.post("/attachments")
 def upload_attachment():
     attachment = create_attachment(require_user().id, request.files.get("file"))
-    return ok({"attachment": attachment.to_upload_public()}, 201)
+    return ok({"attachment": attachment.to_public()}, 201)
 
 
 @api_bp.post("/chat/stream")

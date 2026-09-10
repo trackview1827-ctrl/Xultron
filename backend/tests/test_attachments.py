@@ -31,7 +31,7 @@ def test_attachment_upload_is_opaque_bounded_and_rejects_uninspectable_binary(us
     assert attachment["state"] == "ready"
     assert attachment["kind"] == "text"
     assert attachment["size"] == 11
-    assert attachment["text"] == "hello\nworld"
+    assert "text" not in attachment
 
     video = upload_attachment(user_client, b"not-a-video", "clip.mp4", "video/mp4")
     assert video.status_code == 422
@@ -114,6 +114,14 @@ def test_chat_attachment_metadata_is_safe_and_idempotent(user_client):
     )
     assert changed.status_code == 409
     assert changed.get_json()["error"]["code"] == "idempotency_conflict"
+
+    ambiguous = post_json(
+        user_client,
+        "/api/v1/chat/messages",
+        {"message": "conflicting fields", "requestId": "attachment-conflict", "attachmentIds": [attachment["id"]], "attachments": []},
+    )
+    assert ambiguous.status_code == 422
+    assert ambiguous.get_json()["error"]["code"] == "validation_failed"
 
     conversation_id = first.get_json()["conversation"]["id"]
     history = user_client.get(f"/api/v1/chat/conversations/{conversation_id}/messages").get_json()["messages"]
