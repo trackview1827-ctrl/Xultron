@@ -78,7 +78,7 @@ def test_video_attachment_extracts_a_bounded_visual_frame_for_supported_provider
     })
     assert provider.status_code == 201
     response = post_json(user_client, "/api/v1/chat/messages", {
-        "message": "Describe this video", "requestId": "video-1", "attachments": [attachment["id"]],
+        "message": "Describe this video", "requestId": "video-1", "attachmentIds": [attachment["id"]],
     })
     assert response.status_code == 201
     content = captured["json"]["messages"][-1]["content"]
@@ -89,7 +89,7 @@ def test_video_attachment_extracts_a_bounded_visual_frame_for_supported_provider
 def test_chat_attachment_metadata_is_safe_and_idempotent(user_client):
     uploaded = upload_attachment(user_client, b"private attachment text", "notes.txt", "text/plain")
     attachment = uploaded.get_json()["attachment"]
-    payload = {"message": "Summarize this", "requestId": "attachment-idem", "attachments": [attachment["id"]]}
+    payload = {"message": "Summarize this", "requestId": "attachment-idem", "attachmentIds": [attachment["id"]]}
 
     first = post_json(user_client, "/api/v1/chat/messages", payload)
     assert first.status_code == 201
@@ -105,7 +105,7 @@ def test_chat_attachment_metadata_is_safe_and_idempotent(user_client):
     changed = post_json(
         user_client,
         "/api/v1/chat/messages",
-        {"message": "Summarize this", "requestId": "attachment-idem", "attachments": []},
+        {"message": "Summarize this", "requestId": "attachment-idem", "attachmentIds": []},
     )
     assert changed.status_code == 409
     assert changed.get_json()["error"]["code"] == "idempotency_conflict"
@@ -118,7 +118,7 @@ def test_chat_attachment_metadata_is_safe_and_idempotent(user_client):
     duplicate = post_json(
         user_client,
         "/api/v1/chat/messages",
-        {"message": "duplicate", "requestId": "attachment-duplicate", "attachments": [attachment["id"], attachment["id"]]},
+        {"message": "duplicate", "requestId": "attachment-duplicate", "attachmentIds": [attachment["id"], attachment["id"]]},
     )
     assert duplicate.status_code == 422
     assert duplicate.get_json()["error"]["code"] == "validation_failed"
@@ -130,7 +130,7 @@ def test_chat_rejects_other_users_and_non_ready_attachment(user_client, app):
     other = app.test_client()
     register(other, "bob", "bob@example.com", "password123")
 
-    forbidden = post_json(other, "/api/v1/chat/messages", {"message": "use it", "requestId": "other-owner", "attachments": [attachment_id]})
+    forbidden = post_json(other, "/api/v1/chat/messages", {"message": "use it", "requestId": "other-owner", "attachmentIds": [attachment_id]})
     assert forbidden.status_code == 403
     assert forbidden.get_json()["error"]["code"] == "forbidden"
 
@@ -138,7 +138,7 @@ def test_chat_rejects_other_users_and_non_ready_attachment(user_client, app):
         attachment = db.session.get(Attachment, attachment_id)
         attachment.state = "rejected"
         db.session.commit()
-    not_ready = post_json(user_client, "/api/v1/chat/messages", {"message": "use it", "requestId": "not-ready", "attachments": [attachment_id]})
+    not_ready = post_json(user_client, "/api/v1/chat/messages", {"message": "use it", "requestId": "not-ready", "attachmentIds": [attachment_id]})
     assert not_ready.status_code == 409
     assert not_ready.get_json()["error"]["code"] == "attachment_not_ready"
 
@@ -185,7 +185,7 @@ def test_image_attachment_reaches_openai_compatible_payload(user_client, monkeyp
     response = post_json(
         user_client,
         "/api/v1/chat/messages",
-        {"message": "Describe this image", "requestId": "vision-1", "attachments": [text_attachment_id, attachment_id]},
+        {"message": "Describe this image", "requestId": "vision-1", "attachmentIds": [text_attachment_id, attachment_id]},
     )
     assert response.status_code == 201
     payload = captured["json"]
@@ -203,7 +203,7 @@ def test_image_attachment_requires_openai_compatible_provider(user_client):
     response = post_json(
         user_client,
         "/api/v1/chat/messages",
-        {"message": "Describe this image", "requestId": "vision-provider-required", "attachments": [attachment_id]},
+        {"message": "Describe this image", "requestId": "vision-provider-required", "attachmentIds": [attachment_id]},
     )
     assert response.status_code == 422
     assert response.get_json()["error"]["code"] == "unsupported_attachment"
