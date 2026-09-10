@@ -133,7 +133,7 @@ describe('HomePage response and history lifecycle', () => {
     expect(menu).toHaveTextContent('Photo')
     expect(menu).toHaveTextContent('Video')
     expect(menu).toHaveTextContent('File')
-    expect(menu).toHaveTextContent('up to 6 MB')
+    expect(menu).not.toHaveTextContent(/MB/)
 
     const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]')
     expect(inputs).toHaveLength(3)
