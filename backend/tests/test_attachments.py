@@ -1,6 +1,7 @@
 import base64
 from types import SimpleNamespace
 from io import BytesIO
+from PIL import Image
 
 from app.extensions import db
 from app.models import Attachment
@@ -11,6 +12,19 @@ PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg=="
 )
 MALFORMED_PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\x00IEND\xaeB`\x82"
+
+
+def animated_gif() -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (2, 2), "red").save(
+        output,
+        format="GIF",
+        save_all=True,
+        append_images=[Image.new("RGB", (2, 2), "blue")],
+        duration=50,
+        loop=0,
+    )
+    return output.getvalue()
 
 
 def upload_attachment(client, data, filename, content_type):
@@ -44,6 +58,12 @@ def test_attachment_upload_is_opaque_bounded_and_rejects_uninspectable_binary(us
     malformed_png = upload_attachment(user_client, MALFORMED_PNG, "corrupt.png", "image/png")
     assert malformed_png.status_code == 422
     assert malformed_png.get_json()["error"]["code"] == "unsupported_attachment"
+
+    valid_gif = animated_gif()
+    assert upload_attachment(user_client, valid_gif, "animated.gif", "image/gif").status_code == 201
+    truncated_gif = upload_attachment(user_client, valid_gif[:-3], "truncated.gif", "image/gif")
+    assert truncated_gif.status_code == 422
+    assert truncated_gif.get_json()["error"]["code"] == "unsupported_attachment"
 
 
 def test_video_attachment_extracts_a_bounded_visual_frame_for_supported_provider(user_client, monkeypatch):

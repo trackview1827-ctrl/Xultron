@@ -14,7 +14,7 @@ from io import BytesIO
 from pathlib import Path
 
 from flask import current_app
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageSequence, UnidentifiedImageError
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
@@ -57,7 +57,12 @@ def create_attachment(user_id: str, upload: FileStorage) -> Attachment:
             raise APIError("unsupported_attachment", "Text attachments must be valid UTF-8.", 422)
         kind = "text"
     elif content_type in IMAGE_TYPES:
-        _validate_image(data, content_type, current_app.config["MAX_ATTACHMENT_IMAGE_PIXELS"])
+        _validate_image(
+            data,
+            content_type,
+            current_app.config["MAX_ATTACHMENT_IMAGE_PIXELS"],
+            current_app.config["MAX_ATTACHMENT_IMAGE_FRAMES"],
+        )
         kind = "image"
         analysis_content = data
         analysis_content_type = content_type
@@ -190,7 +195,7 @@ def _content_type(value: object) -> str:
     return value.split(";", 1)[0].strip().lower()[:100] or "application/octet-stream"
 
 
-def _validate_image(data: bytes, content_type: str, max_pixels: int) -> None:
+def _validate_image(data: bytes, content_type: str, max_pixels: int, max_frames: int) -> None:
     # Structural headers are not enough: providers must never receive malformed
     # image bytes. Pillow verifies the declared decoder then fully loads the
     # bounded image, while the explicit pixel ceiling prevents decompression
@@ -211,7 +216,15 @@ def _validate_image(data: bytes, content_type: str, max_pixels: int) -> None:
             # verify() invalidates the decoder state. Reopen and load all pixels
             # so truncated payloads are rejected before a provider sees them.
             with Image.open(BytesIO(data)) as image:
-                image.load()
+                frame_count = 0
+                for frame in ImageSequence.Iterator(image):
+                    frame_count += 1
+                    if frame_count > max_frames:
+                        raise APIError("unsupported_attachment", "Image contains too many frames.", 422)
+                    width, height = frame.size
+                    if not width or not height or width * height > max_pixels:
+                        raise APIError("unsupported_attachment", "Image dimensions are invalid or too large.", 422)
+                    frame.load()
     except APIError:
         raise
     except (OSError, SyntaxError, UnidentifiedImageError, Image.DecompressionBombError, ValueError, IndexError):
@@ -290,5 +303,5 @@ def _video_preview(data: bytes, max_frame_bytes: int, max_pixels: int, timeout_s
         frame = preview.read_bytes()
     if not frame or len(frame) > max_frame_bytes:
         raise APIError("unsupported_attachment", "Video preview is too large.", 422)
-    _validate_image(frame, "image/png", max_pixels)
+    _validate_image(frame, "image/png", max_pixels, current_app.config["MAX_ATTACHMENT_IMAGE_FRAMES"])
     return frame, "image/png"

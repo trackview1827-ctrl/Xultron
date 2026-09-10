@@ -292,7 +292,7 @@ export function HomePage() {
           </div>}
           <input ref={photoInputRef} className="attachment-file-input" type="file" accept="image/png,image/jpeg,image/gif" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
           <input ref={videoInputRef} className="attachment-file-input" type="file" accept="video/mp4,video/webm,video/quicktime" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
-          <input ref={fileInputRef} className="attachment-file-input" type="file" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
+          <input ref={fileInputRef} className="attachment-file-input" type="file" accept="text/plain,text/markdown,application/json,text/csv,.txt,.md,.markdown,.json,.csv" tabIndex={-1} aria-hidden="true" onChange={event => void uploadAttachment(event)} />
         </div>
         <div className="input-line">
           <textarea id="command-input" rows={1} value={input} maxLength={8000} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} onChange={event => setInput(event.target.value.slice(0, 8000))} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={online ? t('Ask Xultron…', 'Xultron’a sor…') : t('Reconnect to transmit…', 'Göndermek için yeniden bağlan…')} aria-label={t('Message Xultron', 'Xultron’a mesaj gönder')} disabled={!online || streaming || liveConversation} />
