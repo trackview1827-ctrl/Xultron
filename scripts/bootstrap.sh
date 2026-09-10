@@ -41,7 +41,7 @@ fi
 echo "Applying database migrations..."
 (
   cd "$ROOT/backend"
-  .venv/bin/flask --app run.py db upgrade
+  "$VENV/bin/python" -m flask --app run.py db upgrade
 )
 
 echo "Xultron is ready. Run: make dev"
