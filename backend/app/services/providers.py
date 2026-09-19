@@ -28,6 +28,7 @@ PUBLIC_CONFIG_KEYS = {
     "speed",
     "language",
     "responsePath",
+    "responseFormat",
     "textPath",
     "outputFormat",
     "fail",
@@ -97,7 +98,11 @@ def _validate_public_config(config: dict):
     if "capabilities" in config:
         if not isinstance(config["capabilities"], list) or any(not isinstance(item, str) or len(item) > 80 for item in config["capabilities"]):
             raise APIError("validation_failed", "config.capabilities must be a list of bounded strings.", 422)
-    for key in {"reply", "transcript", "voice", "voiceId", "language", "responsePath", "textPath", "outputFormat"} & set(config):
+    string_config_keys = {
+        "reply", "transcript", "voice", "voiceId", "language", "responsePath",
+        "responseFormat", "textPath", "outputFormat",
+    }
+    for key in string_config_keys & set(config):
         if not isinstance(config[key], str) or len(config[key]) > 2000:
             raise APIError("validation_failed", f"config.{key} must be a bounded string.", 422)
     if "speed" in config:

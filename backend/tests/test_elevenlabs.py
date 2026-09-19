@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from app.providers.adapters import ElevenLabsAdapter
 from app.providers.base import ProviderConfig, ProviderFailure
 from tests.conftest import post_json
@@ -41,19 +43,104 @@ def test_elevenlabs_tts_uses_native_auth_and_voice(app, monkeypatch):
 
     def post(url, **kwargs):
         captured.update({"url": url, **kwargs})
-        return FakeResponse(b"ID3-audio", content_type="audio/mpeg")
+        return FakeResponse(b"ID3-audio\xff\xfb\x90\x64encoded", content_type="audio/mpeg")
 
     monkeypatch.setattr("app.providers.adapters.requests.post", post)
     with app.app_context():
         audio, media_type = ElevenLabsAdapter(eleven_config(config={"voice": "voice/one", "outputFormat": "mp3_22050_32", "speed": 1.1})).synthesize("Salam dünya", None)
 
-    assert audio == b"ID3-audio"
+    assert audio == b"ID3-audio\xff\xfb\x90\x64encoded"
     assert media_type == "audio/mpeg"
     assert captured["url"].endswith("/text-to-speech/voice%2Fone")
     assert captured["params"] == {"output_format": "mp3_22050_32"}
     assert captured["headers"]["xi-api-key"] == "test-eleven-key"
     assert "test-eleven-key" not in captured["url"]
     assert captured["json"] == {"text": "Salam dünya", "model_id": "eleven_multilingual_v2", "voice_settings": {"speed": 1.1}}
+
+
+def test_elevenlabs_tts_rejects_json_mislabeled_as_audio(app, monkeypatch):
+    monkeypatch.setattr(
+        "app.providers.adapters.requests.post",
+        lambda *args, **kwargs: FakeResponse(
+            b'{"detail":"not audio"}', content_type="audio/mpeg"
+        ),
+    )
+    with app.app_context(), pytest.raises(ProviderFailure) as raised:
+        ElevenLabsAdapter(eleven_config(config={"voice": "voice-one"})).synthesize("Salam", None)
+    assert raised.value.code == "provider_malformed_response"
+
+
+@pytest.mark.parametrize(
+    "output_format,content_type",
+    [
+        ("pcm_16000", "audio/pcm"),
+        ("ulaw_8000", "audio/basic"),
+        ("alaw_8000", "audio/alaw"),
+    ],
+)
+def test_elevenlabs_tts_rejects_text_mislabeled_as_raw_audio(
+    app, monkeypatch, output_format, content_type
+):
+    monkeypatch.setattr(
+        "app.providers.adapters.requests.post",
+        lambda *args, **kwargs: FakeResponse(
+            b"Internal Server Error", content_type=content_type
+        ),
+    )
+    with app.app_context(), pytest.raises(ProviderFailure) as raised:
+        ElevenLabsAdapter(
+            eleven_config(config={"voice": "voice-one", "outputFormat": output_format})
+        ).synthesize("Salam", None)
+    assert raised.value.code == "provider_malformed_response"
+
+
+@pytest.mark.parametrize(
+    "output_format,content_type",
+    [
+        ("pcm_16000", "audio/basic"),
+        ("ulaw_8000", "audio/pcm"),
+        ("ulaw_8000", "audio/alaw"),
+        ("alaw_8000", "audio/basic"),
+    ],
+)
+def test_elevenlabs_tts_rejects_raw_audio_subtype_mismatch(
+    app, monkeypatch, output_format, content_type
+):
+    monkeypatch.setattr(
+        "app.providers.adapters.requests.post",
+        lambda *args, **kwargs: FakeResponse(
+            b"\x00\x01\x80\xff" * 32, content_type=content_type
+        ),
+    )
+    with app.app_context(), pytest.raises(ProviderFailure) as raised:
+        ElevenLabsAdapter(
+            eleven_config(config={"voice": "voice-one", "outputFormat": output_format})
+        ).synthesize("Salam", None)
+    assert raised.value.code == "provider_malformed_response"
+
+
+@pytest.mark.parametrize(
+    "output_format,content_type",
+    [
+        ("pcm_16000", "audio/pcm"),
+        ("ulaw_8000", "audio/basic"),
+        ("alaw_8000", "audio/alaw"),
+    ],
+)
+def test_elevenlabs_tts_accepts_matching_raw_audio_subtypes(
+    app, monkeypatch, output_format, content_type
+):
+    audio = b"\x00\x01\x80\xff" * 32
+    monkeypatch.setattr(
+        "app.providers.adapters.requests.post",
+        lambda *args, **kwargs: FakeResponse(audio, content_type=content_type),
+    )
+    with app.app_context():
+        result, media_type = ElevenLabsAdapter(
+            eleven_config(config={"voice": "voice-one", "outputFormat": output_format})
+        ).synthesize("Salam", None)
+    assert result == audio
+    assert media_type == content_type
 
 
 def test_elevenlabs_stt_posts_file_and_returns_language(app, monkeypatch):
