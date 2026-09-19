@@ -12,6 +12,117 @@ from app.providers.base import ProviderConfig, ProviderFailure
 from app.services.voice import speech_text
 
 
+def _has_mpeg_audio_frame(audio: bytes) -> bool:
+    """Find a structurally valid MPEG audio frame header near the start."""
+    for index in range(min(len(audio) - 3, 4096)):
+        first, second, third = audio[index], audio[index + 1], audio[index + 2]
+        if first != 0xFF or second & 0xE0 != 0xE0:
+            continue
+        if second & 0x18 == 0x08 or second & 0x06 == 0:
+            continue
+        if third & 0xF0 in {0x00, 0xF0} or third & 0x0C == 0x0C:
+            continue
+        return True
+    return False
+
+
+def _requested_audio_format(requested_format: str | None) -> str | None:
+    requested = (requested_format or "").lower()
+    if requested.startswith("mp3"):
+        return "mp3"
+    if requested.startswith("wav"):
+        return "wav"
+    if requested.startswith("opus"):
+        return "ogg"
+    if requested.startswith("aac"):
+        return "aac"
+    if requested.startswith("flac"):
+        return "flac"
+    if requested.startswith("pcm"):
+        return "pcm"
+    if requested.startswith("ulaw"):
+        return "ulaw"
+    if requested.startswith("alaw"):
+        return "alaw"
+
+
+def _media_audio_format(media_type: str) -> str | None:
+    normalized = media_type.lower().split(";", 1)[0].strip()
+    return {
+        "audio/mpeg": "mp3",
+        "audio/mp3": "mp3",
+        "audio/wav": "wav",
+        "audio/x-wav": "wav",
+        "audio/ogg": "ogg",
+        "audio/opus": "ogg",
+        "audio/aac": "aac",
+        "audio/mp4": "aac",
+        "audio/flac": "flac",
+        "audio/x-flac": "flac",
+        "audio/pcm": "pcm",
+        "audio/l16": "pcm",
+        "audio/basic": "ulaw",
+        "audio/ulaw": "ulaw",
+        "audio/alaw": "alaw",
+    }.get(normalized)
+
+
+def _audio_media_type(requested_format: str) -> str:
+    return {
+        "mp3": "audio/mpeg",
+        "wav": "audio/wav",
+        "opus": "audio/ogg",
+        "aac": "audio/aac",
+        "flac": "audio/flac",
+        "pcm": "audio/pcm",
+        "ulaw": "audio/basic",
+        "alaw": "audio/alaw",
+    }.get(_requested_audio_format(requested_format) or "", "application/octet-stream")
+
+
+def _looks_like_text_payload(audio: bytes) -> bool:
+    stripped = audio.lstrip(b"\xef\xbb\xbf\x00\t\r\n ")
+    if not stripped or stripped.startswith((b"{", b"[", b"<")):
+        return True
+    sample = stripped[:512]
+    printable = sum(byte in {9, 10, 13} or 32 <= byte <= 126 for byte in sample)
+    return printable / len(sample) >= 0.9 and any(
+        65 <= byte <= 90 or 97 <= byte <= 122 for byte in sample
+    )
+
+
+def _validate_audio_payload(audio: bytes, media_type: str, requested_format: str | None = None) -> None:
+    """Reject mislabeled provider errors before browsers receive them as audio."""
+    stripped = audio.lstrip(b"\xef\xbb\xbf\x00\t\r\n ")
+    if not stripped or stripped.startswith((b"{", b"[", b"<")):
+        raise ProviderFailure("provider_malformed_response", "Provider returned invalid TTS audio.", 502, True)
+
+    requested_audio_format = _requested_audio_format(requested_format)
+    media_audio_format = _media_audio_format(media_type)
+    if media_audio_format is None or (
+        requested_audio_format is not None and requested_audio_format != media_audio_format
+    ):
+        raise ProviderFailure("provider_malformed_response", "Provider returned invalid TTS audio.", 502, True)
+    audio_format = requested_audio_format or media_audio_format
+    if audio_format in {"pcm", "ulaw", "alaw"} and _looks_like_text_payload(audio):
+        raise ProviderFailure("provider_malformed_response", "Provider returned invalid TTS audio.", 502, True)
+    valid = True
+    if audio_format == "mp3":
+        valid = _has_mpeg_audio_frame(audio)
+    elif audio_format == "wav":
+        valid = len(audio) >= 12 and audio.startswith(b"RIFF") and audio[8:12] == b"WAVE"
+    elif audio_format == "ogg":
+        valid = audio.startswith(b"OggS")
+    elif audio_format == "flac":
+        valid = audio.startswith(b"fLaC")
+    elif audio_format == "aac":
+        valid = (
+            len(audio) >= 2 and audio[0] == 0xFF and audio[1] & 0xF6 == 0xF0
+        ) or (len(audio) >= 12 and audio[4:8] == b"ftyp")
+    if not valid:
+        raise ProviderFailure("provider_malformed_response", "Provider returned invalid TTS audio.", 502, True)
+
+
 class MockAdapter:
     def __init__(self, cfg: ProviderConfig):
         self.cfg = cfg
@@ -247,6 +358,7 @@ class OpenAICompatibleAdapter:
             }[response_format]
         elif not media_type.startswith("audio/"):
             raise ProviderFailure("provider_malformed_response", "Provider returned non-audio TTS data.", 502, True)
+        _validate_audio_payload(audio, media_type, response_format)
         return audio, media_type
 
 
@@ -381,8 +493,13 @@ class ElevenLabsAdapter(OpenAICompatibleAdapter):
             raise ProviderFailure("provider_request_failed", f"ElevenLabs returned HTTP {response.status_code}.", 502, response.status_code >= 500)
         if not audio:
             raise ProviderFailure("provider_empty_response", "ElevenLabs returned empty audio.", 502, True)
-        media_type = (response.headers.get("Content-Type") or "audio/mpeg").split(";", 1)[0]
-        return audio, media_type if media_type.startswith("audio/") else "audio/mpeg"
+        media_type = (response.headers.get("Content-Type") or "").split(";", 1)[0].lower()
+        if media_type == "application/octet-stream" or not media_type:
+            media_type = _audio_media_type(output_format)
+        elif not media_type.startswith("audio/"):
+            raise ProviderFailure("provider_malformed_response", "ElevenLabs returned non-audio data.", 502, True)
+        _validate_audio_payload(audio, media_type, output_format)
+        return audio, media_type
 
 
 class WhisperCppAdapter(OpenAICompatibleAdapter):
