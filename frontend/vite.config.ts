@@ -23,6 +23,9 @@ export default defineConfig({
     css: true,
     maxWorkers: 2,
     minWorkers: 1,
+    // React integration tests exercise network/session effects and can exceed
+    // Vitest's 5s default on low-resource Termux/CI runners.
+    testTimeout: 15000,
     coverage: { reporter: ['text', 'html'] },
   },
 })
