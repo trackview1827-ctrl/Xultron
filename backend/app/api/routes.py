@@ -11,7 +11,7 @@ from app.security.guards import require_json, require_user
 from app.security.validation import enum_field, string_field
 from app.services.auth import cleanup_expired, create_guest, ensure_csrf, login, logout, register
 from app.services.attachments import create_attachment
-from app.services.chat import create_conversation, handle_message, owned_conversation
+from app.services.chat import create_conversation, handle_message, owned_conversation, persist_message, prepare_message, stream_prepared_message
 from app.services.providers import adapter_call, create_provider, default_provider, update_provider, _owned as owned_provider
 from app.services.openai_oauth import callback as openai_oauth_callback, clear as clear_openai_oauth, start as start_openai_oauth
 from app.services.settings import get_settings, patch_settings
@@ -180,11 +180,19 @@ def stream_message():
             if not stream_user:
                 raise APIError("authentication_required", "Authentication is required.", 401)
             yield _sse("state", {"state": "THINKING"})
-            response = handle_message(stream_user, data)
+            prepared = prepare_message(stream_user, data)
+            cached_response = prepared.get("cached_response")
+            if cached_response is not None:
+                response = cached_response
+                text = response["messages"][-1]["content"]
+                yield _sse("delta", {"text": text})
+            else:
+                chunks = []
+                for chunk in stream_prepared_message(prepared):
+                    chunks.append(chunk)
+                    yield _sse("delta", {"text": chunk})
+                response = persist_message(prepared, "".join(chunks))
             yield _sse("conversation", response["conversation"])
-            text = response["messages"][-1]["content"]
-            for token in text.split(" "):
-                yield _sse("delta", {"text": token + " "})
             yield _sse("done", response)
         except APIError as exc:
             yield _sse("error", {"code": exc.code, "message": exc.message, "retryable": exc.retryable})

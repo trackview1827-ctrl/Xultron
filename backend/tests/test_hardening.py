@@ -262,7 +262,7 @@ def test_stream_endpoint_over_live_http(user_client, app, monkeypatch):
         def fail_safely(*args, **kwargs):
             raise RuntimeError(SENTINEL)
 
-        monkeypatch.setattr("app.api.routes.handle_message", fail_safely)
+        monkeypatch.setattr("app.api.routes.prepare_message", fail_safely)
         failed = requests.post(url, json={"message": "fail", "requestId": "live-stream-2"}, headers={"X-CSRF-Token": token, "Cookie": cookie_header}, timeout=5)
         assert failed.status_code == 200
         assert "event: error" in failed.text

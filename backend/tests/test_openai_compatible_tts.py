@@ -1,6 +1,6 @@
 import pytest
 
-from app.providers.adapters import CustomHTTPAdapter
+from app.providers.adapters import CustomHTTPAdapter, OpenAICompatibleAdapter
 from app.providers.base import ProviderConfig, ProviderFailure
 from tests.conftest import post_json
 
@@ -192,3 +192,80 @@ def test_voice_synthesize_public_api_rejects_mislabeled_provider_audio(
     assert response.is_json
     assert response.content_type == "application/json"
     assert response.get_json()["error"]["code"] == "provider_malformed_response"
+
+
+class FakeStreamingResponse:
+    status_code = 200
+    headers = {"Content-Type": "text/event-stream"}
+
+    def iter_lines(self):
+        yield b'data: {"choices":[{"delta":{"content":"first "}}]}'
+        yield b''
+        yield b'data: {"choices":[{"delta":{"content":"second"}}]}'
+        yield b'data: [DONE]'
+
+    def close(self):
+        pass
+
+
+def ai_config():
+    return ProviderConfig(
+        id="openai-chat",
+        name="OpenAI-compatible chat",
+        kind="ai",
+        adapter="openai_compatible",
+        base_url="https://provider.example/v1",
+        api_key="test-key",
+        model="test-model",
+        temperature=0.2,
+        max_tokens=32,
+        streaming=True,
+        config={},
+    )
+
+
+def test_openai_compatible_stream_reads_incremental_deltas(app, monkeypatch):
+    captured = {}
+
+    def post(url, **kwargs):
+        captured.update({"url": url, **kwargs})
+        return FakeStreamingResponse()
+
+    monkeypatch.setattr("app.providers.adapters.requests.post", post)
+    with app.app_context():
+        chunks = list(OpenAICompatibleAdapter(ai_config()).stream([{"role": "user", "content": "hello"}]))
+
+    assert chunks == ["first ", "second"]
+    assert captured["url"] == "https://provider.example/v1/chat/completions"
+    assert captured["json"]["stream"] is True
+    assert captured["headers"]["Accept"] == "text/event-stream"
+
+
+def test_public_chat_stream_emits_provider_deltas_before_done(user_client, monkeypatch):
+    provider = post_json(
+        user_client,
+        "/api/v1/providers",
+        {
+            "name": "Streaming chat",
+            "kind": "ai",
+            "adapter": "openai_compatible",
+            "baseUrl": "https://provider.example/v1",
+            "apiKey": "test-key-1234567890",
+            "model": "test-model",
+            "enabled": True,
+            "isDefault": True,
+        },
+    )
+    assert provider.status_code == 201
+    monkeypatch.setattr(
+        "app.providers.adapters.requests.post",
+        lambda *args, **kwargs: FakeStreamingResponse(),
+    )
+
+    response = post_json(user_client, "/api/v1/chat/stream", {"message": "hello", "requestId": "stream-live-1"})
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'event: delta\ndata: {"text": "first "}' in body
+    assert 'event: delta\ndata: {"text": "second"}' in body
+    assert body.index('event: delta') < body.index('event: done')

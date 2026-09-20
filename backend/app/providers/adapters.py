@@ -297,10 +297,76 @@ class OpenAICompatibleAdapter:
         return self._bound_text(content)
 
     def stream(self, messages) -> Iterable[str]:
-        # Non-stream fallback keeps SSE contract stable even when provider streaming is absent.
-        text = self.complete(messages)
-        for token in text.split(" "):
-            yield token + " "
+        payload = {
+            "model": self.cfg.model,
+            "messages": messages,
+            "temperature": self.cfg.temperature if self.cfg.temperature is not None else 0.3,
+            "max_tokens": self.cfg.max_tokens or current_app.config.get("DEFAULT_AI_MAX_TOKENS", 4096),
+            "stream": True,
+        }
+        try:
+            response = requests.post(
+                f"{self.base}/chat/completions",
+                headers={**self.headers(), "Accept": "text/event-stream"},
+                json=payload,
+                timeout=self.timeout,
+                allow_redirects=False,
+                stream=True,
+            )
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "Provider request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc)
+        if response.status_code in {401, 403}:
+            response.close()
+            raise ProviderFailure("provider_authentication_failed", "Authentication was rejected by the provider.", 502)
+        if response.status_code == 429:
+            response.close()
+            raise ProviderFailure("provider_rate_limited", "Provider rate limit reached.", 502, True)
+        if response.status_code >= 400:
+            response.close()
+            raise ProviderFailure("provider_request_failed", f"Provider returned HTTP {response.status_code}.", 502, response.status_code >= 500)
+
+        max_bytes = current_app.config.get("MAX_PROVIDER_RESPONSE_BYTES", 1048576)
+        max_chars = current_app.config.get("MAX_PROVIDER_TEXT_CHARS", 200000)
+        received = 0
+        emitted = 0
+        try:
+            for raw_line in response.iter_lines():
+                if not raw_line:
+                    continue
+                received += len(raw_line)
+                if received > max_bytes:
+                    raise ProviderFailure("provider_response_too_large", "Provider response is too large.", 502)
+                if not raw_line.startswith(b"data: "):
+                    continue
+                raw_event = raw_line[6:]
+                if raw_event == b"[DONE]":
+                    break
+                try:
+                    event = json.loads(raw_event.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    raise ProviderFailure("provider_malformed_response", "Provider returned malformed streaming data.", 502, True)
+                choices = event.get("choices") if isinstance(event, dict) else None
+                first = choices[0] if isinstance(choices, list) and choices else None
+                delta = first.get("delta") if isinstance(first, dict) else None
+                text = delta.get("content") if isinstance(delta, dict) else None
+                if not isinstance(text, str) or not text:
+                    continue
+                remaining = max_chars - emitted
+                if remaining <= 0:
+                    break
+                chunk = text[:remaining]
+                emitted += len(chunk)
+                yield chunk
+        except requests.Timeout:
+            raise ProviderFailure("provider_timeout", "Provider request timed out.", 504, True)
+        except requests.RequestException as exc:
+            self._safe_raise(exc)
+        finally:
+            response.close()
+        if emitted == 0:
+            raise ProviderFailure("provider_empty_response", "Provider returned an empty response.", 502, True)
 
     def transcribe(self, audio: bytes, filename: str, language: str | None):
         files = {"file": (filename or "audio.webm", audio), "model": (None, self.cfg.model or "whisper-1")}

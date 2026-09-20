@@ -211,3 +211,28 @@ def adapter_call(provider, method, *args):
         return getattr(adapter, method)(*args)
     except ProviderFailure as exc:
         raise APIError(exc.code, exc.message, exc.status, exc.retryable) from None
+
+
+def adapter_stream(provider, *args):
+    """Yield provider chunks while preserving the API error contract.
+
+    Only adapters with a known streaming wire protocol use a live upstream
+    stream. Other adapters deliberately fall back to their complete response,
+    so the public SSE endpoint never sends a malformed provider-specific
+    request merely because the client asked for streaming.
+    """
+    try:
+        if provider.adapter == "openai_codex_oauth":
+            from app.services.openai_oauth import refresh_if_needed
+            refresh_if_needed(provider)
+        adapter = build(provider)
+        if provider.adapter not in {"openai_compatible", "local_http", "openai_codex_oauth"}:
+            text = adapter.complete(*args)
+            for token in text.split(" "):
+                yield token + " "
+            return
+        for chunk in adapter.stream(*args):
+            if isinstance(chunk, str) and chunk:
+                yield chunk
+    except ProviderFailure as exc:
+        raise APIError(exc.code, exc.message, exc.status, exc.retryable) from None

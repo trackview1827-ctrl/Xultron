@@ -13,7 +13,7 @@ from app.security.errors import APIError
 from app.security.validation import require_object, string_field
 from app.services.auto_memory import remember_from_message
 from app.services.attachments import attachment_records, ensure_provider_supports_attachments, provider_user_content, public_metadata
-from app.services.providers import adapter_call, default_provider
+from app.services.providers import adapter_call, adapter_stream, default_provider
 from app.services.settings import get_settings
 from app.services.time_context import time_context_prompt
 from app.services.verification import ANSWER_POLICY, BEST_EFFORT_ANSWER_POLICY, capability_prompt, deterministic_plan, direct_answer, execute as execute_verification
@@ -45,6 +45,20 @@ def create_conversation(user_id, title=None):
 
 
 def handle_message(user, data):
+    prepared = prepare_message(user, data)
+    if prepared.get("cached_response") is not None:
+        return prepared["cached_response"]
+    assistant_text = _verified_complete(
+        prepared["provider"],
+        prepared["provider_messages"],
+        prepared["message"],
+        prepared["settings"].get("locale", "tr"),
+        prepared["settings"],
+    ) if prepared["provider"] else "No AI provider is configured yet. Add a provider in Settings to enable model-backed responses."
+    return persist_message(prepared, assistant_text)
+
+
+def prepare_message(user, data):
     data = require_object(data)
     message = string_field(data, "message", required=True, min_len=1, max_len=MAX_MESSAGE_CHARS)
     request_id = string_field(data, "requestId", required=True, min_len=1, max_len=MAX_REQUEST_ID_CHARS)
@@ -70,27 +84,65 @@ def handle_message(user, data):
     if existing:
         if existing.request_fingerprint and existing.request_fingerprint != fingerprint:
             raise APIError("idempotency_conflict", "requestId was already used for a different chat payload.", 409)
-        return existing.response
+        return {"cached_response": existing.response}
     settings = get_settings(user)
     history_enabled = bool(settings.get("conversationHistory", True))
     low_data = bool(settings.get("lowDataMode", False))
     ephemeral = _ephemeral_get(user.id, request_id, fingerprint) if not history_enabled else None
     if ephemeral:
-        return ephemeral
+        return {"cached_response": ephemeral}
     conv = owned_conversation(conv_id, user.id) if conv_id else Conversation(user_id=user.id, title=(message[:80] if history_enabled else "Private conversation"))
     provider = default_provider(user.id, "ai")
     ensure_provider_supports_attachments(provider, attachments)
     current_content = provider_user_content(message, attachments, low_data)
     provider_messages = _provider_context(user.id, conv.id if conv_id else None, current_content, settings, low_data)
-    if provider:
-        assistant_text = _verified_complete(provider, provider_messages, message, settings.get("locale", "tr"), settings)
-        provider_id = provider.id
-    else:
-        assistant_text = "No AI provider is configured yet. Add a provider in Settings to enable model-backed responses."
-        provider_id = None
+    return {
+        "user": user,
+        "message": message,
+        "request_id": request_id,
+        "conv_id": conv_id,
+        "attachments": attachments,
+        "fingerprint": fingerprint,
+        "settings": settings,
+        "history_enabled": history_enabled,
+        "conv": conv,
+        "provider": provider,
+        "provider_messages": provider_messages,
+    }
+
+
+def stream_prepared_message(prepared):
+    provider = prepared["provider"]
+    if not provider:
+        yield "No AI provider is configured yet. Add a provider in Settings to enable model-backed responses."
+        return
+    prompt, direct = _verified_prompt(
+        prepared["provider_messages"],
+        prepared["message"],
+        prepared["settings"].get("locale", "tr"),
+        prepared["settings"],
+    )
+    if direct is not None:
+        yield direct
+        return
+    for chunk in adapter_stream(provider, prompt):
+        yield chunk
+
+
+def persist_message(prepared, assistant_text):
+    user = prepared["user"]
+    message = prepared["message"]
+    request_id = prepared["request_id"]
+    attachments = prepared["attachments"]
+    settings = prepared["settings"]
+    history_enabled = prepared["history_enabled"]
+    conv = prepared["conv"]
+    provider = prepared["provider"]
+    fingerprint = prepared["fingerprint"]
     if not isinstance(assistant_text, str) or not assistant_text.strip():
         raise APIError("provider_empty_response", "Provider returned an empty response.", 502, True)
-    assistant_text = assistant_text.strip()[: current_app.config.get("MAX_PROVIDER_TEXT_CHARS", 200000)]
+    assistant_text = _clean_visible_answer(assistant_text, settings.get("locale", "tr"))
+    assistant_text = assistant_text[: current_app.config.get("MAX_PROVIDER_TEXT_CHARS", 200000)]
     conv.updated_at = utcnow()
     db.session.add(conv)
     attachment_metadata = public_metadata(attachments)
@@ -103,7 +155,7 @@ def handle_message(user, data):
             request_id=request_id,
             meta={"attachments": attachment_metadata} if attachment_metadata else {},
         )
-        assistant = Message(user_id=user.id, conversation=conv, role="assistant", content=assistant_text, request_id=request_id, provider_id=provider_id)
+        assistant = Message(user_id=user.id, conversation=conv, role="assistant", content=assistant_text, request_id=request_id, provider_id=provider.id if provider else None)
         db.session.add_all([user_msg, assistant])
         db.session.flush()
         messages = [user_msg.to_public(), assistant.to_public()]
@@ -143,28 +195,33 @@ def handle_message(user, data):
 
 
 def _verified_complete(provider, provider_messages: list[dict], question: str, locale: str, settings: dict | None = None) -> str:
+    prompt, direct = _verified_prompt(provider_messages, question, locale, settings)
+    if direct is not None:
+        return direct
+    return _clean_visible_answer(adapter_call(provider, "complete", prompt), locale)
+
+
+def _verified_prompt(provider_messages: list[dict], question: str, locale: str, settings: dict | None = None):
     plan = deterministic_plan(question)
     result = execute_verification(plan, question, settings=settings)
     if not result.verified:
-        best_effort_messages = [
+        return [
             {"role": "system", "content": BEST_EFFORT_ANSWER_POLICY},
             *provider_messages,
-        ]
-        return _clean_visible_answer(adapter_call(provider, "complete", best_effort_messages), locale)
+        ], None
     direct = direct_answer(result, locale)
     if direct is not None:
-        return direct
+        return None, direct
     current_message = provider_messages[-1:]
     prior_context = provider_messages[:-1]
-    verified_messages = [
+    return [
         {"role": "system", "content": ANSWER_POLICY},
         {"role": "system", "content": capability_prompt()},
         *prior_context,
         {"role": "system", "content": ANSWER_POLICY},
         {"role": "system", "content": result.prompt()},
         *current_message,
-    ]
-    return _clean_visible_answer(adapter_call(provider, "complete", verified_messages), locale)
+    ], None
 
 
 def _clean_visible_answer(answer: str, locale: str) -> str:
