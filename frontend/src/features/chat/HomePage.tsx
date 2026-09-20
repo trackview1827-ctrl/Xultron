@@ -115,7 +115,7 @@ export function HomePage() {
   const { t, locale } = useLocale()
   const [aiReady, setAiReady] = useState<boolean | null>(null)
   const [sttReady, setSttReady] = useState(false); const [ttsReady, setTtsReady] = useState(false); const [error, setError] = useState(''); const [streaming, setStreaming] = useState(false); const [historyOpen, setHistoryOpen] = useState(false); const [composerFocused, setComposerFocused] = useState(false); const [virtualKeyboardVisible, setVirtualKeyboardVisible] = useState(false); const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false); const [attachmentStatus, setAttachmentStatus] = useState(''); const [attachmentUploading, setAttachmentUploading] = useState(false); const [attachmentPreview, setAttachmentPreview] = useState<AttachmentPreview | null>(null)
-  const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const attachmentTriggerRef = useRef<HTMLButtonElement | null>(null); const photoInputRef = useRef<HTMLInputElement | null>(null); const videoInputRef = useRef<HTMLInputElement | null>(null); const fileInputRef = useRef<HTMLInputElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0); const liveConversationRef = useRef(false); const attachmentPreviewRef = useRef<AttachmentPreview | null>(null); const attachmentGenerationRef = useRef(0); const sentAttachmentUrlsRef = useRef(new Set<string>())
+  const abortRef = useRef<AbortController | null>(null); const historyAbortRef = useRef<AbortController | null>(null); const timelineRef = useRef<HTMLDivElement | null>(null); const attachmentTriggerRef = useRef<HTMLButtonElement | null>(null); const photoInputRef = useRef<HTMLInputElement | null>(null); const videoInputRef = useRef<HTMLInputElement | null>(null); const fileInputRef = useRef<HTMLInputElement | null>(null); const activeResponseRef = useRef<{ requestId: string; assistantId: string; stopped: boolean; flush?: () => void } | null>(null); const systemLoadGenerationRef = useRef(0); const selectionGenerationRef = useRef(0); const liveConversationRef = useRef(false); const attachmentPreviewRef = useRef<AttachmentPreview | null>(null); const attachmentGenerationRef = useRef(0); const sentAttachmentUrlsRef = useRef(new Set<string>())
   const [liveConversation, setLiveConversation] = useState(false); const [liveTranscript, setLiveTranscript] = useState(''); const [liveRetry, setLiveRetry] = useState(0)
   const handleVoiceTranscript = useCallback((text: string) => {
     if (liveConversationRef.current) { setLiveTranscript(text); return }
@@ -139,6 +139,7 @@ export function HomePage() {
     const active = activeResponseRef.current
     if (!active) return
     active.stopped = true
+    active.flush?.()
     abortRef.current?.abort()
     if (preservePartial) setMessages(current => current.flatMap(item => item.id !== active.assistantId ? [item] : item.content ? [{ ...item, pending: false, cancelled: true }] : []))
     setStreaming(false)
@@ -193,6 +194,7 @@ export function HomePage() {
       if (deltaFrame !== null) cancelAnimationFrame(deltaFrame)
       flushPendingDelta()
     }
+    activeResponseRef.current!.flush = flushAndCancelDelta
     const acceptsStreamEvent = () => activeResponseRef.current?.requestId === requestId && !activeResponseRef.current.stopped
     try { await chatApi.stream({ conversationId, message: text, requestId, attachmentIds }, {
       onState: state => { if (acceptsStreamEvent() && state.toLowerCase() === 'thinking') dispatchCore({ type: 'THINK' }) },

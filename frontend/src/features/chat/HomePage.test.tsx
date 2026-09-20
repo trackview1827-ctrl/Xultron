@@ -34,6 +34,8 @@ describe('HomePage response and history lifecycle', () => {
   })
 
   it('finalizes partial assistant output on explicit Stop without a Core error flash', async () => {
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame
+    Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: vi.fn(() => 1) })
     chat.stream.mockImplementation(async (_input, handlers, signal: AbortSignal) => {
       handlers.onDelta('Partial output')
       await new Promise<void>((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('Stopped', 'AbortError')), { once: true }))
@@ -43,12 +45,13 @@ describe('HomePage response and history lifecycle', () => {
     await user.type(input, 'Hello')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Send message' }))
-    expect(await screen.findByText(/Partial output/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Stop response' }))
+    expect(await screen.findByText(/Partial output/)).toBeInTheDocument()
     expect(await screen.findByText(/STOPPED/)).toBeInTheDocument()
     expect(container.querySelector('.cursor')).toBeNull()
     expect(app.dispatchCore).toHaveBeenCalledWith({ type: 'CANCEL' })
     expect(app.dispatchCore).not.toHaveBeenCalledWith({ type: 'FAIL' })
+    Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: originalRequestAnimationFrame })
   }, 10_000)
 
   it('caps message input at the backend 8000-character limit and exposes the counter', async () => {
