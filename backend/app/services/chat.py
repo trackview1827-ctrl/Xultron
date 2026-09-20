@@ -3,6 +3,7 @@ import json
 import re
 import threading
 import time
+from contextlib import contextmanager
 
 from flask import current_app
 from sqlalchemy.exc import IntegrityError
@@ -24,6 +25,8 @@ EPHEMERAL_IDEM_TTL_SECONDS = 300
 EPHEMERAL_IDEM_MAX_ENTRIES = 512
 _EPHEMERAL_IDEM = {}
 _EPHEMERAL_IDEM_LOCK = threading.Lock()
+_REQUEST_LOCKS = {}
+_REQUEST_LOCKS_GUARD = threading.Lock()
 
 
 def owned_conversation(conversation_id, user_id):
@@ -45,17 +48,34 @@ def create_conversation(user_id, title=None):
 
 
 def handle_message(user, data):
-    prepared = prepare_message(user, data)
-    if prepared.get("cached_response") is not None:
-        return prepared["cached_response"]
-    assistant_text = _verified_complete(
-        prepared["provider"],
-        prepared["provider_messages"],
-        prepared["message"],
-        prepared["settings"].get("locale", "tr"),
-        prepared["settings"],
-    ) if prepared["provider"] else "No AI provider is configured yet. Add a provider in Settings to enable model-backed responses."
-    return persist_message(prepared, assistant_text)
+    data = require_object(data)
+    request_id = string_field(data, "requestId", required=True, min_len=1, max_len=MAX_REQUEST_ID_CHARS)
+    with request_lock(user.id, request_id):
+        prepared = prepare_message(user, data)
+        if prepared.get("cached_response") is not None:
+            return prepared["cached_response"]
+        assistant_text = _verified_complete(
+            prepared["provider"],
+            prepared["provider_messages"],
+            prepared["message"],
+            prepared["settings"].get("locale", "tr"),
+            prepared["settings"],
+        ) if prepared["provider"] else "No AI provider is configured yet. Add a provider in Settings to enable model-backed responses."
+        return persist_message(prepared, assistant_text)
+
+
+@contextmanager
+def request_lock(user_id: str, request_id: str):
+    key = (user_id, request_id)
+    with _REQUEST_LOCKS_GUARD:
+        lock = _REQUEST_LOCKS.setdefault(key, threading.Lock())
+    try:
+        with lock:
+            yield
+    finally:
+        with _REQUEST_LOCKS_GUARD:
+            if _REQUEST_LOCKS.get(key) is lock and not lock.locked():
+                _REQUEST_LOCKS.pop(key, None)
 
 
 def prepare_message(user, data):

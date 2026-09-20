@@ -210,6 +210,36 @@ def test_ephemeral_idempotency_cache_is_bounded():
             chat._EPHEMERAL_IDEM.clear()
 
 
+def test_request_lock_serializes_same_user_request_id():
+    from app.services import chat
+
+    entered = threading.Event()
+    release = threading.Event()
+    second_entered = threading.Event()
+
+    def first_worker():
+        with chat.request_lock("user", "same-request"):
+            entered.set()
+            release.wait(timeout=2)
+
+    def second_worker():
+        with chat.request_lock("user", "same-request"):
+            second_entered.set()
+
+    first = threading.Thread(target=first_worker)
+    second = threading.Thread(target=second_worker)
+    first.start()
+    assert entered.wait(timeout=2)
+    second.start()
+    assert not second_entered.wait(timeout=0.05)
+    release.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+    assert second_entered.is_set()
+    with chat._REQUEST_LOCKS_GUARD:
+        assert ("user", "same-request") not in chat._REQUEST_LOCKS
+
+
 def test_current_message_survives_large_memory_context(user_client, monkeypatch):
     captured = {}
 

@@ -347,6 +347,8 @@ class OpenAICompatibleAdapter:
                     event = json.loads(raw_event.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     raise ProviderFailure("provider_malformed_response", "Provider returned malformed streaming data.", 502, True)
+                if isinstance(event, dict) and event.get("error"):
+                    raise ProviderFailure("provider_request_failed", "Provider returned a streaming error.", 502, True)
                 choices = event.get("choices") if isinstance(event, dict) else None
                 first = choices[0] if isinstance(choices, list) and choices else None
                 delta = first.get("delta") if isinstance(first, dict) else None

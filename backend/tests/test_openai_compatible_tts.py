@@ -208,6 +208,11 @@ class FakeStreamingResponse:
         pass
 
 
+class FakeStreamingErrorResponse(FakeStreamingResponse):
+    def iter_lines(self):
+        yield b'data: {"error":{"message":"upstream failed"}}'
+
+
 def ai_config():
     return ProviderConfig(
         id="openai-chat",
@@ -239,6 +244,16 @@ def test_openai_compatible_stream_reads_incremental_deltas(app, monkeypatch):
     assert captured["url"] == "https://provider.example/v1/chat/completions"
     assert captured["json"]["stream"] is True
     assert captured["headers"]["Accept"] == "text/event-stream"
+
+
+def test_openai_compatible_stream_surfaces_upstream_error_event(app, monkeypatch):
+    monkeypatch.setattr(
+        "app.providers.adapters.requests.post",
+        lambda *args, **kwargs: FakeStreamingErrorResponse(),
+    )
+    with app.app_context(), pytest.raises(ProviderFailure) as raised:
+        list(OpenAICompatibleAdapter(ai_config()).stream([{"role": "user", "content": "hello"}]))
+    assert raised.value.code == "provider_request_failed"
 
 
 def test_public_chat_stream_emits_provider_deltas_before_done(user_client, monkeypatch):
