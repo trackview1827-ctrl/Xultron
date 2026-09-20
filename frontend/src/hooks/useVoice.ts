@@ -20,6 +20,13 @@ interface StartOptions {
   autoStopSilenceMs?: number
 }
 
+const VISUAL_LEVEL_INTERVAL_MS = 1000 / 15
+const VISUAL_LEVEL_DELTA = 0.015
+
+export function shouldPublishVisualLevel(previousLevel: number, previousAt: number, nextLevel: number, now: number): boolean {
+  return now - previousAt >= VISUAL_LEVEL_INTERVAL_MS || Math.abs(nextLevel - previousLevel) >= VISUAL_LEVEL_DELTA
+}
+
 function abortError(message: string): DOMException {
   return new DOMException(message, 'AbortError')
 }
@@ -77,6 +84,7 @@ export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () =
   const synthAbortRef = useRef<AbortController | null>(null)
   const captureGenerationRef = useRef(0)
   const playbackGenerationRef = useRef(0)
+  const visualLevelRef = useRef({ value: 0, updatedAt: 0 })
   const mountedRef = useRef(true)
   const networkOnlineRef = useRef(networkOnline)
   const dispatchRef = useRef<Dispatch<CoreEvent>>(dispatchCore)
@@ -98,6 +106,7 @@ export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () =
     if (context && context.state !== 'closed') {
       try { await context.close() } catch { /* Browser audio shutdown is best effort. */ }
     }
+    visualLevelRef.current = { value: 0, updatedAt: 0 }
     if (updateState && mountedRef.current) setLevel(0)
   }, [])
 
@@ -253,7 +262,11 @@ export function useVoice(onTranscript: (text: string) => void, onNoSpeech?: () =
             analyser.getByteFrequencyData(data)
             const now = performance.now()
             const currentLevel = data.reduce((sum, value) => sum + value, 0) / data.length / 255
-            if (mountedRef.current && operationId === captureGenerationRef.current) setLevel(currentLevel)
+            const visualLevel = visualLevelRef.current
+            if (mountedRef.current && operationId === captureGenerationRef.current && shouldPublishVisualLevel(visualLevel.value, visualLevel.updatedAt, currentLevel, now)) {
+              visualLevelRef.current = { value: currentLevel, updatedAt: now }
+              setLevel(currentLevel)
+            }
             if (options.autoStopSilenceMs && recorder.state === 'recording') {
               if (currentLevel > 0.035) {
                 speechDetected = true

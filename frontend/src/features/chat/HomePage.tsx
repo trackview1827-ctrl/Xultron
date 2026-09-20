@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import type { Attachment, Conversation, Message, MessageAttachment, Provider } from '../../types'
 import { chatApi } from '../../services/chatApi'
 import { providersApi } from '../../services/providersApi'
@@ -50,7 +50,9 @@ function formatAttachmentSize(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function MessageAttachmentCard({ attachment, t }: { attachment: MessageAttachment; t: (english: string, turkish: string) => string }) {
+type Translate = (english: string, turkish: string) => string
+
+const MessageAttachmentCard = memo(function MessageAttachmentCard({ attachment, t }: { attachment: MessageAttachment; t: Translate }) {
   const kind = attachmentPreviewKind({ name: attachment.name, type: attachment.contentType })
   return <section className={`message-attachment-card message-attachment-card--${kind}`} aria-label={t(`Attached ${attachmentKindLabel(kind, t).toLowerCase()}: ${attachment.name}`, `Ekli ${attachmentKindLabel(kind, t).toLowerCase()}: ${attachment.name}`)}>
     <div className="message-attachment-card__visual">
@@ -60,7 +62,31 @@ function MessageAttachmentCard({ attachment, t }: { attachment: MessageAttachmen
     </div>
     <div className="message-attachment-card__details"><strong>{attachment.name}</strong><small>{attachmentKindLabel(kind, t)} · {formatAttachmentSize(attachment.size)}</small></div>
   </section>
-}
+})
+
+const MessageCard = memo(function MessageCard({
+  message,
+  index,
+  conserveMotion,
+  locale,
+  t,
+  ttsReady,
+  speaking,
+  onSpeak,
+}: {
+  message: Message
+  index: number
+  conserveMotion: boolean
+  locale: string
+  t: Translate
+  ttsReady: boolean
+  speaking: boolean
+  onSpeak: (content: string) => void
+}) {
+  return <motion.article className={`transmission ${message.role} ${message.failed ? 'failed' : ''} ${message.cancelled ? 'cancelled' : ''}`} initial={conserveMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: conserveMotion ? 0 : .18 }}>
+    <header><span>{message.role === 'assistant' ? 'XULTRON' : t('YOU', 'SEN')}</span><span>{message.cancelled ? t('STOPPED · ', 'DURDU · ') : ''}{String(index + 1).padStart(2, '0')} / {new Date(message.createdAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}</span></header><div className="transmission-line" />{message.attachments?.map(attachment => <MessageAttachmentCard key={attachment.id} attachment={attachment} t={t} />)}<p>{message.content}{message.pending && <span className="cursor" />}</p>{message.role === 'assistant' && !message.pending && message.content && ttsReady && <button className="speak-action" onClick={() => onSpeak(message.content)}><Icon name={speaking ? 'stop' : 'voice'} /> {speaking ? t('STOP VOICE', 'SESİ DURDUR') : t('PLAY VOICE', 'SESLENDİR')}</button>}
+  </motion.article>
+})
 export function isCoreCompact(
   messageCount: number,
   composerFocused: boolean,
@@ -134,6 +160,10 @@ export function HomePage() {
     finally { if (generation === selectionGenerationRef.current) historyAbortRef.current = null }
   }
   const newConversation = () => { cancelActiveResponse(false); selectionGenerationRef.current += 1; historyAbortRef.current?.abort(); historyAbortRef.current = null; revokeSentAttachmentUrls(); setConversationId(undefined); setActiveConversation(undefined); setMessages([]); setError(''); setHistoryOpen(false) }
+  const handleSpeak = useCallback((content: string) => {
+    if (voice.speaking) voice.stopSpeaking()
+    else void voice.speak(content)
+  }, [voice.speaking, voice.speak, voice.stopSpeaking])
   const send = async (overrideText?: string, liveTurn = false) => {
     const readyAttachment = !liveTurn && attachmentPreviewRef.current?.uploadState === 'ready' && attachmentPreviewRef.current.attachment?.id ? attachmentPreviewRef.current : null
     const text = (overrideText ?? input).trim() || (readyAttachment ? t('Please review the attached file.', 'Lütfen ekli dosyayı inceleyin.') : '')
@@ -147,17 +177,33 @@ export function HomePage() {
     const assistantId = `stream-${requestId}`; setMessages(current => [...current, userMessage, { id: assistantId, conversationId: conversationId ?? '', role: 'assistant', content: '', createdAt: new Date().toISOString(), pending: true }]); setInput(''); setError(''); setStreaming(true)
     if (coreState === 'ERROR') dispatchCore({ type: 'RECOVER' })
     dispatchCore({ type: 'THINK' })
-    const controller = new AbortController(); abortRef.current = controller; activeResponseRef.current = { requestId, assistantId, stopped: false }; let streamError = ''; let failed = false; let assistantOutput = ''
+    const controller = new AbortController(); abortRef.current = controller; activeResponseRef.current = { requestId, assistantId, stopped: false }; let streamError = ''; let failed = false; let assistantOutput = ''; let pendingDelta = ''; let deltaFrame: number | null = null
+    const flushPendingDelta = () => {
+      deltaFrame = null
+      if (!pendingDelta) return
+      const delta = pendingDelta
+      pendingDelta = ''
+      setMessages(current => current.map(item => item.id === assistantId ? { ...item, content: item.content + delta } : item))
+    }
+    const queueDelta = (delta: string) => {
+      pendingDelta += delta
+      if (deltaFrame === null) deltaFrame = requestAnimationFrame(flushPendingDelta)
+    }
+    const flushAndCancelDelta = () => {
+      if (deltaFrame !== null) cancelAnimationFrame(deltaFrame)
+      flushPendingDelta()
+    }
     const acceptsStreamEvent = () => activeResponseRef.current?.requestId === requestId && !activeResponseRef.current.stopped
     try { await chatApi.stream({ conversationId, message: text, requestId, attachmentIds }, {
       onState: state => { if (acceptsStreamEvent() && state.toLowerCase() === 'thinking') dispatchCore({ type: 'THINK' }) },
       onConversation: conversation => { if (!acceptsStreamEvent()) return; setConversationId(conversation.id); setConversations(current => [conversation, ...current.filter(item => item.id !== conversation.id)]) },
-      onDelta: delta => { if (acceptsStreamEvent()) { assistantOutput += delta; setMessages(current => current.map(item => item.id === assistantId ? { ...item, content: item.content + delta } : item)) } },
-      onDone: message => { if (acceptsStreamEvent()) { assistantOutput = message?.content || assistantOutput; setMessages(current => current.map(item => item.id === assistantId ? { ...(message?.id ? message : item), content: message?.content || item.content, pending: false } : item)) } },
+      onDelta: delta => { if (acceptsStreamEvent()) { assistantOutput += delta; queueDelta(delta) } },
+      onDone: message => { if (acceptsStreamEvent()) { flushAndCancelDelta(); assistantOutput = message?.content || assistantOutput; setMessages(current => current.map(item => item.id === assistantId ? { ...(message?.id ? message : item), content: message?.content || item.content, pending: false } : item)) } },
       onError: message => { if (!acceptsStreamEvent()) return; streamError = message; throw new ApiError(message) },
     }, controller.signal) } catch (caught) {
       if (!(caught instanceof DOMException && caught.name === 'AbortError')) { failed = true; const message = streamError || (caught instanceof Error ? caught.message : 'Response interrupted.'); setError(message); setMessages(current => current.map(item => item.id === assistantId ? { ...item, pending: false, failed: true, content: item.content || 'Response interrupted before output was received.' } : item)); dispatchCore({ type: 'FAIL' }) }
     } finally {
+      flushAndCancelDelta()
       if (activeResponseRef.current?.requestId === requestId) {
         const stopped = activeResponseRef.current.stopped
         setStreaming(false); abortRef.current = null; activeResponseRef.current = null
@@ -267,9 +313,7 @@ export function HomePage() {
       <div className="home-tools"><button className="icon-button history-trigger" onClick={() => setHistoryOpen(true)} aria-label={t('Open conversation history', 'Sohbet geçmişini aç')}><span className="history-lines" /></button><span className="section-index">{t('CORE INTERFACE / 01', 'ÇEKİRDEK ARAYÜZÜ / 01')}</span><button className="icon-button" onClick={newConversation} aria-label={t('New conversation', 'Yeni sohbet')}><Icon name="plus" /></button></div>
       <motion.div layout={!conserveMotion} transition={{ duration: conserveMotion ? 0 : .3 }} className={`core-stage ${coreCompact ? 'compact' : ''} ${conserveMotion ? 'motion-reduced' : ''}`}><XultronCore state={coreState} reducedMotion={conserveMotion} compact={coreCompact} level={voice.level} />{!coreCompact && <motion.div className="core-intro" initial={conserveMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: conserveMotion ? 0 : .32 }}><h1>{t('How can I assist you?', 'Sana nasıl yardımcı olabilirim?')}</h1><p>{t('Voice, thought, and memory aligned.', 'Ses, düşünce ve hafıza birlikte çalışır.')}</p></motion.div>}</motion.div>
       <div className="timeline" ref={timelineRef} aria-live="polite">
-        <AnimatePresence initial={false}>{messages.map((message, index) => <motion.article key={message.id} className={`transmission ${message.role} ${message.failed ? 'failed' : ''} ${message.cancelled ? 'cancelled' : ''}`} initial={conserveMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: conserveMotion ? 0 : .18 }}>
-          <header><span>{message.role === 'assistant' ? 'XULTRON' : t('YOU', 'SEN')}</span><span>{message.cancelled ? t('STOPPED · ', 'DURDU · ') : ''}{String(index + 1).padStart(2, '0')} / {new Date(message.createdAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}</span></header><div className="transmission-line" />{message.attachments?.map(attachment => <MessageAttachmentCard key={attachment.id} attachment={attachment} t={t} />)}<p>{message.content}{message.pending && <span className="cursor" />}</p>{message.role === 'assistant' && !message.pending && message.content && ttsReady && <button className="speak-action" onClick={() => voice.speaking ? voice.stopSpeaking() : void voice.speak(message.content)}><Icon name={voice.speaking ? 'stop' : 'voice'} /> {voice.speaking ? t('STOP VOICE', 'SESİ DURDUR') : t('PLAY VOICE', 'SESLENDİR')}</button>}
-        </motion.article>)}</AnimatePresence>
+        <AnimatePresence initial={false}>{messages.map((message, index) => <MessageCard key={message.id} message={message} index={index} conserveMotion={conserveMotion} locale={locale} t={t} ttsReady={ttsReady} speaking={voice.speaking} onSpeak={handleSpeak} />)}</AnimatePresence>
       </div>
       {(aiReady === false || (!online && messages.length === 0)) && <div className="system-notice"><span className="notice-code">{!online ? 'LINK / 00' : 'PROVIDER / 00'}</span><div><strong>{!online ? 'Connection unavailable' : 'No AI provider configured'}</strong><p>{!online ? 'The interface remains available. AI actions resume after reconnection.' : 'Connect an intelligence provider to activate conversations.'}</p></div>{online && <Button variant="secondary" onClick={() => setPage('settings')}>CONFIGURE PROVIDER</Button>}</div>}
       {(error || voice.error) && <div className="command-error" role="alert"><span>{error || voice.error}</span><button onClick={() => { setError(''); voice.clearError() }} aria-label="Dismiss error"><Icon name="close" /></button></div>}

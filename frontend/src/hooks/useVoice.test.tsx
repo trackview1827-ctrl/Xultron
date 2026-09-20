@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from '../services/settingsApi'
-import { useVoice } from './useVoice'
+import { shouldPublishVisualLevel, useVoice } from './useVoice'
 
 const app = vi.hoisted(() => ({ dispatchCore: vi.fn(), value: {} as Record<string, unknown> }))
 const api = vi.hoisted(() => ({ transcribe: vi.fn(), synthesize: vi.fn() }))
@@ -69,6 +69,12 @@ describe('useVoice media lifecycle', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
     Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: vi.fn(() => 1) })
     Object.defineProperty(globalThis, 'cancelAnimationFrame', { configurable: true, value: vi.fn() })
+  })
+
+  it('caps stable microphone visual updates while preserving meaningful changes', () => {
+    expect(shouldPublishVisualLevel(.4, 100, .405, 130)).toBe(false)
+    expect(shouldPublishVisualLevel(.4, 100, .405, 170)).toBe(true)
+    expect(shouldPublishVisualLevel(.4, 100, .44, 110)).toBe(true)
   })
 
   it('recovers from denied permission, retries from ERROR, and handles device disconnect', async () => {
