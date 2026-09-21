@@ -273,7 +273,17 @@ async function bootstrap(target, options) {
     options.io.stdout("Bootstrap atlandı. Bu seçenek yalnızca test ve ileri düzey kullanım içindir.");
     return;
   }
-  await options.processRunner("bash", [path.join(target, "scripts", "bootstrap.sh")], {
+  const isWindows = options.platform === "win32";
+  const script = path.join(target, "scripts", isWindows ? "bootstrap.ps1" : "bootstrap.sh");
+  if (isWindows) {
+    await options.processRunner("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], {
+      cwd: target,
+      env: options.env,
+      stdio: options.stdio,
+    });
+    return;
+  }
+  await options.processRunner("bash", [script], {
     cwd: target,
     env: options.env,
     stdio: options.stdio,
@@ -341,16 +351,24 @@ export async function update(options) {
   io.stdout("Xultron güncellendi.");
 }
 
-async function ensureRunnable(target) {
+async function ensureRunnable(target, platform = process.platform) {
+  const isWindows = platform === "win32";
   const expected = [
-    path.join(target, "scripts", "bootstrap.sh"),
+    path.join(target, "scripts", isWindows ? "bootstrap.ps1" : "bootstrap.sh"),
     path.join(target, "backend", "run.py"),
     path.join(target, "frontend", "package.json"),
   ];
   for (const item of expected) {
     if (!(await pathExists(item))) throw new Error(`Eksik Xultron dosyası: ${item}`);
   }
-  const info = await stat(path.join(target, "backend", ".venv", "bin", "python")).catch(() => null);
+  const venvPython = path.join(
+    target,
+    "backend",
+    ".venv",
+    isWindows ? "Scripts" : "bin",
+    isWindows ? "python.exe" : "python",
+  );
+  const info = await stat(venvPython).catch(() => null);
   if (!info?.isFile()) throw new Error("Backend bağımlılıkları eksik. Önce `xultron install` çalıştır.");
   if (!(await pathExists(path.join(target, "frontend", "node_modules")))) {
     throw new Error("Frontend bağımlılıkları eksik. Önce `xultron install` çalıştır.");
@@ -359,7 +377,9 @@ async function ensureRunnable(target) {
 
 export async function start(options) {
   const { target, io } = options;
-  await ensureRunnable(target);
+  const isWindows = options.platform === "win32";
+  const venvBin = (name) => path.join(target, "backend", ".venv", isWindows ? "Scripts" : "bin", isWindows ? `${name}.exe` : name);
+  await ensureRunnable(target, options.platform);
   io.stdout("Xultron üretim arayüzü hazırlanıyor...");
   await options.processRunner("npm", ["--prefix", path.join(target, "frontend"), "run", "build"], {
     cwd: target,
@@ -374,13 +394,13 @@ export async function start(options) {
       stdio: options.stdio,
     });
   }
-  await options.processRunner(path.join(target, "backend", ".venv", "bin", "flask"), ["--app", "run.py", "db", "upgrade"], {
+  await options.processRunner(venvBin("flask"), ["--app", "run.py", "db", "upgrade"], {
     cwd: path.join(target, "backend"),
     env: options.env,
     stdio: options.stdio,
   });
   io.stdout(`Xultron başlatılıyor: http://127.0.0.1:${options.env.PORT || "5000"}`);
-  await options.processRunner(path.join(target, "backend", ".venv", "bin", "python"), ["run.py"], {
+  await options.processRunner(venvBin("python"), ["run.py"], {
     cwd: path.join(target, "backend"),
     env: options.env,
     stdio: options.stdio,
@@ -389,9 +409,20 @@ export async function start(options) {
 
 export async function dev(options) {
   const { target, io } = options;
-  await ensureRunnable(target);
+  const isWindows = options.platform === "win32";
+  const venvBin = (name) => path.join(target, "backend", ".venv", isWindows ? "Scripts" : "bin", isWindows ? `${name}.exe` : name);
+  const shellScript = path.join(target, "scripts", isWindows ? "start-windows.ps1" : "dev.sh");
+  await ensureRunnable(target, options.platform);
   io.stdout("Xultron geliştirme sunucuları başlatılıyor...");
-  await options.processRunner("bash", [path.join(target, "scripts", "dev.sh")], {
+  if (isWindows) {
+    await options.processRunner("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", shellScript], {
+      cwd: target,
+      env: options.env,
+      stdio: options.stdio,
+    });
+    return;
+  }
+  await options.processRunner("bash", [shellScript], {
     cwd: target,
     env: options.env,
     stdio: options.stdio,
@@ -411,7 +442,7 @@ function parseProvisionResponse(stdout) {
 
 async function provisioningRequest(options, payload) {
   const backend = path.join(options.target, "backend");
-  const flask = path.join(backend, ".venv", "bin", "flask");
+  const flask = path.join(backend, ".venv", options.platform === "win32" ? "Scripts" : "bin", options.platform === "win32" ? "flask.exe" : "flask");
   const result = await options.processRunner(
     flask,
     ["--app", "run.py", "provision-local-account"],
@@ -496,6 +527,7 @@ export async function runCli(argv, context = {}) {
     processRunner: context.processRunner || runProcess,
     prompt: context.prompt || defaultPrompt,
     interactive: context.interactive ?? Boolean(process.stdin.isTTY && process.stdout.isTTY),
+    platform: context.platform || process.platform,
   };
 
   if (parsed.command === "help") {

@@ -270,6 +270,26 @@ pkg install git nodejs python python-cryptography
 Registry yayını GitHub kurulumundan ayrıdır ve npm hesabı ile paket yayınlama yetkisi
 gerektirir. Registry'ye erişilemiyorsa GitHub tabanlı `npx` komutlarını kullan.
 
+## Windows kurulumu
+
+Windows'ta Node.js 20+, Python 3.11+, Git ve npm kurulu olmalıdır. Depoyu
+indirdikten sonra kök klasördeki `install-windows.bat` dosyasını çift tıklayın.
+Betik backend sanal ortamını, Python bağımlılıklarını, frontend bağımlılıklarını
+ve veritabanı migration'larını hazırlar. Başarılı kurulumun sonunda masaüstünde
+`Xultron.lnk` kısayolu oluşturulur.
+
+Komut satırından çalıştırmak için:
+
+```bat
+install-windows.bat
+```
+
+Kurulum sonrasında uygulamayı `scripts\start-windows.bat` ile de başlatabilirsiniz.
+Kısayol veya başlatıcı, üretim frontend build'ini yapar ve Xultron'u
+`http://127.0.0.1:5000` adresinde açar. PowerShell execution policy kısıtları
+nedeniyle betikler yalnızca bu proje dosyaları için `-ExecutionPolicy Bypass` ile
+çağrılır, sistem politikası kalıcı olarak değiştirilmez.
+
 ## Geliştirme sunucuları
 
 İki terminal kullan:
