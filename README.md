@@ -1,65 +1,54 @@
 # Xultron
 
-> **Mobile-first personal AI, built for privacy, portability, and real-time work.**
-> [Türkçe README](README.tr.md)
+> **Mobile-first, self-hosted AI assistant for Android & Termux — voice, memory, multiple LLM providers, and a low-data PWA.**
 
-<p align="center">
-  <img src="docs/media/xultron-overview.svg" alt="Illustrative Xultron interface overview showing a secure AI session, privacy controls, and real-time activity" width="100%">
-</p>
-
-<p align="center">
-  <img src="docs/media/xultron-overview.gif" alt="20-second Xultron product overview animation" width="720">
-</p>
-
-<p align="center"><sub>The overview assets are illustrative product visuals, not a live user-session capture.</sub></p>
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-7C3AED.svg)](LICENSE)
-[![PWA](https://img.shields.io/badge/PWA-ready-5EEAD4.svg)](frontend/)
-[![Android](https://img.shields.io/badge/Android-debug%20builds-3DDC84.svg)](https://github.com/trackview1827-ctrl/Xultron/releases)
 [![npm](https://img.shields.io/npm/v/xultron-ai.svg?label=npm)](https://www.npmjs.com/package/xultron-ai)
+[![Android](https://img.shields.io/badge/Android-debug%20builds-3DDC84.svg)](https://github.com/trackview1827-ctrl/Xultron/releases)
+[![PWA](https://img.shields.io/badge/PWA-ready-5EEAD4.svg)](frontend/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-7C3AED.svg)](LICENSE)
 
-Xultron is a provider-agnostic personal AI system with a React and TypeScript PWA, a Flask REST/SSE API, encrypted provider credentials, user-controlled memory, and an Android WebView shell. It is designed to work well on desktop, mobile, and Termux while keeping control of data with the user.
+<p align="center">
+  <img src="docs/media/xultron-overview.gif" alt="Xultron mobile AI assistant product walkthrough" width="720">
+</p>
 
-## Why Xultron
+<p align="center">
+  <strong>Your AI workspace, under your control.</strong><br>
+  Run it on Android, Termux, Linux, or macOS with your preferred AI provider.
+</p>
 
-| Capability | What it means |
-| --- | --- |
-| **Secure AI access** | Provider credentials are encrypted with Fernet and only masked feedback is displayed. |
-| **Real-time answers** | Server-Sent Events stream model output while idempotent requests and network recovery protect the conversation. |
-| **Mobile first** | A React, TypeScript, Vite, and Tailwind PWA ships with an offline app shell, manifest, and service worker. |
-| **User-controlled data** | Personal memory is searchable and controllable. Guest mode keeps a separate, isolated experience. |
-| **Voice and devices** | Browser microphone, STT, TTS, Bluetooth, ESP32, and Raspberry Pi boundaries are supported deliberately. |
-| **Portable development** | The project supports Linux, macOS, and Termux. A native Android container runs the shared web frontend. |
+## Why Xultron?
 
-## Product demo
+Xultron is a private, provider-agnostic personal AI assistant that stays useful on a phone and remains deployable on your own hardware. It combines a mobile-first PWA with a Flask API, voice features, searchable memory, and a native Android shell.
 
-A locally runnable demo is the supported demonstration path. It uses the actual Flask backend and PWA, rather than a static mockup:
+### Built for real use
 
-```bash
-make setup
-make serve
-# Open http://127.0.0.1:5000
-```
-
-For the full demo flow, including an Android debug-build install path and validation boundaries, see [docs/DEMO.md](docs/DEMO.md). Published Android debug builds are available on the [Releases page](https://github.com/trackview1827-ctrl/Xultron/releases). They are test artifacts, not Play Store releases.
+- **Voice in and out** — browser microphone, speech-to-text, and text-to-speech flows
+- **Multiple AI providers** — switch providers and discover supported models from Settings
+- **Personal memory** — searchable, user-controlled memory instead of an opaque profile
+- **Android and Termux ready** — use the shared PWA on Android or run the stack locally in Termux
+- **Low-data PWA** — offline app shell, recovery behavior, reduced-motion support, and a data-use counter
+- **Privacy by design** — encrypted provider keys, isolated guest mode, masked feedback, and explicit runtime boundaries
+- **Streaming conversations** — SSE responses, idempotent requests, and network recovery
 
 ## Quick start
 
-### Requirements
-
-- Python 3.11+
-- Node.js 20+
-- npm, Git, and `make`
-- `pyca/cryptography` for encrypted local provider-key storage
-
-On Termux, install the packaged crypto dependency before creating the virtual environment:
+### Try the launcher with `npx`
 
 ```bash
-pkg install git nodejs python python-cryptography
-python -m venv --system-site-packages backend/.venv
+npx --yes xultron-ai
+```
+
+The launcher installs Xultron into `~/.xultron/app`, checks the local prerequisites, and starts the application. For an installed command, use:
+
+```bash
+npm install --global xultron-ai
+xultron doctor
+xultron start
 ```
 
 ### Run from source
+
+Requirements: Python 3.11+, Node.js 20+, npm, Git, and `make`.
 
 ```bash
 git clone https://github.com/trackview1827-ctrl/Xultron.git
@@ -68,32 +57,45 @@ make setup
 make serve
 ```
 
-Open **http://127.0.0.1:5000**. In local development, when explicit secrets are absent, the backend creates persistent random secrets in the Git-ignored `backend/instance` directory. In production, set `SECRET_KEY` and `ENCRYPTION_KEY` explicitly.
+Then open **http://127.0.0.1:5000**.
 
-### Use the CLI
-
-The npm package is named [`xultron-ai`](https://www.npmjs.com/package/xultron-ai) and installs the `xultron` command.
+On Termux, install the packaged cryptography dependency first:
 
 ```bash
-npm install -g xultron-ai
-xultron
+pkg install git nodejs python python-cryptography
+python -m venv --system-site-packages backend/.venv
 ```
 
-On a fresh machine, `xultron` clones the app to `~/.xultron/app`, bootstraps it, and starts it. Available commands:
+## Product demo
+
+The checked-in walkthrough above shows the Xultron product surface. The supported live demo uses the actual Flask backend and PWA:
 
 ```bash
-xultron install  # clone and bootstrap
-xultron update   # fast-forward a clean installation
-xultron start    # run the installed app
-xultron dev      # run development servers
-xultron doctor   # check prerequisites
-xultron help     # show help
+make setup
+make serve
 ```
 
-To run the repository version directly without waiting for the npm registry:
+For the complete demo flow, Android debug-build instructions, and validation boundaries, see [docs/DEMO.md](docs/DEMO.md). Published Android debug builds are available on the [Releases page](https://github.com/trackview1827-ctrl/Xultron/releases). They are test artifacts, not Play Store releases.
+
+## What is inside?
+
+| Area | Stack | Purpose |
+| --- | --- | --- |
+| Mobile PWA | React, TypeScript, Vite, Tailwind | Responsive UI, offline shell, voice client |
+| API | Flask, SQLAlchemy, SQLite, Alembic | Auth, chat, memory, provider and session data |
+| AI integrations | Provider abstractions | AI, STT, and TTS backends without locking the app to one vendor |
+| Android | Native WebView shell | Mobile container and explicit native capability boundary |
+| Launcher | `xultron-ai` on npm | Install, update, start, develop, and diagnose Xultron |
+
+## CLI commands
 
 ```bash
-npx --yes github:trackview1827-ctrl/Xultron doctor
+xultron install   # clone and bootstrap a clean installation
+xultron update    # update a clean installation
+xultron start     # run the installed app
+xultron dev       # run backend and frontend development servers
+xultron doctor    # check prerequisites
+xultron help      # show help
 ```
 
 ## Architecture
@@ -104,27 +106,16 @@ backend/    Flask REST/SSE API, SQLAlchemy data layer, migrations
 android/    Native Android WebView container and secure mobile integration
 cli/        Zero-dependency installer and launcher published as xultron-ai
 docs/       Product, API, architecture, security, demo, and validation docs
-scripts/    Local setup, development, smoke-test, and cleanup helpers
+scripts/    Setup, development, smoke-test, and cleanup helpers
 ```
 
-The frontend streams chat through SSE. The backend maintains provider abstractions for AI, STT, and TTS. Native Android capabilities are scoped behind explicit permission and origin checks. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/API_CONTRACT.md](docs/API_CONTRACT.md) for details.
+The frontend streams chat through SSE. The backend provides shared abstractions for AI, STT, and TTS. Native Android capabilities are scoped behind explicit permission and origin checks.
 
-## Development
-
-```bash
-# Terminal 1: API
-cd backend
-.venv/bin/python run.py
-
-# Terminal 2: PWA dev server
-npm --prefix frontend run dev
-```
-
-### Quality commands
+## Development and validation
 
 ```bash
 npm test                              # CLI tests
-npm --prefix frontend run typecheck   # TypeScript
+npm --prefix frontend run typecheck   # TypeScript checks
 npm --prefix frontend test            # PWA tests
 make test                             # backend + frontend tests
 make build                            # production PWA build
@@ -149,6 +140,7 @@ sha256sum app/build/outputs/apk/debug/app-debug.apk
 - [Validation report](docs/VALIDATION_REPORT.md)
 - [Security policy](SECURITY.md)
 - [Contributing and commit conventions](CONTRIBUTING.md)
+- [Türkçe README](README.tr.md)
 
 ## Security and privacy
 

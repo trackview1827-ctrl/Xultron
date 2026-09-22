@@ -33,7 +33,16 @@
     "personal-ai",
     "pwa",
     "installer",
-    "termux"
+    "termux",
+    "ai-assistant",
+    "android",
+    "llm",
+    "self-hosted",
+    "voice-assistant",
+    "stt",
+    "tts",
+    "memory",
+    "low-data"
   ],
   "license": "MIT"
 }
